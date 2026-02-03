@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>图片上传到 OSS</title>
+  <style>
+    body {
+      font-family: "Segoe UI", "PingFang SC", sans-serif;
+      background: #f5f6fb;
+      color: #1f2a44;
+      margin: 0;
+      padding: 40px 16px;
+    }
+    .container {
+      max-width: 860px;
+      margin: 0 auto;
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 18px 40px rgba(31, 42, 68, 0.12);
+      padding: 32px;
+    }
+    h1 {
+      margin-top: 0;
+      font-size: 28px;
+    }
+    p {
+      line-height: 1.7;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 16px;
+      margin-top: 20px;
+    }
+    label {
+      font-size: 14px;
+      display: block;
+      margin-bottom: 6px;
+      color: #4b5878;
+    }
+    input[type="text"],
+    input[type="file"],
+    textarea {
+      width: 100%;
+      box-sizing: border-box;
+      border: 1px solid #d4d9e6;
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 14px;
+    }
+    textarea {
+      min-height: 80px;
+      resize: vertical;
+    }
+    button {
+      background: #3a67f6;
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      padding: 12px 18px;
+      font-size: 15px;
+      cursor: pointer;
+      margin-top: 20px;
+    }
+    button:disabled {
+      background: #93a4f9;
+      cursor: not-allowed;
+    }
+    .preview {
+      margin-top: 24px;
+      display: flex;
+      gap: 20px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .preview img {
+      max-width: 260px;
+      border-radius: 12px;
+      border: 1px solid #e0e5f3;
+    }
+    .status {
+      background: #f0f4ff;
+      border-radius: 12px;
+      padding: 14px 16px;
+      color: #2a3a64;
+      margin-top: 20px;
+      font-size: 14px;
+    }
+    .hint {
+      font-size: 13px;
+      color: #7b849b;
+      margin-top: 8px;
+    }
+    code {
+      background: #eef1f8;
+      padding: 2px 6px;
+      border-radius: 6px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>上传图片到 OSS</h1>
+    <p>
+      该页面用于通过 OSS Post Object 表单直接上传图片。请准备好临时上传参数（accessKeyId、policy、signature）
+      以及目标 OSS endpoint 与 bucket。字段说明可在页面下方查看。
+    </p>
+
+    <div class="grid">
+      <div>
+        <label for="endpoint">OSS Endpoint (例如 https://oss-cn-hangzhou.aliyuncs.com)</label>
+        <input type="text" id="endpoint" placeholder="https://oss-cn-hangzhou.aliyuncs.com" />
+      </div>
+      <div>
+        <label for="bucket">Bucket 名称</label>
+        <input type="text" id="bucket" placeholder="your-bucket" />
+      </div>
+      <div>
+        <label for="objectKey">对象路径 (key)</label>
+        <input type="text" id="objectKey" placeholder="uploads/your-image.png" />
+      </div>
+      <div>
+        <label for="accessKeyId">AccessKeyId</label>
+        <input type="text" id="accessKeyId" placeholder="临时 AccessKeyId" />
+      </div>
+      <div>
+        <label for="policy">Policy (Base64)</label>
+        <textarea id="policy" placeholder="Base64 编码的 policy"></textarea>
+      </div>
+      <div>
+        <label for="signature">Signature</label>
+        <input type="text" id="signature" placeholder="签名" />
+      </div>
+      <div>
+        <label for="securityToken">SecurityToken (可选)</label>
+        <input type="text" id="securityToken" placeholder="STS Token，可选" />
+      </div>
+      <div>
+        <label for="fileInput">选择图片</label>
+        <input type="file" id="fileInput" accept="image/*" />
+      </div>
+    </div>
+
+    <button id="uploadButton" disabled>开始上传</button>
+
+    <div class="preview">
+      <img id="previewImage" alt="预览" />
+      <div class="status" id="status">等待选择图片并填写必要参数。</div>
+    </div>
+
+    <p class="hint">
+      提示：上传表单会提交到 <code>endpoint + "/" + bucket</code>。
+      如需服务端生成临时上传凭证，请结合后端接口获取 policy 与 signature。
+    </p>
+  </div>
+
+  <script>
+    const fileInput = document.getElementById('fileInput');
+    const uploadButton = document.getElementById('uploadButton');
+    const previewImage = document.getElementById('previewImage');
+    const status = document.getElementById('status');
+
+    const requiredFields = ['endpoint', 'bucket', 'objectKey', 'accessKeyId', 'policy', 'signature'];
+
+    function canUpload() {
+      const hasFile = fileInput.files && fileInput.files.length > 0;
+      const allFilled = requiredFields.every((id) => {
+        const value = document.getElementById(id).value.trim();
+        return value.length > 0;
+      });
+      return hasFile && allFilled;
+    }
+
+    function updateButtonState() {
+      uploadButton.disabled = !canUpload();
+    }
+
+    fileInput.addEventListener('change', () => {
+      const file = fileInput.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          previewImage.src = event.target.result;
+        };
+        reader.readAsDataURL(file);
+        status.textContent = `已选择文件：${file.name} (${Math.round(file.size / 1024)} KB)`;
+      } else {
+        previewImage.removeAttribute('src');
+      }
+      updateButtonState();
+    });
+
+    document.querySelectorAll('input, textarea').forEach((input) => {
+      input.addEventListener('input', updateButtonState);
+    });
+
+    uploadButton.addEventListener('click', async () => {
+      if (!canUpload()) {
+        status.textContent = '请填写所有必填字段并选择图片。';
+        return;
+      }
+
+      const endpoint = document.getElementById('endpoint').value.trim();
+      const bucket = document.getElementById('bucket').value.trim();
+      const objectKey = document.getElementById('objectKey').value.trim();
+      const accessKeyId = document.getElementById('accessKeyId').value.trim();
+      const policy = document.getElementById('policy').value.trim();
+      const signature = document.getElementById('signature').value.trim();
+      const securityToken = document.getElementById('securityToken').value.trim();
+      const file = fileInput.files[0];
+
+      const uploadUrl = `${endpoint.replace(/\/$/, '')}/${bucket}`;
+      const formData = new FormData();
+      formData.append('key', objectKey);
+      formData.append('OSSAccessKeyId', accessKeyId);
+      formData.append('policy', policy);
+      formData.append('Signature', signature);
+      if (securityToken) {
+        formData.append('x-oss-security-token', securityToken);
+      }
+      formData.append('success_action_status', '200');
+      formData.append('file', file);
+
+      status.textContent = '上传中，请稍候...';
+      try {
+        const response = await fetch(uploadUrl, {
+          method: 'POST',
+          body: formData,
+        });
+        if (response.ok) {
+          status.textContent = `上传成功！对象地址：${uploadUrl}/${objectKey}`;
+        } else {
+          status.textContent = `上传失败：${response.status} ${response.statusText}`;
+        }
+      } catch (error) {
+        status.textContent = `上传异常：${error.message}`;
+      }
+    });
+  </script>
+</body>
+</html>
