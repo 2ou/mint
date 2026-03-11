@@ -2,27 +2,29 @@ package com.ai.config;
 
 import com.aliyun.oss.OSS;
 import com.aliyun.oss.OSSClientBuilder;
-import okhttp3.OkHttpClient;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-
-import java.time.Duration;
 
 @Configuration
 public class CommonConfig {
 
-    @Bean
-    public OkHttpClient okHttpClient() {
-        return new OkHttpClient.Builder()
-                .connectTimeout(Duration.ofSeconds(30))
-                .readTimeout(Duration.ofSeconds(60))
-                .writeTimeout(Duration.ofSeconds(60))
-                .build();
+    private final AppProperties appProperties;
+
+    public CommonConfig(AppProperties appProperties) {
+        this.appProperties = appProperties;
     }
 
-    @Bean(destroyMethod = "shutdown")
-    public OSS ossClient(AppProperties appProperties) {
+    @Bean
+    public OSS ossClient() {
         AppProperties.Oss oss = appProperties.getOss();
-        return new OSSClientBuilder().build(oss.getEndpoint(), oss.getAccessKeyId(), oss.getAccessKeySecret());
+        if (oss == null) {
+            throw new RuntimeException("OSS 配置未注入，请检查 application.yml");
+        }
+
+        return new OSSClientBuilder().build(
+                oss.getEndpoint(),
+                oss.getAccessKeyId(),
+                oss.getAccessKeySecret()
+        );
     }
 }

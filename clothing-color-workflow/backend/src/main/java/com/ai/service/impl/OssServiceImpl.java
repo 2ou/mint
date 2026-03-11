@@ -1,59 +1,78 @@
 package com.ai.service.impl;
 
 import com.ai.config.AppProperties;
-import com.ai.exception.BusinessException;
 import com.ai.service.OssService;
-import com.ai.util.FileNameUtil;
 import com.aliyun.oss.OSS;
-import com.aliyun.oss.model.OSSObject;
-import lombok.RequiredArgsConstructor;
-import okhttp3.OkHttpClient;
-import okhttp3.Request;
-import okhttp3.Response;
+import com.aliyun.oss.OSSClientBuilder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.IOException;
-import java.io.InputStream;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.net.URL;
+import java.nio.file.Paths;
 
 @Service
-@RequiredArgsConstructor
 public class OssServiceImpl implements OssService {
-    private final OSS oss;
+
     private final AppProperties appProperties;
-    private final OkHttpClient okHttpClient;
+    private final OSS ossClient;
+
+    public OssServiceImpl(AppProperties appProperties) {
+        this.appProperties = appProperties;
+        AppProperties.Oss oss = appProperties.getOss();
+        if (oss == null) {
+            throw new RuntimeException("OSS 配置未注入，请检查 application.yml");
+        }
+        this.ossClient = new OSSClientBuilder().build(
+                oss.getEndpoint(),
+                oss.getAccessKeyId(),
+                oss.getAccessKeySecret()
+        );
+    }
 
     @Override
     public String uploadInput(String spu, String type, MultipartFile file) {
-        String safeName = FileNameUtil.safeFileName(file.getOriginalFilename());
-        String objectKey = spu + "/" + type + "/" + safeName;
-        try (InputStream is = file.getInputStream()) {
-            oss.putObject(appProperties.getOss().getInputBucket(), objectKey, is);
-            return appProperties.getOss().getInputPublicHost() + "/" + objectKey;
-        } catch (IOException e) {
-            throw new BusinessException("上传OSS失败: " + e.getMessage());
+        try {
+            AppProperties.Oss oss = appProperties.getOss();
+            String objectName = spu + "/" + type + "/" + file.getOriginalFilename();
+            ossClient.putObject(oss.getInputBucket(), objectName, file.getInputStream());
+            return oss.getInputPublicHost() + "/" + objectName;
+        } catch (Exception e) {
+            throw new RuntimeException("上传输入文件失败：" + e.getMessage(), e);
         }
     }
 
     @Override
-    public String transferResultToOss(String spu, String sourceUrl) {
-        String fileName = FileNameUtil.safeFileName("result.png");
-        String objectKey = "result/" + spu + "/" + fileName;
-        byte[] bytes = downloadByUrl(sourceUrl);
-        oss.putObject(appProperties.getOss().getResultBucket(), objectKey, new java.io.ByteArrayInputStream(bytes));
-        return appProperties.getOss().getResultPublicHost() + "/" + objectKey;
+    public String uploadResultToOss(String spu, String resultUrl) {
+        try {
+            AppProperties.Oss oss = appProperties.getOss();
+            URL remoteUrl = new URL(resultUrl);
+            String objectName = spu + "/result/" + Paths.get(remoteUrl.getPath()).getFileName();
+            ossClient.putObject(oss.getResultBucket(), objectName, remoteUrl.openStream());
+            return oss.getResultPublicHost() + "/" + objectName;
+        } catch (Exception e) {
+            throw new RuntimeException("上传结果文件失败：" + e.getMessage(), e);
+        }
     }
 
     @Override
-    public byte[] downloadByUrl(String url) {
-        Request request = new Request.Builder().url(url).build();
-        try (Response response = okHttpClient.newCall(request).execute()) {
-            if (!response.isSuccessful() || response.body() == null) {
-                throw new BusinessException("下载图片失败");
+    public String saveResultToLocal(String spu, String resultUrl, String localRoot) {
+        try {
+            URL remoteUrl = new URL(resultUrl);
+            File dir = new File(localRoot, spu);
+            if (!dir.exists()) dir.mkdirs();
+            File localFile = new File(dir, Paths.get(remoteUrl.getPath()).getFileName().toString());
+            try (var in = remoteUrl.openStream(); var out = new FileOutputStream(localFile)) {
+                byte[] buffer = new byte[4096];
+                int n;
+                while ((n = in.read(buffer)) > 0) {
+                    out.write(buffer, 0, n);
+                }
             }
-            return response.body().bytes();
-        } catch (IOException e) {
-            throw new BusinessException("下载图片失败: " + e.getMessage());
+            return localFile.getAbsolutePath();
+        } catch (Exception e) {
+            throw new RuntimeException("保存结果到本地失败：" + e.getMessage(), e);
         }
     }
 }

@@ -31,9 +31,8 @@ public class ImageTask {
     @Column(length = 32)
     private String resolution;
 
-    @Enumerated(EnumType.STRING)
     @Column(length = 20)
-    private TaskStatus status;
+    private String status;
 
     @Column(length = 500)
     private String inputImageUrl;
