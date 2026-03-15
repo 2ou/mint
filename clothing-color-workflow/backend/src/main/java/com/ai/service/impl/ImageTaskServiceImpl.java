@@ -42,7 +42,7 @@ public class ImageTaskServiceImpl implements ImageTaskService {
         ImageTask task = imageTaskRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("未找到该任务 ID: " + id));
 
-        // 如果任务已经完结（成功或失败），不需要再查
+        // 如果任务已经终结，不需要再去骚扰 KIE
         if ("SUCCESS".equals(task.getStatus()) || "FAILED".equals(task.getStatus())) {
             return new TaskCreateResponse(task);
         }
@@ -52,13 +52,11 @@ public class ImageTaskServiceImpl implements ImageTaskService {
             String resultUrl = kieClientService.getResultUrl(task.getTaskId());
 
             if (resultUrl != null && !resultUrl.isEmpty()) {
-                // 🔴 核心优化一：落袋为安。拿到 KIE 的图立刻存入数据库！
+                // 🔴 核心优化一：落袋为安！拿到 KIE 的图立刻存入数据库！
                 task.setResultTempUrl(resultUrl);
                 task.setStatus("SUCCESS");
-                task.setErrorMessage(null); // 清空以前可能存在的报错信息
-
-                // 先执行一次保存，确保 KIE 的 URL 绝对不会丢
-                task = imageTaskRepository.save(task);
+                task.setErrorMessage(null); // 抹除旧的报错信息
+                task = imageTaskRepository.save(task); // 执行首次保存
 
                 // 🔴 核心优化二：把转存 OSS 和本地另起一个 try-catch (降级处理)
                 try {
@@ -68,16 +66,16 @@ public class ImageTaskServiceImpl implements ImageTaskService {
                     String localPath = ossService.saveResultToLocal(task.getSpu(), resultUrl, localSaveRoot);
                     task.setLocalPath(localPath);
 
-                    // 转存成功，再次更新数据库 (补齐 OSS 链接)
+                    // 转存成功，再次更新数据库补齐 OSS 链接
                     imageTaskRepository.save(task);
                 } catch (Exception subEx) {
-                    log.warn("任务 {} KIE 出图成功，但转存 OSS/本地失败: {}", task.getId(), subEx.getMessage());
-                    // 存入备注，但不影响任务总体 SUCCESS 的状态
-                    task.setErrorMessage("图片获取成功，但转存OSS失败: " + subEx.getMessage());
+                    log.warn("任务 {} KIE出图成功，但转存失败: {}", task.getId(), subEx.getMessage());
+                    // 记录备注，但绝不把 SUCCESS 改回 FAILED
+                    task.setErrorMessage("图片获取成功，但转存到你自己的OSS失败: " + subEx.getMessage());
                     imageTaskRepository.save(task);
                 }
             } else {
-                // 还没画完，保持处理中
+                // 没查到链接，说明还在画，保持 PROCESSING 状态
                 task.setStatus("PROCESSING");
                 imageTaskRepository.save(task);
             }
@@ -85,19 +83,13 @@ public class ImageTaskServiceImpl implements ImageTaskService {
             log.error("刷新任务 ID: {} 发生全局异常", id, e);
             task.setStatus("FAILED");
 
-            // 防止 errorMessage 过长导致数据库 Data Truncation 报错
-            String errorMsg = e.getMessage();
-            if (errorMsg != null && errorMsg.length() > 250) {
-                errorMsg = errorMsg.substring(0, 245) + "...";
+            // 防止第三方报错信息过长，导致存入 MySQL 时发生 Data Truncation 报错崩溃
+            String errorMsg = e.getMessage() != null ? e.getMessage() : e.toString();
+            if (errorMsg.length() > 2000) {
+                errorMsg = errorMsg.substring(0, 1990) + "...";
             }
             task.setErrorMessage(errorMsg);
-
-            try {
-                imageTaskRepository.save(task);
-            } catch (Exception dbEx) {
-                log.error("保存失败状态至数据库时再次崩溃 (极可能是 URL 字段长度超限): ", dbEx);
-                throw new RuntimeException("数据库保存异常，请检查数据表字段长度！", dbEx);
-            }
+            imageTaskRepository.save(task);
         }
 
         return new TaskCreateResponse(task);
