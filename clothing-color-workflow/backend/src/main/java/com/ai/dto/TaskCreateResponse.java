@@ -5,6 +5,8 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.time.LocalDateTime;
+
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -12,14 +14,20 @@ public class TaskCreateResponse {
 
     private Long id;
     private String taskId;
+    private String spu;
     private String status;
     private boolean success;
+    private String prompt;
+    private String model;
+    private String resolution;
 
     private String inputImageUrl;
     private String colorImageUrl;
     private String resultTempUrl;
     private String resultOssUrl;
     private String localPath;
+
+    private LocalDateTime createdAt;
 
     public TaskCreateResponse(ImageTask task) {
         this.id = task.getId();
@@ -31,5 +39,10 @@ public class TaskCreateResponse {
         this.resultTempUrl = task.getResultTempUrl();
         this.resultOssUrl = task.getResultOssUrl();
         this.localPath = task.getLocalPath();
+        this.createdAt = task.getCreatedAt();
+        this.prompt = task.getPrompt();
+        this.spu = task.getSpu();
+        this.model = task.getModel();
+        this.resolution = task.getResolution();
     }
 }
