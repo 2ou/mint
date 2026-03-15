@@ -29,51 +29,6 @@ public class ImageTaskServiceImpl implements ImageTaskService {
     private String localSaveRoot;
 
     @Override
-    public TaskCreateResponse create(String spu, String prompt, String resolution,
-                                     MultipartFile inputFile, MultipartFile colorFile) {
-
-        String inputUrl = ossService.uploadInput(spu, "input", inputFile);
-        String colorUrl = ossService.uploadInput(spu, "color", colorFile);
-
-        ImageTask task = new ImageTask();
-        task.setSpu(spu);
-        task.setPrompt(prompt);
-        task.setResolution(resolution);
-        task.setInputImageUrl(inputUrl);
-        task.setColorImageUrl(colorUrl);
-        task.setStatus("CREATED");
-        imageTaskRepository.save(task);
-
-        try {
-            String taskId = kieClientService.createTask(spu, prompt, resolution, inputUrl, colorUrl);
-            task.setTaskId(taskId);
-            task.setStatus("PROCESSING");
-            imageTaskRepository.save(task);
-
-            Thread.sleep(waitResultMs);
-            String resultUrl = kieClientService.getResultUrl(taskId);
-
-            if (resultUrl != null) {
-                task.setResultTempUrl(resultUrl);
-                String resultOssUrl = ossService.uploadResultToOss(spu, resultUrl);
-                task.setResultOssUrl(resultOssUrl);
-                String localPath = ossService.saveResultToLocal(spu, resultUrl, localSaveRoot);
-                task.setLocalPath(localPath);
-                task.setStatus("SUCCESS");
-            }
-
-            imageTaskRepository.save(task);
-
-        } catch (Exception e) {
-            task.setStatus("FAILED");
-            task.setErrorMessage(e.getMessage());
-            imageTaskRepository.save(task);
-        }
-
-        return new TaskCreateResponse(task);
-    }
-
-    @Override
     public TaskCreateResponse refreshTask(Long id) {
         ImageTask task = imageTaskRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Task not found"));
@@ -123,5 +78,36 @@ public class ImageTaskServiceImpl implements ImageTaskService {
         ImageTask task = imageTaskRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Task not found"));
         ossService.saveResultToLocal(task.getSpu(), task.getResultTempUrl(), localSaveRoot);
+    }
+
+    @Override
+    public TaskCreateResponse createWithUrl(String spu, String prompt, String resolution, String model, String inputUrl, String colorUrl) {
+        // 1. 初始化并持久化任务记录到 MySQL
+        ImageTask task = new ImageTask();
+        task.setSpu(spu);
+        task.setPrompt(prompt);
+        task.setResolution(resolution);
+        task.setModel(model); // 记录前端指定使用的 AI 模型
+        task.setInputImageUrl(inputUrl);
+        task.setColorImageUrl(colorUrl);
+        task.setStatus("CREATED");
+        imageTaskRepository.save(task);
+
+        try {
+            // 2. 调用远端 AI 接口投递任务
+            String taskId = kieClientService.createTask(spu, prompt, resolution, model, inputUrl, colorUrl);
+
+            // 3. 投递成功，更新远端 taskId 和状态 (不阻塞等待出图)
+            task.setTaskId(taskId);
+            task.setStatus("PROCESSING");
+        } catch (Exception e) {
+            // 投递异常时，记录失败状态和错误信息
+            task.setStatus("FAILED");
+            task.setErrorMessage(e.getMessage());
+        }
+
+        // 4. 更新数据库状态并返回
+        imageTaskRepository.save(task);
+        return new TaskCreateResponse(task);
     }
 }

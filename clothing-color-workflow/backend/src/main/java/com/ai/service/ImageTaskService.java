@@ -7,11 +7,6 @@ import java.util.List;
 
 public interface ImageTaskService {
 
-    /**
-     * 创建单个任务（单原图 + 单颜色图）
-     */
-    TaskCreateResponse create(String spu, String prompt, String resolution,
-                              MultipartFile inputFile, MultipartFile colorFile);
 
     /**
      * 刷新任务状态
@@ -32,4 +27,17 @@ public interface ImageTaskService {
      * 下载任务结果到本地
      */
     void downloadTaskFile(Long id);
+
+    /**
+     * 基于已有的 OSS 链接直接创建任务 (适用于前端直传架构)
+     *
+     * @param spu        商品款号
+     * @param prompt     提示词
+     * @param resolution 分辨率
+     * @param model      AI 模型名称
+     * @param inputUrl   已上传到 OSS 的原图完整 URL
+     * @param colorUrl   已上传到 OSS 的颜色图完整 URL
+     * @return 任务创建结果 (包含落库后的任务 ID)
+     */
+    TaskCreateResponse createWithUrl(String spu, String prompt, String resolution, String model, String inputUrl, String colorUrl);
 }

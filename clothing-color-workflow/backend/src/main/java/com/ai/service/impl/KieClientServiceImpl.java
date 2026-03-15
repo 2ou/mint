@@ -24,19 +24,32 @@ public class KieClientServiceImpl implements KieClientService {
     }
 
     @Override
-    public String createTask(String spu, String prompt, String resolution, String inputUrl, String colorUrl) {
+    // 🔴 1. 方法签名加上 String model
+    public String createTask(String spu, String prompt, String resolution, String model, String inputUrl, String colorUrl) {
         try {
-            String url = appProperties.getKie().getBaseUrl() + "/tasks";
-            String jsonBody = String.format("""
-                    {
-                      "model": "%s",
-                      "prompt": "%s",
-                      "spu": "%s",
-                      "input_url": "%s",
-                      "color_url": "%s",
-                      "resolution": "%s"
-                    }
-                    """, appProperties.getKie().getModel(), prompt, spu, inputUrl, colorUrl, resolution);
+            String url = appProperties.getKie().getBaseUrl() + "/jobs/createTask";
+
+            ObjectMapper mapper = new ObjectMapper();
+            com.fasterxml.jackson.databind.node.ObjectNode rootNode = mapper.createObjectNode();
+
+            // 🔴 2. 核心修复：直接使用传进来的 model，不要再用 appProperties 去读了！
+            rootNode.put("model", model);
+
+            com.fasterxml.jackson.databind.node.ObjectNode inputNode = mapper.createObjectNode();
+            inputNode.put("prompt", prompt);
+
+            com.fasterxml.jackson.databind.node.ArrayNode imageArray = mapper.createArrayNode();
+            imageArray.add(inputUrl);
+            imageArray.add(colorUrl);
+            inputNode.set("image_input", imageArray);
+
+            inputNode.put("aspect_ratio", "auto");
+            inputNode.put("resolution", resolution);
+            inputNode.put("output_format", "png");
+
+            rootNode.set("input", inputNode);
+
+            String jsonBody = mapper.writeValueAsString(rootNode);
 
             RequestBody body = RequestBody.create(jsonBody, MediaType.parse("application/json"));
             Request request = new Request.Builder()
@@ -46,14 +59,20 @@ public class KieClientServiceImpl implements KieClientService {
                     .build();
 
             try (Response response = httpClient.newCall(request).execute()) {
+                String responseBody = response.body().string();
                 if (!response.isSuccessful()) {
-                    throw new RuntimeException("KIE 创建任务失败: " + response.code());
+                    throw new RuntimeException("KIE 创建任务失败: HTTP " + response.code() + " 详情: " + responseBody);
                 }
-                JsonNode node = objectMapper.readTree(response.body().string());
-                return node.get("taskId").asText();
+
+                JsonNode node = mapper.readTree(responseBody);
+                if (node.has("data") && node.get("data").has("taskId")) {
+                    return node.get("data").get("taskId").asText();
+                } else {
+                    throw new RuntimeException("KIE 接口返回值异常，找不到 taskId: " + responseBody);
+                }
             }
         } catch (IOException e) {
-            throw new RuntimeException("KIE 创建任务异常: " + e.getMessage(), e);
+            throw new RuntimeException("KIE 网络请求异常: " + e.getMessage(), e);
         }
     }
 

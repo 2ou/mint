@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>AI 换色任务大盘</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css" />
+    <script src="https://unpkg.com/element-plus"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+
+    <style>
+        body { background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); min-height: 100vh; margin: 0; font-family: 'PingFang SC', sans-serif; padding-top: 3vh; padding-bottom: 5vh; }
+        .dashboard-card { max-width: 1400px; margin: 0 auto; border-radius: 16px !important; box-shadow: 0 10px 30px rgba(0,0,0,0.08) !important; border: none !important; }
+        .dashboard-card .el-card__header { background: #67c23a; color: white; font-size: 18px; font-weight: bold; border-bottom: none; display: flex; justify-content: space-between; align-items: center;}
+
+        .thumbnail { width: 60px; height: 60px; border-radius: 6px; border: 1px solid #ebeef5; object-fit: cover; }
+        .empty-img { width: 60px; height: 60px; background: #f4f4f5; color: #909399; display: flex; align-items: center; justify-content: center; font-size: 12px; border-radius: 6px; border: 1px dashed #dcdfe6; }
+
+        .error-text { color: #f56c6c; font-size: 12px; margin-top: 5px; line-height: 1.2; word-break: break-all; }
+    </style>
+</head>
+<body>
+<div id="app">
+    <el-card class="dashboard-card">
+        <template #header>
+            <div>📊 AI 换色任务大盘</div>
+            <div>
+                <el-button @click="goToIndex" plain size="small" style="margin-right: 10px;">去提交新任务</el-button>
+                <el-button type="primary" color="#ffffff" style="color: #67c23a; font-weight: bold;" @click="fetchData" :loading="loading">
+                    ↻ 刷新数据
+                </el-button>
+            </div>
+        </template>
+
+        <el-table :data="tableData" v-loading="loading" border stripe style="width: 100%" height="75vh">
+            <el-table-column prop="id" label="ID" width="70" align="center"></el-table-column>
+            <el-table-column prop="spu" label="SPU 款号" width="120"></el-table-column>
+            <el-table-column prop="model" label="模型" width="140"></el-table-column>
+
+            <el-table-column label="任务状态" width="120" align="center">
+                <template #default="scope">
+                    <el-tag :type="getStatusType(scope.row.status)" effect="dark">
+                        {{ scope.row.status }}
+                    </el-tag>
+                </template>
+            </el-table-column>
+
+            <el-table-column label="原图" width="90" align="center">
+                <template #default="scope">
+                    <el-image
+                            v-if="scope.row.inputImageUrl"
+                            class="thumbnail"
+                            :src="scope.row.inputImageUrl"
+                            :preview-src-list="[scope.row.inputImageUrl]"
+                            preview-teleported>
+                    </el-image>
+                    <div v-else class="empty-img">无图</div>
+                </template>
+            </el-table-column>
+
+            <el-table-column label="颜色图" width="90" align="center">
+                <template #default="scope">
+                    <el-image
+                            v-if="scope.row.colorImageUrl"
+                            class="thumbnail"
+                            :src="scope.row.colorImageUrl"
+                            :preview-src-list="[scope.row.colorImageUrl]"
+                            preview-teleported>
+                    </el-image>
+                    <div v-else class="empty-img">无图</div>
+                </template>
+            </el-table-column>
+
+            <el-table-column label="AI 生成结果" width="110" align="center">
+                <template #default="scope">
+                    <el-image
+                            v-if="scope.row.resultOssUrl || scope.row.resultTempUrl"
+                            class="thumbnail"
+                            style="border-color: #67c23a; border-width: 2px;"
+                            :src="scope.row.resultOssUrl || scope.row.resultTempUrl"
+                            :preview-src-list="[scope.row.resultOssUrl || scope.row.resultTempUrl]"
+                            preview-teleported>
+                    </el-image>
+                    <div v-else-if="scope.row.status === 'PROCESSING'" class="empty-img" style="color:#e6a23c">生成中...</div>
+                    <div v-else class="empty-img">暂无</div>
+                </template>
+            </el-table-column>
+
+            <el-table-column label="备注/报错" min-width="150">
+                <template #default="scope">
+                    <div v-if="scope.row.errorMessage" class="error-text">
+                        🚨 {{ scope.row.errorMessage }}
+                    </div>
+                    <div v-else-if="scope.row.taskId" style="font-size: 12px; color: #909399;">
+                        KIE Task ID: {{ scope.row.taskId }}
+                    </div>
+                </template>
+            </el-table-column>
+
+            <el-table-column label="创建时间" width="160">
+                <template #default="scope">
+                    {{ formatTime(scope.row.createdAt) }}
+                </template>
+            </el-table-column>
+
+        </el-table>
+    </el-card>
+</div>
+
+<script>
+    const { createApp, ref, onMounted } = Vue;
+
+    createApp({
+        setup() {
+            const tableData = ref([]);
+            const loading = ref(false);
+
+            // 获取列表数据
+            const fetchData = async () => {
+                loading.value = true;
+                try {
+                    // 请求后端接口
+                    const res = await axios.get('http://localhost:8080/api/tasks/list');
+                    if (res.data.success) {
+                        tableData.value = res.data.data;
+                    } else {
+                        ElementPlus.ElMessage.error(res.data.message || '获取数据失败');
+                    }
+                } catch (e) {
+                    console.error(e);
+                    ElementPlus.ElMessage.error('网络异常，请检查后端是否启动');
+                } finally {
+                    loading.value = false;
+                }
+            };
+
+            // 状态转颜色标签
+            const getStatusType = (status) => {
+                switch (status) {
+                    case 'SUCCESS': return 'success';
+                    case 'PROCESSING': return 'warning';
+                    case 'FAILED': return 'danger';
+                    case 'CREATED': return 'info';
+                    default: return 'info';
+                }
+            };
+
+            // 格式化时间
+            const formatTime = (timeStr) => {
+                if (!timeStr) return '-';
+                const date = new Date(timeStr);
+                return date.toLocaleString('zh-CN', { hour12: false }).replace(/\//g, '-');
+            };
+
+            // 页面跳转跳转
+            const goToIndex = () => {
+                window.location.href = 'index.html';
+            };
+
+            // 页面加载时自动拉取数据
+            onMounted(() => {
+                fetchData();
+            });
+
+            return {
+                tableData,
+                loading,
+                fetchData,
+                getStatusType,
+                formatTime,
+                goToIndex
+            };
+        }
+    }).use(ElementPlus).mount('#app');
+</script>
+</body>
+</html>

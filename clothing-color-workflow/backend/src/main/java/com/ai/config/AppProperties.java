@@ -1,5 +1,6 @@
 package com.ai.config;
 
+import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 
@@ -10,8 +11,11 @@ public class AppProperties {
     private String localSaveRoot;
     private long waitResultMs;
 
-    private Oss oss;
-    private Kie kie;
+    // 🔴 关键修复：必须 new 一下，不能只是 private Kie kie;
+    private Kie kie = new Kie();
+
+    // 如果有 oss，同理也 new 一下
+    private Oss oss = new Oss();
 
     public String getLocalSaveRoot() { return localSaveRoot; }
     public void setLocalSaveRoot(String localSaveRoot) { this.localSaveRoot = localSaveRoot; }
