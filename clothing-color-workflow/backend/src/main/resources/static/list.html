@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>AI 换色任务大盘</title>
+    <title>AI 换色任务管理大盘</title>
 
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css" />
@@ -11,662 +11,314 @@
     <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
 
     <style>
-        * { box-sizing: border-box; }
         body {
             margin: 0;
             min-height: 100vh;
-            padding: 24px;
+            padding: 20px;
             font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
             background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
         }
-
-        .page-wrap {
-            max-width: 1520px;
-            margin: 0 auto;
-        }
-
+        .page-wrap { max-width: 1600px; margin: 0 auto; }
         .dashboard-card {
-            border-radius: 18px !important;
-            box-shadow: 0 12px 36px rgba(31, 35, 41, 0.08) !important;
+            border-radius: 12px !important;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.1) !important;
             border: none !important;
-            overflow: hidden;
         }
-
-        .dashboard-card .el-card__header {
-            background: linear-gradient(90deg, #67c23a, #85ce61);
-            color: #fff;
-            border-bottom: none;
-            padding: 18px 22px;
-        }
-
-        .header-bar {
+        .el-card__header {
+            background: #67c23a;
+            color: white;
+            font-weight: bold;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            gap: 16px;
-            flex-wrap: wrap;
         }
-
-        .header-title {
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-        }
-
-        .header-title h2 {
-            margin: 0;
-            font-size: 20px;
-            line-height: 1.2;
-        }
-
-        .header-subtitle {
-            font-size: 12px;
-            opacity: 0.92;
-        }
-
-        .toolbar {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            flex-wrap: wrap;
-        }
-
-        .summary-grid {
-            display: grid;
-            grid-template-columns: repeat(4, minmax(160px, 1fr));
-            gap: 14px;
-            margin-bottom: 18px;
-        }
-
-        .summary-item {
+        .filter-bar {
             background: #fff;
-            border-radius: 14px;
-            padding: 16px;
-            box-shadow: 0 8px 24px rgba(31, 35, 41, 0.06);
-            border: 1px solid #ebeef5;
-        }
-
-        .summary-label {
-            color: #909399;
-            font-size: 13px;
-            margin-bottom: 8px;
-        }
-
-        .summary-value {
-            font-size: 26px;
-            font-weight: 700;
-            color: #303133;
-            line-height: 1;
-        }
-
-        .summary-hint {
-            margin-top: 8px;
-            font-size: 12px;
-            color: #909399;
-        }
-
-        .top-actions {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 12px;
-            margin-bottom: 14px;
-            flex-wrap: wrap;
-        }
-
-        .table-tip {
-            font-size: 13px;
-            color: #606266;
-        }
-
-        .thumbnail,
-        .empty-img {
-            width: 64px;
-            height: 64px;
+            padding: 15px;
             border-radius: 8px;
-            overflow: hidden;
-        }
-
-        .thumbnail {
-            border: 1px solid #ebeef5;
-            object-fit: cover;
-            background: #fff;
-        }
-
-        .empty-img {
-            background: #f4f4f5;
-            color: #909399;
+            margin-bottom: 15px;
             display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 12px;
-            border: 1px dashed #dcdfe6;
-            text-align: center;
-            padding: 6px;
-            line-height: 1.25;
-        }
-
-        .result-box {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 6px;
-        }
-
-        .img-actions {
-            display: flex;
-            gap: 6px;
             flex-wrap: wrap;
-            justify-content: center;
+            gap: 15px;
+            align-items: center;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.05);
         }
-
-        .mini-link {
-            font-size: 12px;
-            color: #409eff;
-            cursor: pointer;
+        .thumbnail { width: 55px; height: 55px; border-radius: 6px; border: 1px solid #ddd; cursor: pointer; object-fit: cover; }
+        .empty-img {
+            width: 55px; height: 55px; background: #eee; color: #999;
+            font-size: 10px; display: flex; align-items: center;
+            justify-content: center; border-radius: 6px; border: 1px dashed #ccc;
         }
-
-        .mini-link:hover {
-            color: #66b1ff;
+        .prompt-text {
+            font-size: 12px; color: #666; display: -webkit-box;
+            -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+            overflow: hidden; line-height: 1.4;
         }
-
-        .error-text {
-            color: #f56c6c;
-            font-size: 12px;
-            line-height: 1.35;
-            word-break: break-all;
-        }
-
-        .muted-text {
-            font-size: 12px;
-            color: #909399;
-            line-height: 1.35;
-            word-break: break-all;
-        }
-
-        .status-text-success { color: #67c23a; }
-        .status-text-warning { color: #e6a23c; }
-        .status-text-danger { color: #f56c6c; }
-
-        .spu-text {
-            font-weight: 600;
-            color: #303133;
-        }
-
-        .page-empty {
-            padding: 40px 0 20px;
-        }
-
-        @media (max-width: 960px) {
-            body { padding: 12px; }
-            .summary-grid { grid-template-columns: repeat(2, minmax(140px, 1fr)); }
-        }
-
-        @media (max-width: 560px) {
-            .summary-grid { grid-template-columns: 1fr; }
-        }
+        .muted-id { font-family: monospace; color: #909399; font-size: 11px; }
     </style>
 </head>
 <body>
 <div id="app">
     <div class="page-wrap">
-        <div class="summary-grid">
-            <div class="summary-item">
-                <div class="summary-label">任务总数</div>
-                <div class="summary-value">{{ totalCount }}</div>
-                <div class="summary-hint">接口返回的全部记录</div>
-            </div>
-            <div class="summary-item">
-                <div class="summary-label">成功</div>
-                <div class="summary-value status-text-success">{{ successCount }}</div>
-                <div class="summary-hint">已有结果图可回传</div>
-            </div>
-            <div class="summary-item">
-                <div class="summary-label">生成中</div>
-                <div class="summary-value status-text-warning">{{ generatingCount }}</div>
-                <div class="summary-hint">兼容 GENERATING / PROCESSING</div>
-            </div>
-            <div class="summary-item">
-                <div class="summary-label">失败</div>
-                <div class="summary-value status-text-danger">{{ failedCount }}</div>
-                <div class="summary-hint">建议补充 errorMessage</div>
-            </div>
-        </div>
-
         <el-card class="dashboard-card">
             <template #header>
-                <div class="header-bar">
-                    <div class="header-title">
-                        <h2>📊 AI 换色任务大盘</h2>
-                        <div class="header-subtitle">修复状态识别、结果图占位、失败提示与链接操作</div>
-                    </div>
-                    <div class="toolbar">
-                        <el-button @click="goToIndex" plain>去提交新任务</el-button>
-                        <el-button @click="fetchData" :loading="loading" type="primary">↻ 刷新数据</el-button>
-                    </div>
+                <span>📊 AI 换色任务管理大盘 (已按时间降序)</span>
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <el-button type="success" :disabled="selectedRows.length === 0" @click="batchDownload">
+                        📦 批量下载 ZIP ({{ selectedRows.length }})
+                    </el-button>
+                    <el-button type="warning" :loading="isBatchRefreshing" @click="syncAllProcessing">
+                        ⚡ 同步处理中任务
+                    </el-button>
+                    <el-button @click="goToIndex" plain>新任务提交</el-button>
+                    <el-button type="primary" @click="fetchData" :loading="loading">刷新列表</el-button>
                 </div>
             </template>
 
-            <div class="top-actions">
-                <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:center; width:100%;">
-                    <el-input
-                            v-model="filters.spu"
-                            placeholder="筛选款号 / SPU"
-                            clearable
-                            style="width: 180px"
-                    />
-                    <el-select
-                            v-model="filters.status"
-                            placeholder="任务状态"
-                            clearable
-                            style="width: 160px"
-                    >
-                        <el-option label="SUCCESS" value="SUCCESS" />
-                        <el-option label="GENERATING" value="GENERATING" />
-                        <el-option label="FAILED" value="FAILED" />
-                        <el-option label="PROCESSING" value="PROCESSING" />
-                        <el-option label="CREATED" value="CREATED" />
-                    </el-select>
-                    <el-date-picker
-                            v-model="filters.dateRange"
-                            type="datetimerange"
-                            range-separator="至"
-                            start-placeholder="开始时间"
-                            end-placeholder="结束时间"
-                            format="YYYY-MM-DD HH:mm:ss"
-                            value-format="YYYY-MM-DD HH:mm:ss"
-                            style="width: 360px"
-                    />
-                    <el-button @click="resetFilters">重置筛选</el-button>
-                    <el-button type="success" :disabled="selectedRows.length === 0" @click="batchDownloadSelected">
-                        批量下载 ZIP
-                    </el-button>
-                </div>
-                <div class="table-tip">
-                    结果图优先读取 <b>resultOssUrl</b>，没有则回退到 <b>resultTempUrl</b>。
-                </div>
-                <div class="table-tip" v-if="lastRefreshTime">最近刷新：{{ lastRefreshTime }}</div>
+            <div class="filter-bar">
+                <el-input v-model="filters.spu" placeholder="输入款号 (SPU) 搜索" clearable style="width: 180px"></el-input>
+
+                <el-select v-model="filters.status" placeholder="任务状态" clearable style="width: 140px">
+                    <el-option label="SUCCESS" value="SUCCESS"></el-option>
+                    <el-option label="PROCESSING" value="PROCESSING"></el-option>
+                    <el-option label="FAILED" value="FAILED"></el-option>
+                    <el-option label="CREATED" value="CREATED"></el-option>
+                </el-select>
+
+                <el-date-picker
+                        v-model="filters.timeRange"
+                        type="datetimerange"
+                        range-separator="至"
+                        start-placeholder="开始日期"
+                        end-placeholder="结束日期"
+                        value-format="YYYY-MM-DD HH:mm:ss"
+                        style="width: 360px">
+                </el-date-picker>
+
+                <el-button @click="resetFilters">重置筛选</el-button>
             </div>
 
             <el-table
-                    :data="filteredTableData"
+                    :data="filteredData"
                     v-loading="loading"
+                    @selection-change="handleSelectionChange"
                     border
                     stripe
                     style="width: 100%"
                     height="72vh"
-                    empty-text="暂无任务数据"
-                    @selection-change="handleSelectionChange"
-                    ref="taskTableRef"
             >
-                <el-table-column type="selection" width="55" align="center" />
+                <el-table-column type="selection" width="50" align="center"></el-table-column>
+                <el-table-column prop="id" label="ID" width="70" align="center" sortable></el-table-column>
 
-                <el-table-column label="ID" width="80" align="center">
+                <el-table-column label="Task ID" width="220" show-overflow-tooltip>
                     <template #default="scope">
-                        {{ scope.row.id }}
+                        <span class="muted-id">{{ scope.row.taskId || '-' }}</span>
                     </template>
                 </el-table-column>
 
-                <el-table-column label="TaskID" width="220">
+                <el-table-column prop="spu" label="SPU 款号" width="100" align="center"></el-table-column>
+
+                <el-table-column label="任务状态" width="110" align="center">
                     <template #default="scope">
-                        <div class="muted-text" v-if="scope.row.taskId">{{ scope.row.taskId }}</div>
-                        <div class="muted-text" v-else>-</div>
+                        <el-tag :type="getStatusType(scope.row.status)" effect="dark">{{ scope.row.status }}</el-tag>
                     </template>
                 </el-table-column>
 
-                <el-table-column label="SPU 款号" width="130">
+                <el-table-column label="原图" width="85" align="center">
                     <template #default="scope">
-                        <div class="spu-text">{{ scope.row.spu || extractSpu(scope.row) || '-' }}</div>
-                    </template>
-                </el-table-column>
-
-                <el-table-column label="分辨率" width="130">
-                    <template #default="scope">
-                        {{ scope.row.resolution || '-' }}
-                    </template>
-                </el-table-column>
-
-                <el-table-column label="任务状态" width="130" align="center">
-                    <template #default="scope">
-                        <el-tag :type="getStatusType(scope.row.status)" effect="dark">
-                            {{ normalizeStatus(scope.row.status) }}
-                        </el-tag>
-                    </template>
-                </el-table-column>
-
-                <el-table-column label="原图" width="96" align="center">
-                    <template #default="scope">
-                        <el-image
-                                v-if="scope.row.inputImageUrl"
-                                class="thumbnail"
-                                :src="scope.row.inputImageUrl"
-                                :preview-src-list="[scope.row.inputImageUrl]"
-                                preview-teleported
-                                fit="cover"
-                        >
-                            <template #error>
-                                <div class="empty-img">加载失败</div>
-                            </template>
-                        </el-image>
+                        <el-image v-if="scope.row.inputImageUrl" class="thumbnail" :src="scope.row.inputImageUrl" :preview-src-list="[scope.row.inputImageUrl]" preview-teleported fit="cover"></el-image>
                         <div v-else class="empty-img">无图</div>
                     </template>
                 </el-table-column>
 
-                <el-table-column label="颜色图" width="96" align="center">
+                <el-table-column label="颜色图" width="85" align="center">
                     <template #default="scope">
-                        <el-image
-                                v-if="scope.row.colorImageUrl"
-                                class="thumbnail"
-                                :src="scope.row.colorImageUrl"
-                                :preview-src-list="[scope.row.colorImageUrl]"
-                                preview-teleported
-                                fit="cover"
-                        >
-                            <template #error>
-                                <div class="empty-img">加载失败</div>
-                            </template>
-                        </el-image>
+                        <el-image v-if="scope.row.colorImageUrl" class="thumbnail" :src="scope.row.colorImageUrl" :preview-src-list="[scope.row.colorImageUrl]" preview-teleported fit="cover"></el-image>
                         <div v-else class="empty-img">无图</div>
                     </template>
                 </el-table-column>
 
-                <el-table-column label="AI 生成结果" width="180" align="center">
+                <el-table-column label="结果图" width="85" align="center">
                     <template #default="scope">
-                        <div class="result-box">
-                            <el-image
-                                    v-if="getResultUrl(scope.row)"
-                                    class="thumbnail"
-                                    style="border-color: #67c23a; border-width: 2px;"
-                                    :src="getResultUrl(scope.row)"
-                                    :preview-src-list="[getResultUrl(scope.row)]"
-                                    preview-teleported
-                                    fit="cover"
-                            >
-                                <template #error>
-                                    <div class="empty-img">结果图<br>加载失败</div>
-                                </template>
-                            </el-image>
-
-                            <div v-else-if="isGenerating(scope.row.status)" class="empty-img" style="color:#e6a23c;">
-                                生成中...
-                            </div>
-
-                            <div v-else-if="isFailed(scope.row.status)" class="empty-img" style="color:#f56c6c;">
-                                生成失败
-                            </div>
-
-                            <div v-else class="empty-img">暂无</div>
-
-                            <div class="img-actions" v-if="getResultUrl(scope.row)">
-                                <span class="mini-link" @click="copyText(getResultUrl(scope.row))">复制链接</span>
-                                <span class="mini-link" @click="openLink(getResultUrl(scope.row))">打开</span>
-                            </div>
-                        </div>
+                        <el-image v-if="scope.row.resultOssUrl || scope.row.resultTempUrl" class="thumbnail" style="border: 2px solid #67c23a" :src="scope.row.resultOssUrl || scope.row.resultTempUrl" :preview-src-list="[scope.row.resultOssUrl || scope.row.resultTempUrl]" preview-teleported fit="cover"></el-image>
+                        <div v-else class="empty-img">{{ scope.row.status === 'PROCESSING' ? '生成中' : '暂无' }}</div>
                     </template>
                 </el-table-column>
 
-                <el-table-column label="提示词 Prompt" min-width="260">
+                <el-table-column prop="resolution" label="分辨率" width="80" align="center"></el-table-column>
+
+                <el-table-column label="提示词 (Prompt)" min-width="200">
                     <template #default="scope">
-                        <div class="muted-text" v-if="scope.row.prompt">{{ scope.row.prompt }}</div>
-                        <div class="muted-text" v-else>-</div>
+                        <div class="prompt-text" :title="scope.row.prompt">{{ scope.row.prompt || '-' }}</div>
                     </template>
                 </el-table-column>
 
-                <el-table-column label="备注 / 报错" min-width="190">
-                    <template #default="scope">
-                        <div v-if="scope.row.errorMessage" class="error-text">🚨 {{ scope.row.errorMessage }}</div>
-                        <div v-else-if="!scope.row.taskId && isFailed(scope.row.status)" class="error-text">任务未生成 taskId，通常是工作流前置参数校验失败或 Dify/KIE 调用失败。</div>
-                        <div v-else-if="scope.row.taskId" class="muted-text">KIE Task ID: {{ scope.row.taskId }}</div>
-                        <div v-else class="muted-text">-</div>
-                    </template>
-                </el-table-column>
-
-                <el-table-column label="创建时间" width="170">
+                <el-table-column label="创建时间" width="160" align="center">
                     <template #default="scope">
                         {{ formatTime(scope.row.createdAt) }}
                     </template>
                 </el-table-column>
-            </el-table>
 
-            <el-empty
-                    v-if="!loading && tableData.length === 0"
-                    class="page-empty"
-                    description="暂无任务数据"
-            />
+                <el-table-column label="操作" width="100" align="center" fixed="right">
+                    <template #default="scope">
+                        <el-button
+                                size="small"
+                                type="primary"
+                                plain
+                                :loading="scope.row.isRefreshing"
+                                :disabled="scope.row.status === 'SUCCESS' || scope.row.status === 'FAILED'"
+                                @click="refreshRow(scope.row)">
+                            刷新状态
+                        </el-button>
+                    </template>
+                </el-table-column>
+            </el-table>
         </el-card>
     </div>
 </div>
 
 <script>
-    const { createApp, ref, computed, onMounted } = Vue;
+    const { createApp, ref, reactive, computed, onMounted } = Vue;
 
     createApp({
         setup() {
-            const tableData = ref([]);
-            const loading = ref(false);
-            const lastRefreshTime = ref('');
+            const rawData = ref([]);
             const selectedRows = ref([]);
-            const taskTableRef = ref(null);
-            const filters = ref({
+            const loading = ref(false);
+            const isBatchRefreshing = ref(false); // 🔴 批量同步加载状态
+
+            const filters = reactive({
                 spu: '',
                 status: '',
-                dateRange: []
+                timeRange: null
             });
 
-            const normalizeStatus = (status) => (status || '').toUpperCase();
-
-            const isGenerating = (status) => {
-                const s = normalizeStatus(status);
-                return s === 'GENERATING' || s === 'PROCESSING';
-            };
-
-            const isFailed = (status) => normalizeStatus(status) === 'FAILED';
-            const isSuccess = (status) => normalizeStatus(status) === 'SUCCESS';
-
-            const getStatusType = (status) => {
-                const s = normalizeStatus(status);
-                switch (s) {
-                    case 'SUCCESS':
-                        return 'success';
-                    case 'GENERATING':
-                    case 'PROCESSING':
-                        return 'warning';
-                    case 'FAILED':
-                        return 'danger';
-                    case 'CREATED':
-                        return 'info';
-                    default:
-                        return 'info';
-                }
-            };
-
-            const getResultUrl = (row) => row?.resultOssUrl || row?.resultTempUrl || '';
-
-            const extractSpu = (row) => {
-                if (row?.spu) return row.spu;
-                const url = row?.inputImageUrl || row?.resultOssUrl || '';
-                const match = url.match(/\/((SPU[^/]+))\//i);
-                return match ? match[1] : '';
-            };
-
-            const formatTime = (timeStr) => {
-                if (!timeStr) return '-';
-                const date = new Date(timeStr);
-                if (Number.isNaN(date.getTime())) return timeStr;
-                const y = date.getFullYear();
-                const m = String(date.getMonth()+1).padStart(2,'0');
-                const d = String(date.getDate()).padStart(2,'0');
-                const h = String(date.getHours()).padStart(2,'0');
-                const mi = String(date.getMinutes()).padStart(2,'0');
-                const s = String(date.getSeconds()).padStart(2,'0');
-                return `${y}-${m}-${d} ${h}:${mi}:${s}`;
-            }
-
-            const formatTime_old = (timeStr) => {
-                if (!timeStr) return '-';
-                const date = new Date(timeStr);
-                if (Number.isNaN(date.getTime())) return timeStr;
-                return date.toLocaleString('zh-CN', { hour12: false }).replace(/\//g, '-');
-            };
-
-            const filteredTableData = computed(() => {
-                return tableData.value.filter(row => {
-                    const spuValue = String(row.spu || extractSpu(row) || '').toLowerCase();
-                    const filterSpu = String(filters.value.spu || '').trim().toLowerCase();
-                    const statusValue = normalizeStatus(row.status);
-                    const filterStatus = normalizeStatus(filters.value.status);
-                    const createdAt = row.createdAt ? new Date(row.createdAt).getTime() : null;
-                    const hasSpuMatch = !filterSpu || spuValue.includes(filterSpu);
-                    const hasStatusMatch = !filterStatus || statusValue === filterStatus;
-
-                    let hasDateMatch = true;
-                    if (Array.isArray(filters.value.dateRange) && filters.value.dateRange.length === 2) {
-                        const [start, end] = filters.value.dateRange;
-                        const startTime = start ? new Date(start).getTime() : null;
-                        const endTime = end ? new Date(end).getTime() : null;
-                        if (!createdAt) {
-                            hasDateMatch = false;
-                        } else {
-                            hasDateMatch = (!startTime || createdAt >= startTime) && (!endTime || createdAt <= endTime);
-                        }
-                    }
-
-                    return hasSpuMatch && hasStatusMatch && hasDateMatch;
-                });
-            });
-
-            const totalCount = computed(() => tableData.value.length);
-            const successCount = computed(() => tableData.value.filter(item => isSuccess(item.status)).length);
-            const generatingCount = computed(() => tableData.value.filter(item => isGenerating(item.status)).length);
-            const failedCount = computed(() => tableData.value.filter(item => isFailed(item.status)).length);
-
-            const handleSelectionChange = (rows) => {
-                selectedRows.value = rows || [];
-            };
-
-            const resetFilters = () => {
-                filters.value = {
-                    spu: '',
-                    status: '',
-                    dateRange: []
-                };
-                if (taskTableRef.value) {
-                    taskTableRef.value.clearSelection();
-                }
-                selectedRows.value = [];
-            };
-
-            const downloadBlob = (blob, filename) => {
-                const blobUrl = window.URL.createObjectURL(blob);
-                const link = document.createElement('a');
-                link.href = blobUrl;
-                link.download = filename;
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-                window.URL.revokeObjectURL(blobUrl);
-            };
-
-            const batchDownloadSelected = async () => {
-                const ids = selectedRows.value
-                    .map(row => row && row.id)
-                    .filter(id => id !== null && id !== undefined);
-
-                if (ids.length === 0) {
-                    ElementPlus.ElMessage.warning('请先勾选任务');
-                    return;
-                }
-
-                try {
-                    const res = await axios.post(
-                        'http://localhost:8080/api/tasks/download-zip',
-                        { ids },
-                        { responseType: 'blob' }
-                    );
-
-                    const disposition = res.headers['content-disposition'] || '';
-                    const match = disposition.match(/filename\*=UTF-8''([^;]+)|filename=([^;]+)/i);
-                    let filename = 'tasks_images.zip';
-                    if (match) {
-                        filename = decodeURIComponent((match[1] || match[2] || '').replace(/"/g, '').trim()) || filename;
-                    }
-
-                    downloadBlob(res.data, filename);
-                    ElementPlus.ElMessage.success(`已下载 ${ids.length} 条任务结果 ZIP`);
-                } catch (e) {
-                    console.error(e);
-                    ElementPlus.ElMessage.error('ZIP 下载失败，请检查后端 /api/tasks/download-zip 接口');
-                }
-            };
-
-            const copyText = async (text) => {
-                if (!text) return;
-                try {
-                    await navigator.clipboard.writeText(text);
-                    ElementPlus.ElMessage.success('链接已复制');
-                } catch (err) {
-                    console.error(err);
-                    ElementPlus.ElMessage.error('复制失败');
-                }
-            };
-
-            const openLink = (url) => {
-                if (!url) return;
-                window.open(url, '_blank');
-            };
-
-            const goToIndex = () => {
-                window.location.href = 'index.html';
-            };
-
+            // 获取数据库数据列表
             const fetchData = async () => {
                 loading.value = true;
                 try {
                     const res = await axios.get('http://localhost:8080/api/tasks/list');
-                    if (res.data && res.data.success) {
-                        tableData.value = Array.isArray(res.data.data) ? res.data.data.sort((a,b)=> new Date(b.createdAt) - new Date(a.createdAt)) : [];
-                        lastRefreshTime.value = formatTime(new Date().toISOString());
-                    } else {
-                        ElementPlus.ElMessage.error((res.data && res.data.message) || '获取数据失败');
+                    if (res.data.success) {
+                        rawData.value = res.data.data.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
                     }
                 } catch (e) {
-                    console.error(e);
-                    ElementPlus.ElMessage.error('网络异常，请检查后端接口、OSS 链接权限或跨域配置');
+                    ElementPlus.ElMessage.error('获取列表失败，请确认后端已启动');
                 } finally {
                     loading.value = false;
                 }
             };
 
-            onMounted(() => {
-                fetchData();
+            const filteredData = computed(() => {
+                return rawData.value.filter(item => {
+                    const matchSpu = !filters.spu || (item.spu && item.spu.toLowerCase().includes(filters.spu.toLowerCase()));
+                    const matchStatus = !filters.status || item.status === filters.status;
+                    let matchTime = true;
+                    if (filters.timeRange && filters.timeRange.length === 2) {
+                        const start = new Date(filters.timeRange[0]).getTime();
+                        const end = new Date(filters.timeRange[1]).getTime();
+                        const current = new Date(item.createdAt).getTime();
+                        matchTime = current >= start && current <= end;
+                    }
+                    return matchSpu && matchStatus && matchTime;
+                });
             });
 
+            // 🔴 核心 1：【单个获取】刷新单行数据的接口
+            const refreshRow = async (row) => {
+                if (!row.id) return;
+                row.isRefreshing = true;
+                try {
+                    const res = await axios.post(`http://localhost:8080/api/tasks/${row.id}/refresh`);
+                    if (res.data.success) {
+                        const updatedTask = res.data.data;
+                        Object.assign(row, updatedTask); // 丝滑原地替换
+
+                        if (updatedTask.status === 'SUCCESS') {
+                            ElementPlus.ElMessage.success(`任务 ${row.id} 已完成！结果图已拉取。`);
+                        } else if (updatedTask.status === 'FAILED') {
+                            ElementPlus.ElMessage.error(`任务 ${row.id} 生成失败：${updatedTask.errorMessage}`);
+                        }
+                    }
+                } catch (e) {
+                    console.error('单行刷新失败', e);
+                } finally {
+                    row.isRefreshing = false;
+                }
+            };
+
+            // 🔴 核心 2：【全局获取】一键同步所有处理中的任务
+            const syncAllProcessing = async () => {
+                // 找出所有还在处理中的任务
+                const processingTasks = rawData.value.filter(
+                    row => row.status === 'PROCESSING' || row.status === 'GENERATING'
+                );
+
+                if (processingTasks.length === 0) {
+                    ElementPlus.ElMessage.info('当前大盘没有正在处理中的任务');
+                    return;
+                }
+
+                isBatchRefreshing.value = true;
+                ElementPlus.ElMessage.success(`开始拉取 ${processingTasks.length} 个任务的最新结果...`);
+
+                // 组装 Promise 数组，并发向后端索要结果
+                const promises = processingTasks.map(row => refreshRow(row));
+
+                // 使用 Promise.allSettled 确保所有请求都跑完，不被个别错误中断
+                await Promise.allSettled(promises);
+
+                isBatchRefreshing.value = false;
+                ElementPlus.ElMessage.success('🎉 所有处理中任务同步完毕！');
+            };
+
+            // 批量下载 ZIP
+            const batchDownload = async () => {
+                const ids = selectedRows.value.map(row => row.id);
+                loading.value = true;
+                try {
+                    const res = await axios.post('http://localhost:8080/api/tasks/download-zip',
+                        { ids: ids },
+                        { responseType: 'blob' }
+                    );
+                    const url = window.URL.createObjectURL(new Blob([res.data]));
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.setAttribute('download', `AI_Results_${Date.now()}.zip`);
+                    document.body.appendChild(link);
+                    link.click();
+                    link.remove();
+                } catch (e) {
+                    ElementPlus.ElMessage.error('下载失败，请检查后端批量下载接口实现');
+                } finally {
+                    loading.value = false;
+                }
+            };
+
+            const resetFilters = () => {
+                filters.spu = ''; filters.status = ''; filters.timeRange = null;
+            };
+
+            const getStatusType = (status) => {
+                switch (status) {
+                    case 'SUCCESS': return 'success';
+                    case 'PROCESSING':
+                    case 'GENERATING': return 'warning';
+                    case 'FAILED': return 'danger';
+                    default: return 'info';
+                }
+            };
+
+            const formatTime = (t) => t ? t.replace('T', ' ').split('.')[0] : '-';
+            const handleSelectionChange = (val) => { selectedRows.value = val; };
+            const goToIndex = () => { window.location.href = 'index.html'; };
+
+            onMounted(fetchData);
+
             return {
-                tableData,
-                filteredTableData,
-                selectedRows,
-                taskTableRef,
-                filters,
-                loading,
-                lastRefreshTime,
-                totalCount,
-                successCount,
-                generatingCount,
-                failedCount,
-                normalizeStatus,
-                isGenerating,
-                isFailed,
-                getStatusType,
-                getResultUrl,
-                extractSpu,
-                formatTime,
-                fetchData,
-                goToIndex,
-                copyText,
-                openLink,
-                handleSelectionChange,
-                resetFilters,
-                batchDownloadSelected
+                rawData, filteredData, filters, loading, isBatchRefreshing, selectedRows,
+                fetchData, getStatusType, formatTime, handleSelectionChange,
+                goToIndex, batchDownload, resetFilters,
+                refreshRow, syncAllProcessing // 🔴 暴露给模板
             };
         }
     }).use(ElementPlus).mount('#app');

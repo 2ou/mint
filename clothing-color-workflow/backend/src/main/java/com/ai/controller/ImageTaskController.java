@@ -52,7 +52,7 @@ public class ImageTaskController {
 
 
     @PostMapping("/{id}/refresh")
-    public ApiResponse<TaskCreateResponse> refresh(@PathVariable Long id) {
+    public ApiResponse<TaskCreateResponse> refresh(@PathVariable("id") Long id) {
         TaskCreateResponse response = imageTaskService.refreshTask(id);
         return ApiResponse.ok("ok", response);
     }
@@ -72,5 +72,10 @@ public class ImageTaskController {
     @GetMapping("/{id}/download")
     public void downloadTask(@PathVariable Long id) {
         imageTaskService.downloadTaskFile(id);
+    }
+
+    @PostMapping("/download-zip")
+    public void downloadZip(@RequestBody com.ai.dto.BatchIdRequest request, jakarta.servlet.http.HttpServletResponse response) {
+        imageTaskService.batchDownloadZip(request.getIds(), response);
     }
 }

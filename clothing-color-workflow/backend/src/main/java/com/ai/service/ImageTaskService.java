@@ -40,4 +40,6 @@ public interface ImageTaskService {
      * @return 任务创建结果 (包含落库后的任务 ID)
      */
     TaskCreateResponse createWithUrl(String spu, String prompt, String resolution, String model, String inputUrl, String colorUrl);
+
+    void batchDownloadZip(List<Long> ids, jakarta.servlet.http.HttpServletResponse response);
 }
