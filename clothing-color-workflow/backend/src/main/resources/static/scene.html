@@ -34,6 +34,7 @@
                     <el-button color="#fff" style="color: #409EFF; border: none; font-weight: bold; cursor: default;">🖼️ 场景生成 (当前)</el-button>
                 </div>
                 <div style="display: flex; gap: 10px;">
+                    <el-button @click="goToTemplateManage" color="#E6A23C" style="color: #fff;">🎬 动作场景库</el-button>
                     <el-button @click="goToColorManage" color="#67c23a" style="color: #fff;">📚 色卡库维护</el-button>
                     <el-button @click="goToList" color="#f5f7fa" style="color: #606266; font-weight: bold;">📊 任务大盘</el-button>
                 </div>
@@ -53,6 +54,19 @@
                     </el-form-item>
                 </el-col>
                 <el-col :span="6"><el-form-item label="画面比例"><el-input v-model="form.aspect_ratio" placeholder="auto"/></el-form-item></el-col>
+            </el-row>
+
+            <el-row :gutter="20">
+                <el-col :span="12">
+                    <el-form-item label="模特角色">
+                        <el-input v-model="form.modelRole" placeholder="如: 25岁混血女模" />
+                    </el-form-item>
+                </el-col>
+                <el-col :span="12">
+                    <el-form-item label="穿搭主体">
+                        <el-input v-model="form.itemType" placeholder="如: 黑色高领毛衣" />
+                    </el-form-item>
+                </el-col>
             </el-row>
         </el-form>
 
@@ -87,8 +101,13 @@
                     </div>
 
                     <div style="flex: 1; padding-right: 40px;">
-                        <div style="font-weight: bold; margin-bottom: 8px; font-size: 14px; color: #303133;">📝 专属提示词 <span style="color:#f56c6c">*</span></div>
-                        <el-input type="textarea" v-model="task.prompt" :rows="6" placeholder="请输入本张图片的场景生成提示词..."></el-input>
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                            <div style="font-weight: bold; font-size: 14px; color: #303133;">📝 专属提示词 <span style="color:#f56c6c">*</span></div>
+                            <el-button type="success" plain size="small" @click="openTemplateDrawer(index)">
+                                📚 从库套用神仙提示词
+                            </el-button>
+                        </div>
+                        <el-input type="textarea" v-model="task.prompt" :rows="5" placeholder="可手动输入，或点击上方按钮一键套用库中绝美提示词..."></el-input>
                     </div>
                 </div>
             </el-card>
@@ -99,9 +118,24 @@
         </div>
 
         <el-button type="primary" class="submit-btn" @click="submit" :loading="loading" :disabled="tasks.length === 0">
-            {{ loading ? uploadProgressMsg : `🚀 立即提交 ${tasks.length} 个独立场景任务` }}
+            {{ loading ? uploadProgressMsg : `🚀 立即并发提交 ${tasks.length} 个独立场景任务` }}
         </el-button>
     </el-card>
+
+    <el-drawer v-model="templateDrawer" title="📚 AI 动作场景模板库" size="50%">
+        <el-table :data="dbTemplates" border stripe>
+            <el-table-column prop="title" label="动作场景标题" width="160"></el-table-column>
+            <el-table-column prop="category" label="分类" width="110" align="center">
+                <template #default="scope"><el-tag size="small" type="success">{{ scope.row.category }}</el-tag></template>
+            </el-table-column>
+            <el-table-column prop="basePrompt" label="提示词预览" min-width="200" show-overflow-tooltip></el-table-column>
+            <el-table-column label="操作" width="110" align="center" fixed="right">
+                <template #default="scope">
+                    <el-button type="primary" size="small" plain @click="applyTemplate(scope.row)">套用此模板</el-button>
+                </template>
+            </el-table-column>
+        </el-table>
+    </el-drawer>
 </div>
 
 <script>
@@ -110,7 +144,11 @@
         setup() {
             const basePromptTemplate = "Generate a high-quality product photography shot of the item, placed naturally in a realistic scene. Match the lighting and shadows naturally. Keep the product details exactly the same.";
 
-            const form = reactive({ spu: '', model: 'nano-banana-pro', resolution: '4K', aspect_ratio: 'auto' });
+            // 🔴 新增全局变量 modelRole 和 itemType
+            const form = reactive({
+                spu: '', model: 'nano-banana-pro', resolution: '4K', aspect_ratio: 'auto',
+                modelRole: '25岁成年女性', itemType: ''
+            });
             const loading = ref(false);
             const uploadProgressMsg = ref('正在处理...');
 
@@ -123,7 +161,7 @@
                     id: Date.now() + '_' + Math.random(),
                     input: { file: null, url: '', ossUrl: '' },
                     ref: { file: null, url: '', ossUrl: '' },
-                    prompt: basePromptTemplate
+                    prompt: '' // 默认置空，引导用户去套用模板
                 });
             };
 
@@ -134,17 +172,61 @@
                 tasks.value.splice(index, 1);
             };
 
-            // 处理原生 Input 文件上传
             const handleUpload = (e, index, type) => {
                 const file = e.target.files[0];
                 if (!file) return;
                 const url = URL.createObjectURL(file);
                 tasks.value[index][type] = { file, url, ossUrl: null };
-                e.target.value = ''; // 允许重复选择同名文件
+                e.target.value = '';
+            };
+
+            // 🔴 模板库动态提取逻辑
+            const templateDrawer = ref(false);
+            const dbTemplates = ref([]);
+            const globalSuffix = ref('');
+            const currentTaskIndex = ref(null); // 记录当前点开抽屉的是哪个卡片
+
+            const openTemplateDrawer = async (index) => {
+                currentTaskIndex.value = index;
+                templateDrawer.value = true;
+
+                // 仅首次打开时拉取接口
+                if (dbTemplates.value.length === 0) {
+                    try {
+                        const res = await axios.get('http://localhost:8080/api/templates/list');
+                        if (res.data.success) dbTemplates.value = res.data.data.filter(t => t.isActive);
+
+                        const configRes = await axios.get('http://localhost:8080/api/templates/config?key=UNIVERSAL_QUALITY_SUFFIX');
+                        if (configRes.data.success && configRes.data.data) {
+                            globalSuffix.value = configRes.data.data.configValue;
+                        }
+                    } catch (e) { ElementPlus.ElMessage.error('获取模板库失败'); }
+                }
+            };
+
+            // 🔴 智能拼装与动态替换占位符
+            const applyTemplate = (template) => {
+                if (currentTaskIndex.value === null) return;
+
+                // 1. 获取当前用户填写的模特角色，如果没有填就用默认的“模特”
+                const role = form.modelRole && form.modelRole.trim() ? form.modelRole : '模特';
+
+                // 2. 将模板和全局后缀里的 {模特角色} 占位符全部替换掉
+                const base = template.basePrompt.replace(/\{模特角色\}/g, role);
+                const suffix = globalSuffix.value.replace(/\{模特角色\}/g, role);
+
+                // 3. 结合用户填写的“穿搭主体” (比如: 穿着黑色高领毛衣)
+                const item = form.itemType ? ` 穿着${form.itemType}。` : '';
+
+                // 4. 拼装成最终发给 AI 的完整提示词，并赋给对应的卡片
+                tasks.value[currentTaskIndex.value].prompt = base + item + suffix;
+
+                templateDrawer.value = false;
+                ElementPlus.ElMessage.success('🎉 模板套用成功！');
             };
 
             const directUploadToOss = async (itemObj, policyData) => {
-                if (itemObj.ossUrl) return itemObj.ossUrl; // 防抖，已有直传链接跳过
+                if (itemObj.ossUrl) return itemObj.ossUrl;
                 const suffix = itemObj.file.name.substring(itemObj.file.name.lastIndexOf('.'));
                 const finalKey = `${policyData.dir}${Date.now()}_${Math.random().toString(36).substr(2, 6)}${suffix}`;
                 const fd = new FormData();
@@ -154,9 +236,7 @@
                 return itemObj.ossUrl;
             };
 
-            // 提交逻辑
             const submit = async () => {
-                // 1. 基础校验
                 if (!form.spu) return ElementPlus.ElMessage.warning('SPU 款号不能为空！');
                 if (tasks.value.length === 0) return ElementPlus.ElMessage.warning('请至少添加一个任务！');
 
@@ -165,7 +245,6 @@
                     if (!tasks.value[i].prompt.trim()) return ElementPlus.ElMessage.warning(`第 ${i+1} 个任务缺少必填的【提示词】！`);
                 }
 
-                // 2. 二次确认提示框
                 try {
                     await ElementPlus.ElMessageBox.confirm(
                         `系统将为您并发提交 ${tasks.value.length} 个独立的场景生成任务，是否立即执行？`,
@@ -173,7 +252,7 @@
                         { confirmButtonText: '确认执行', cancelButtonText: '我再检查下', type: 'warning' }
                     );
                 } catch (e) {
-                    return; // 用户点击取消，直接中断
+                    return;
                 }
 
                 loading.value = true;
@@ -182,7 +261,6 @@
                     const policyRes = await axios.get('http://localhost:8080/api/oss/policy');
                     const policyData = policyRes.data.data;
 
-                    // 收集所有需要上传的图片
                     const itemsToUpload = [];
                     tasks.value.forEach(t => {
                         if (t.input.file && !t.input.ossUrl) itemsToUpload.push(t.input);
@@ -196,7 +274,6 @@
 
                     uploadProgressMsg.value = '派发 AI 任务...';
 
-                    // 3. 并发调用后台创建接口 (每个任务是一个独立请求)
                     const apiRequests = tasks.value.map(task => {
                         const payload = {
                             spu: form.spu,
@@ -207,7 +284,7 @@
                             taskType: 2,
                             pairs: [{
                                 inputUrl: task.input.ossUrl,
-                                // 🔴 修复核心：如果参考图为空，传空字符串 "" 而不是 null，防止底层 API 解析 String Array 时报错
+                                // 处理可选参考图
                                 colorUrl: task.ref.url ? task.ref.ossUrl : ""
                             }]
                         };
@@ -218,7 +295,6 @@
 
                     ElementPlus.ElMessage.success(`🚀 提交成功！已派发 ${tasks.value.length} 个独立场景任务。`);
 
-                    // 清空任务池，恢复初始状态
                     tasks.value = [];
                     addTask();
 
@@ -232,11 +308,13 @@
             const goToColor = () => { window.location.href = 'index.html'; };
             const goToList = () => { window.location.href = 'list.html'; };
             const goToColorManage = () => { window.location.href = 'colorCard.html'; };
+            const goToTemplateManage = () => { window.location.href = 'template-manage.html'; };
 
             return {
                 form, tasks, loading, uploadProgressMsg,
                 addTask, removeTask, handleUpload, submit,
-                goToColor, goToList, goToColorManage
+                goToColor, goToList, goToColorManage, goToTemplateManage,
+                templateDrawer, dbTemplates, openTemplateDrawer, applyTemplate
             };
         }
     }).use(ElementPlus).mount('#app');

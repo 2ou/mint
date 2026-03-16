@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>动作与场景模板库管理</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
+    <script src="https://unpkg.com/element-plus"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <style>
+        body { margin: 0; min-height: 100vh; padding: 20px; font-family: 'PingFang SC', sans-serif; background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); }
+        .page-wrap { max-width: 1400px; margin: 0 auto; }
+        .dashboard-card { border-radius: 12px !important; box-shadow: 0 8px 24px rgba(0,0,0,0.1) !important; border: none !important; }
+        .el-card__header { background: #E6A23C; color: white; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
+        .thumbnail { width: 60px; height: 60px; border-radius: 6px; border: 1px solid #ddd; object-fit: cover; }
+        .preview-box { width: 100px; height: 100px; border: 1px dashed #dcdfe6; border-radius: 6px; display: flex; align-items: center; justify-content: center; overflow: hidden; margin-top: 10px; background: #fafafa; }
+        .preview-box img { width: 100%; height: 100%; object-fit: cover; }
+        .hidden-input { display: none; }
+        .prompt-text { font-size: 12px; color: #666; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.4; }
+    </style>
+</head>
+<body>
+<div id="app">
+    <div class="page-wrap">
+        <el-card class="dashboard-card">
+            <template #header>
+                <span>🎬 AI 数字资产 - 动作与场景模板库</span>
+                <div style="display: flex; gap: 10px;">
+                    <el-button type="primary" color="#1e88e5" @click="goToScene">🖼️ 去场景生成页</el-button>
+                    <el-button color="#67c23a" style="color: #fff;" @click="goToColorManage">📚 去色卡库</el-button>
+                </div>
+            </template>
+
+            <el-tabs v-model="activeTab" class="demo-tabs">
+                <el-tab-pane label="📋 提示词模板管理" name="templates">
+                    <div style="margin-bottom: 20px; display: flex; gap: 15px; align-items: center; background: #fff; padding: 15px; border-radius: 8px;">
+                        <el-button type="warning" @click="openDialog()">➕ 录入新模板</el-button>
+                        <el-divider direction="vertical"></el-divider>
+                        <el-input v-model="searchKeyword" placeholder="搜索标题或提示词..." style="width: 300px" clearable></el-input>
+                        <el-select v-model="searchCategory" placeholder="全部分类" clearable style="width: 150px">
+                            <el-option label="泳装场景" value="泳装场景"></el-option>
+                            <el-option label="私服场景" value="私服场景"></el-option>
+                            <el-option label="家居服场景" value="家居服场景"></el-option>
+                            <el-option label="通用动作库" value="通用动作库"></el-option>
+                        </el-select>
+                    </div>
+
+                    <el-table :data="filteredTemplates" v-loading="loading" border stripe style="width: 100%">
+                        <el-table-column prop="id" label="ID" width="60" align="center"></el-table-column>
+                        <el-table-column label="参考图" width="90" align="center">
+                            <template #default="scope">
+                                <el-image v-if="scope.row.exampleImageUrl" class="thumbnail" :src="scope.row.exampleImageUrl" :preview-src-list="[scope.row.exampleImageUrl]" preview-teleported fit="cover"></el-image>
+                                <span v-else style="color: #999; font-size: 12px;">无图</span>
+                            </template>
+                        </el-table-column>
+                        <el-table-column prop="title" label="模板标题" width="150"></el-table-column>
+                        <el-table-column prop="category" label="分类" width="100" align="center">
+                            <template #default="scope"><el-tag size="small" type="success">{{ scope.row.category }}</el-tag></template>
+                        </el-table-column>
+                        <el-table-column label="完整提示词 (Base Prompt)" min-width="250">
+                            <template #default="scope"><div class="prompt-text" :title="scope.row.basePrompt">{{ scope.row.basePrompt }}</div></template>
+                        </el-table-column>
+                        <el-table-column label="状态" width="80" align="center">
+                            <template #default="scope">
+                                <el-switch v-model="scope.row.isActive" @change="toggleActive(scope.row)"></el-switch>
+                            </template>
+                        </el-table-column>
+                        <el-table-column label="操作" width="150" align="center" fixed="right">
+                            <template #default="scope">
+                                <el-button size="small" type="primary" plain @click="openDialog(scope.row)">编辑</el-button>
+                                <el-button size="small" type="danger" plain @click="handleDelete(scope.row.id)">删除</el-button>
+                            </template>
+                        </el-table-column>
+                    </el-table>
+                </el-tab-pane>
+
+                <el-tab-pane label="⚙️ 全局防崩后缀配置" name="config">
+                    <div style="padding: 20px; background: #fff; border-radius: 8px;">
+                        <h3 style="margin-top: 0; color: #303133;">万能防崩后缀 (Universal Quality Suffix)</h3>
+                        <p style="color: #909399; font-size: 14px; margin-bottom: 20px;">
+                            这里配置的文本，将会在 AI 提交任务时自动追加到所有模板提示词的最后面。用于控制画面质量、防止手指崩坏等。
+                        </p>
+                        <el-input
+                                type="textarea"
+                                v-model="globalSuffix"
+                                :rows="6"
+                                placeholder="例如: 20 岁成年女性模特，优雅洗练的魅力，健康的性感，自然的表情，颈线优美，指尖细腻，自然的体型比例，照片级真实，高品质，杂志写真拍摄，自然光，无过度夸张，无不自然的手指，无崩坏的关节">
+                        </el-input>
+                        <el-button type="warning" style="margin-top: 20px;" @click="saveGlobalSuffix" :loading="savingConfig">💾 保存全局后缀</el-button>
+                    </div>
+                </el-tab-pane>
+            </el-tabs>
+        </el-card>
+
+        <el-dialog :title="form.id ? '✏️ 编辑模板' : '➕ 录入新模板'" v-model="dialogVisible" width="700px" @close="resetForm" top="5vh">
+            <el-form label-width="90px" v-loading="uploading">
+                <el-row :gutter="20">
+                    <el-col :span="12">
+                        <el-form-item label="模板标题">
+                            <el-input v-model="form.title" placeholder="如: 泳池边经典站姿"></el-input>
+                        </el-form-item>
+                    </el-col>
+                    <el-col :span="12">
+                        <el-form-item label="所属分类">
+                            <el-select v-model="form.category" style="width: 100%;">
+                                <el-option label="泳装场景" value="泳装场景"></el-option>
+                                <el-option label="私服场景" value="私服场景"></el-option>
+                                <el-option label="家居服场景" value="家居服场景"></el-option>
+                                <el-option label="通用动作库" value="通用动作库"></el-option>
+                            </el-select>
+                        </el-form-item>
+                    </el-col>
+                </el-row>
+
+                <el-divider content-position="left">模块化拆解 (可选填，辅助生成提示词)</el-divider>
+
+                <el-form-item label="场景描述"><el-input v-model="form.sceneDesc" placeholder="如: 明亮的泳池边"></el-input></el-form-item>
+                <el-form-item label="动作与手部"><el-input type="textarea" :rows="2" v-model="form.poseDesc" placeholder="如: 20岁成年女性模特自然地站立。重心放在一条腿上，另一条腿微微前伸，脚尖线条优美。"></el-input></el-form-item>
+                <el-form-item label="表情与氛围"><el-input v-model="form.emotionDesc" placeholder="如: 表情明朗爽朗。夏日光线，度假感。"></el-input></el-form-item>
+
+                <div style="text-align: right; margin-bottom: 15px;">
+                    <el-button size="small" type="success" plain @click="autoGeneratePrompt">✨ 一键组合为完整提示词 ↓</el-button>
+                </div>
+
+                <el-form-item label="完整提示词" required>
+                    <el-input type="textarea" v-model="form.basePrompt" :rows="4" placeholder="核心提示词，提交给AI的最终文本（不含全局后缀）"></el-input>
+                </el-form-item>
+
+                <el-form-item label="效果参考图">
+                    <el-button type="primary" plain size="small" @click="$refs.exampleInput.click()">上传参考图/骨骼图</el-button>
+                    <input type="file" ref="exampleInput" class="hidden-input" accept="image/*" @change="e => uploadToOss(e, 'exampleImageUrl')">
+                    <div class="preview-box" v-if="form.exampleImageUrl"><img :src="form.exampleImageUrl" /></div>
+                </el-form-item>
+            </el-form>
+
+            <template #footer>
+                <span class="dialog-footer">
+                    <el-button @click="dialogVisible = false">取消</el-button>
+                    <el-button type="warning" @click="submitForm" :loading="saving">💾 保存模板</el-button>
+                </span>
+            </template>
+        </el-dialog>
+    </div>
+</div>
+
+<script>
+    const { createApp, ref, reactive, computed, onMounted } = Vue;
+
+    createApp({
+        setup() {
+            const activeTab = ref('templates');
+            const templates = ref([]);
+            const loading = ref(false);
+            const dialogVisible = ref(false);
+            const uploading = ref(false);
+            const saving = ref(false);
+            const savingConfig = ref(false);
+
+            // 搜索过滤
+            const searchKeyword = ref('');
+            const searchCategory = ref('');
+
+            const filteredTemplates = computed(() => {
+                return templates.value.filter(item => {
+                    const matchCat = !searchCategory.value || item.category === searchCategory.value;
+                    const keyword = searchKeyword.value.toLowerCase();
+                    const matchKey = !keyword ||
+                        (item.title && item.title.toLowerCase().includes(keyword)) ||
+                        (item.basePrompt && item.basePrompt.toLowerCase().includes(keyword));
+                    return matchCat && matchKey;
+                });
+            });
+
+            // 表单数据
+            const form = reactive({
+                id: null, title: '', category: '泳装场景',
+                sceneDesc: '', poseDesc: '', emotionDesc: '',
+                basePrompt: '', exampleImageUrl: '', isActive: true
+            });
+
+            // 全局配置
+            const globalSuffix = ref('');
+
+            const fetchTemplates = async () => {
+                loading.value = true;
+                try {
+                    const res = await axios.get('http://localhost:8080/api/templates/list');
+                    if (res.data.success) templates.value = res.data.data;
+                } catch (e) { ElementPlus.ElMessage.error('获取模板失败'); }
+                finally { loading.value = false; }
+            };
+
+            const fetchGlobalConfig = async () => {
+                try {
+                    const res = await axios.get('http://localhost:8080/api/templates/config?key=UNIVERSAL_QUALITY_SUFFIX');
+                    if (res.data.success && res.data.data) {
+                        globalSuffix.value = res.data.data.configValue;
+                    }
+                } catch (e) { console.error('获取全局配置失败'); }
+            };
+
+            const saveGlobalSuffix = async () => {
+                savingConfig.value = true;
+                try {
+                    const payload = { configKey: 'UNIVERSAL_QUALITY_SUFFIX', configValue: globalSuffix.value, description: '万能防崩后缀' };
+                    const res = await axios.post('http://localhost:8080/api/templates/config/save', payload);
+                    if (res.data.success) ElementPlus.ElMessage.success('全局后缀保存成功！');
+                } catch (e) { ElementPlus.ElMessage.error('保存失败'); }
+                finally { savingConfig.value = false; }
+            };
+
+            const openDialog = (row = null) => {
+                if (row) Object.assign(form, row);
+                else resetForm();
+                dialogVisible.value = true;
+            };
+
+            const resetForm = () => {
+                form.id = null; form.title = ''; form.category = '泳装场景';
+                form.sceneDesc = ''; form.poseDesc = ''; form.emotionDesc = '';
+                form.basePrompt = ''; form.exampleImageUrl = ''; form.isActive = true;
+            };
+
+            // ✨ 核心魔法：一键拼接提示词
+            const autoGeneratePrompt = () => {
+                const parts = [];
+                if (form.sceneDesc) parts.push(form.sceneDesc);
+                if (form.poseDesc) parts.push(form.poseDesc);
+                if (form.emotionDesc) parts.push(form.emotionDesc);
+
+                if (parts.length === 0) {
+                    ElementPlus.ElMessage.warning('请先填写上面的模块描述');
+                    return;
+                }
+                // 用中文逗号连接，结尾加句号，格式化得漂漂亮亮
+                form.basePrompt = parts.join('，') + '。';
+                ElementPlus.ElMessage.success('拼接成功！可在此基础上微调');
+            };
+
+            // OSS 直传
+            const uploadToOss = async (event, fieldName) => {
+                const file = event.target.files[0]; if (!file) return;
+                uploading.value = true;
+                try {
+                    const policyRes = await axios.get('http://localhost:8080/api/oss/policy');
+                    const policyData = policyRes.data.data;
+                    const suffix = file.name.substring(file.name.lastIndexOf('.'));
+                    const finalKey = `${policyData.dir}template_${Date.now()}_${Math.random().toString(36).substr(2, 6)}${suffix}`;
+                    const fd = new FormData();
+                    fd.append('key', finalKey); fd.append('policy', policyData.policy); fd.append('OSSAccessKeyId', policyData.accessid); fd.append('success_action_status', '200'); fd.append('signature', policyData.signature); fd.append('file', file);
+                    await axios.post(policyData.host, fd);
+                    form[fieldName] = `${policyData.host}/${finalKey}`;
+                    ElementPlus.ElMessage.success('图片上传成功！');
+                } catch (e) { ElementPlus.ElMessage.error('上传图片失败'); }
+                finally { uploading.value = false; event.target.value = ''; }
+            };
+
+            const submitForm = async () => {
+                if (!form.title) return ElementPlus.ElMessage.warning('标题不能为空');
+                if (!form.basePrompt) return ElementPlus.ElMessage.warning('完整提示词不能为空');
+                saving.value = true;
+                try {
+                    const res = await axios.post('http://localhost:8080/api/templates/save', form);
+                    if (res.data.success) {
+                        ElementPlus.ElMessage.success('保存成功！');
+                        dialogVisible.value = false;
+                        fetchTemplates();
+                    }
+                } catch (e) { ElementPlus.ElMessage.error('保存失败'); }
+                finally { saving.value = false; }
+            };
+
+            const toggleActive = async (row) => {
+                try {
+                    await axios.post('http://localhost:8080/api/templates/save', row);
+                    ElementPlus.ElMessage.success(`已${row.isActive ? '启用' : '停用'}该模板`);
+                } catch (e) { ElementPlus.ElMessage.error('状态切换失败'); row.isActive = !row.isActive; }
+            };
+
+            const handleDelete = async (id) => {
+                try {
+                    await ElementPlus.ElMessageBox.confirm('确认永久删除该模板?', '警告', {type: 'warning'});
+                    const res = await axios.delete(`http://localhost:8080/api/templates/${id}`);
+                    if (res.data.success) { ElementPlus.ElMessage.success('删除成功！'); fetchTemplates(); }
+                } catch (e) {}
+            };
+
+            const goToScene = () => window.location.href = 'scene.html';
+            const goToColorManage = () => window.location.href = 'colorCard.html';
+
+            onMounted(() => {
+                fetchTemplates();
+                fetchGlobalConfig();
+            });
+
+            return {
+                activeTab, templates, loading, dialogVisible, form, uploading, saving, savingConfig,
+                searchKeyword, searchCategory, filteredTemplates, globalSuffix,
+                fetchTemplates, openDialog, resetForm, uploadToOss, submitForm, handleDelete, toggleActive,
+                saveGlobalSuffix, autoGeneratePrompt, goToScene, goToColorManage
+            };
+        }
+    }).use(ElementPlus).mount('#app');
+</script>
+</body>
+</html>
