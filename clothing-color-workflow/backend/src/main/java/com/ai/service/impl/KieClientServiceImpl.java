@@ -4,6 +4,8 @@ import com.ai.config.AppProperties;
 import com.ai.service.KieClientService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.*;
 import org.springframework.stereotype.Service;
@@ -27,15 +29,24 @@ public class KieClientServiceImpl implements KieClientService {
         try {
             String url = appProperties.getKie().getBaseUrl() + "/jobs/createTask";
 
-            com.fasterxml.jackson.databind.node.ObjectNode rootNode = objectMapper.createObjectNode();
+            ObjectNode rootNode = objectMapper.createObjectNode();
             rootNode.put("model", model);
 
-            com.fasterxml.jackson.databind.node.ObjectNode inputNode = objectMapper.createObjectNode();
+            ObjectNode inputNode = objectMapper.createObjectNode();
             inputNode.put("prompt", prompt);
 
-            com.fasterxml.jackson.databind.node.ArrayNode imageArray = objectMapper.createArrayNode();
-            imageArray.add(inputUrl);
-            imageArray.add(colorUrl);
+            // 🔴 核心修复：使用 Jackson 的 ArrayNode 动态构建图片数组
+            ArrayNode imageArray = objectMapper.createArrayNode();
+
+            if (inputUrl != null && !inputUrl.trim().isEmpty()) {
+                imageArray.add(inputUrl); // 必填的原图
+            }
+
+            if (colorUrl != null && !colorUrl.trim().isEmpty()) {
+                imageArray.add(colorUrl); // 可选的参考图，只有不为空时才加进去
+            }
+
+            // 🔴 将动态构建的数组塞入 inputNode (注意这里用的是 set 方法)
             inputNode.set("image_input", imageArray);
 
             inputNode.put("aspect_ratio", "auto");

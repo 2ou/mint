@@ -52,6 +52,10 @@ public class ImageTask {
     @Column(columnDefinition = "text")
     private String errorMessage;
 
+    // 🔴 任务类型 (1: 换色, 2: 场景)
+    @Column
+    private Integer taskType;
+
     @CreationTimestamp
     private LocalDateTime createdAt;
 

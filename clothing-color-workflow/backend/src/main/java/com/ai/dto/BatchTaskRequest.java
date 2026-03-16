@@ -30,6 +30,9 @@ public class BatchTaskRequest {
      */
     private String model = "nano-banana-pro";
 
+    // 🔴 任务类型，默认为 1 (换色)
+    private Integer taskType = 1;
+
     @JsonProperty("aspect_ratio") // 匹配前端传过来的下划线命名
     private String aspectRatio = "auto";
 

@@ -3,57 +3,20 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>AI 换色任务管理大盘</title>
-
+    <title>AI 换色/场景任务管理大盘</title>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css" />
     <script src="https://unpkg.com/element-plus"></script>
     <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
-
     <style>
-        body {
-            margin: 0;
-            min-height: 100vh;
-            padding: 20px;
-            font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
-            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-        }
+        body { margin: 0; min-height: 100vh; padding: 20px; font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif; background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); }
         .page-wrap { max-width: 1600px; margin: 0 auto; }
-        .dashboard-card {
-            border-radius: 12px !important;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.1) !important;
-            border: none !important;
-        }
-        .el-card__header {
-            background: #67c23a;
-            color: white;
-            font-weight: bold;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        .filter-bar {
-            background: #fff;
-            padding: 15px;
-            border-radius: 8px;
-            margin-bottom: 15px;
-            display: flex;
-            flex-wrap: wrap;
-            gap: 15px;
-            align-items: center;
-            box-shadow: 0 2px 12px rgba(0,0,0,0.05);
-        }
+        .dashboard-card { border-radius: 12px !important; box-shadow: 0 8px 24px rgba(0,0,0,0.1) !important; border: none !important; }
+        .el-card__header { background: #67c23a; color: white; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
+        .filter-bar { background: #fff; padding: 15px; border-radius: 8px; margin-bottom: 15px; display: flex; flex-wrap: wrap; gap: 15px; align-items: center; box-shadow: 0 2px 12px rgba(0,0,0,0.05); }
         .thumbnail { width: 55px; height: 55px; border-radius: 6px; border: 1px solid #ddd; cursor: pointer; object-fit: cover; }
-        .empty-img {
-            width: 55px; height: 55px; background: #eee; color: #999;
-            font-size: 10px; display: flex; align-items: center;
-            justify-content: center; border-radius: 6px; border: 1px dashed #ccc;
-        }
-        .prompt-text {
-            font-size: 12px; color: #666; display: -webkit-box;
-            -webkit-line-clamp: 2; -webkit-box-orient: vertical;
-            overflow: hidden; line-height: 1.4;
-        }
+        .empty-img { width: 55px; height: 55px; background: #eee; color: #999; font-size: 10px; display: flex; align-items: center; justify-content: center; border-radius: 6px; border: 1px dashed #ccc; }
+        .prompt-text { font-size: 12px; color: #666; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.4; }
         .muted-id { font-family: monospace; color: #909399; font-size: 11px; }
     </style>
 </head>
@@ -62,129 +25,86 @@
     <div class="page-wrap">
         <el-card class="dashboard-card">
             <template #header>
-                <span>📊 AI 换色任务管理大盘 (已按时间降序)</span>
+                <span>📊 AI 任务管理大盘 (换色 & 场景生成)</span>
                 <div style="display: flex; gap: 10px; align-items: center;">
-                    <el-button color="#8a2be2" :disabled="selectedRows.length === 0" @click="batchDownload">
-                        📦 批量下载 ZIP ({{ selectedRows.length }})
-                    </el-button>
-                    <el-button type="warning" :loading="isBatchRefreshing" @click="syncAllProcessing">
-                        ⚡ 同步处理中任务
-                    </el-button>
-                    <el-button @click="goToIndex" plain>新任务提交</el-button>
-                    <el-button type="primary" @click="fetchData" :loading="loading">刷新列表</el-button>
+                    <el-button color="#8a2be2" :disabled="selectedRows.length === 0" @click="batchDownload">📦 批量下载 ZIP ({{ selectedRows.length }})</el-button>
+                    <el-button type="warning" :loading="isBatchRefreshing" @click="syncAllProcessing">⚡ 同步处理中任务</el-button>
+                    <el-button @click="goToColor" plain>🎨 换色提交</el-button>
+                    <el-button @click="goToScene" plain>🖼️ 场景提交</el-button>
+                    <el-button type="primary" @click="fetchData" :loading="loading">刷新大盘</el-button>
                 </div>
             </template>
 
             <div class="filter-bar">
-                <el-input v-model="filters.spu" placeholder="输入款号 (SPU) 搜索" clearable style="width: 180px"></el-input>
+                <el-input v-model="filters.spu" placeholder="输入款号 (SPU) 搜索" clearable style="width: 160px"></el-input>
 
-                <el-select v-model="filters.status" placeholder="任务状态" clearable style="width: 140px">
+                <el-select v-model="filters.taskType" placeholder="任务类型" clearable style="width: 140px">
+                    <el-option label="🎨 换色任务" :value="1"></el-option>
+                    <el-option label="🖼️ 场景生成" :value="2"></el-option>
+                </el-select>
+
+                <el-select v-model="filters.status" placeholder="状态" clearable style="width: 120px">
                     <el-option label="SUCCESS" value="SUCCESS"></el-option>
                     <el-option label="PROCESSING" value="PROCESSING"></el-option>
                     <el-option label="FAILED" value="FAILED"></el-option>
                 </el-select>
 
-                <el-date-picker
-                        v-model="filters.timeRange"
-                        type="datetimerange"
-                        range-separator="至"
-                        start-placeholder="开始日期"
-                        end-placeholder="结束日期"
-                        value-format="YYYY-MM-DD HH:mm:ss"
-                        style="width: 360px">
-                </el-date-picker>
-
-                <el-button @click="resetFilters">重置筛选</el-button>
+                <el-date-picker v-model="filters.timeRange" type="datetimerange" range-separator="至" start-placeholder="开始" end-placeholder="结束" value-format="YYYY-MM-DD HH:mm:ss" style="width: 320px"></el-date-picker>
+                <el-button @click="resetFilters">重置</el-button>
             </div>
 
-            <el-table
-                    :data="filteredData"
-                    v-loading="loading"
-                    @selection-change="handleSelectionChange"
-                    border
-                    stripe
-                    style="width: 100%"
-                    height="72vh"
-            >
+            <el-table :data="filteredData" v-loading="loading" @selection-change="handleSelectionChange" border stripe style="width: 100%" height="72vh">
                 <el-table-column type="selection" width="50" align="center"></el-table-column>
                 <el-table-column prop="id" label="ID" width="70" align="center" sortable></el-table-column>
+                <el-table-column prop="spu" label="SPU" width="100" align="center"></el-table-column>
 
-                <el-table-column label="Task ID" width="220" show-overflow-tooltip>
+                <el-table-column label="任务类型" width="110" align="center">
                     <template #default="scope">
-                        <span class="muted-id">{{ scope.row.taskId || '-' }}</span>
+                        <el-tag :type="scope.row.taskType === 2 ? 'success' : 'primary'" effect="plain">
+                            {{ scope.row.taskType === 2 ? '🖼️ 场景' : '🎨 换色' }}
+                        </el-tag>
                     </template>
                 </el-table-column>
 
-                <el-table-column prop="spu" label="SPU 款号" width="100" align="center"></el-table-column>
-
-                <el-table-column label="任务状态" width="110" align="center">
-                    <template #default="scope">
-                        <el-tag :type="getStatusType(scope.row.status)" effect="dark">{{ scope.row.status }}</el-tag>
-                    </template>
+                <el-table-column label="任务状态" width="100" align="center">
+                    <template #default="scope"><el-tag :type="getStatusType(scope.row.status)" effect="dark">{{ scope.row.status }}</el-tag></template>
                 </el-table-column>
 
-                <el-table-column label="原图" width="85" align="center">
+                <el-table-column label="主图/原图" width="85" align="center">
                     <template #default="scope">
                         <el-image v-if="scope.row.inputImageUrl" class="thumbnail" :src="scope.row.inputImageUrl" :preview-src-list="[scope.row.inputImageUrl]" preview-teleported fit="cover"></el-image>
                         <div v-else class="empty-img">无图</div>
                     </template>
                 </el-table-column>
 
-                <el-table-column label="颜色图" width="85" align="center">
+                <el-table-column label="参考图" width="85" align="center">
                     <template #default="scope">
-                        <el-image v-if="scope.row.colorImageUrl" class="thumbnail" :src="scope.row.colorImageUrl" :preview-src-list="[scope.row.colorImageUrl]" preview-teleported fit="cover"></el-image>
-                        <div v-else class="empty-img">无图</div>
+                        <el-tooltip :content="scope.row.taskType === 2 ? '场景参考图' : '颜色参考图'" placement="top">
+                            <el-image v-if="scope.row.colorImageUrl" class="thumbnail" :src="scope.row.colorImageUrl" :preview-src-list="[scope.row.colorImageUrl]" preview-teleported fit="cover"></el-image>
+                            <div v-else class="empty-img">无图</div>
+                        </el-tooltip>
                     </template>
                 </el-table-column>
 
-                <el-table-column label="结果图" width="85" align="center">
+                <el-table-column label="生成结果" width="85" align="center">
                     <template #default="scope">
-                        <el-image
-                                v-if="scope.row.resultOssUrl"
-                                class="thumbnail"
-                                style="border: 2px solid #67c23a"
-                                :src="scope.row.resultOssUrl + '?x-oss-process=image/resize,w_200'"
-                                :preview-src-list="[scope.row.resultOssUrl]"
-                                preview-teleported
-                                fit="cover">
-                        </el-image>
-                        <el-image
-                                v-else-if="scope.row.resultTempUrl"
-                                class="thumbnail"
-                                :src="scope.row.resultTempUrl"
-                                :preview-src-list="[scope.row.resultTempUrl]"
-                                preview-teleported
-                                fit="cover">
-                        </el-image>
+                        <el-image v-if="scope.row.resultOssUrl" class="thumbnail" style="border: 2px solid #67c23a" :src="scope.row.resultOssUrl + '?x-oss-process=image/resize,w_200'" :preview-src-list="[scope.row.resultOssUrl]" preview-teleported fit="cover"></el-image>
+                        <el-image v-else-if="scope.row.resultTempUrl" class="thumbnail" :src="scope.row.resultTempUrl" :preview-src-list="[scope.row.resultTempUrl]" preview-teleported fit="cover"></el-image>
                         <div v-else class="empty-img">{{ scope.row.status === 'PROCESSING' || scope.row.status === 'GENERATING' ? '生成中' : '暂无' }}</div>
                     </template>
                 </el-table-column>
 
-                <el-table-column prop="resolution" label="分辨率" width="80" align="center"></el-table-column>
-
-                <el-table-column label="提示词 (Prompt)" min-width="200">
-                    <template #default="scope">
-                        <div class="prompt-text" :title="scope.row.prompt">{{ scope.row.prompt || '-' }}</div>
-                    </template>
+                <el-table-column label="提示词" min-width="180">
+                    <template #default="scope"><div class="prompt-text" :title="scope.row.prompt">{{ scope.row.prompt || '-' }}</div></template>
                 </el-table-column>
 
                 <el-table-column label="创建时间" width="160" align="center">
-                    <template #default="scope">
-                        {{ formatTime(scope.row.createdAt) }}
-                    </template>
+                    <template #default="scope">{{ formatTime(scope.row.createdAt) }}</template>
                 </el-table-column>
 
-                <el-table-column label="操作" width="100" align="center" fixed="right">
+                <el-table-column label="操作" width="90" align="center" fixed="right">
                     <template #default="scope">
-                        <el-button
-                                size="small"
-                                type="primary"
-                                plain
-                                :loading="scope.row.isRefreshing"
-                                :disabled="scope.row.status === 'SUCCESS' || scope.row.status === 'FAILED'"
-                                @click="refreshRow(scope.row)">
-                            刷新状态
-                        </el-button>
+                        <el-button size="small" type="primary" plain :loading="scope.row.isRefreshing" :disabled="scope.row.status === 'SUCCESS' || scope.row.status === 'FAILED'" @click="refreshRow(scope.row)">刷新</el-button>
                     </template>
                 </el-table-column>
             </el-table>
@@ -194,146 +114,75 @@
 
 <script>
     const { createApp, ref, reactive, computed, onMounted } = Vue;
-
     createApp({
         setup() {
-            const rawData = ref([]);
-            const selectedRows = ref([]);
-            const loading = ref(false);
-            const isBatchRefreshing = ref(false); // 🔴 批量同步加载状态
+            const rawData = ref([]), selectedRows = ref([]), loading = ref(false), isBatchRefreshing = ref(false);
+            const filters = reactive({ spu: '', status: '', taskType: null, timeRange: null });
 
-            const filters = reactive({
-                spu: '',
-                status: '',
-                timeRange: null
-            });
-
-            // 获取数据库数据列表
             const fetchData = async () => {
                 loading.value = true;
                 try {
                     const res = await axios.get('http://localhost:8080/api/tasks/list');
-                    if (res.data.success) {
-                        rawData.value = res.data.data.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-                    }
-                } catch (e) {
-                    ElementPlus.ElMessage.error('获取列表失败，请确认后端已启动');
-                } finally {
-                    loading.value = false;
-                }
+                    if (res.data.success) rawData.value = res.data.data.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+                } catch (e) { ElementPlus.ElMessage.error('获取列表失败'); } finally { loading.value = false; }
             };
 
             const filteredData = computed(() => {
                 return rawData.value.filter(item => {
                     const matchSpu = !filters.spu || (item.spu && item.spu.toLowerCase().includes(filters.spu.toLowerCase()));
                     const matchStatus = !filters.status || item.status === filters.status;
+                    const matchType = !filters.taskType || item.taskType === filters.taskType;
                     let matchTime = true;
                     if (filters.timeRange && filters.timeRange.length === 2) {
-                        const start = new Date(filters.timeRange[0]).getTime();
-                        const end = new Date(filters.timeRange[1]).getTime();
-                        const current = new Date(item.createdAt).getTime();
+                        const start = new Date(filters.timeRange[0]).getTime(), end = new Date(filters.timeRange[1]).getTime(), current = new Date(item.createdAt).getTime();
                         matchTime = current >= start && current <= end;
                     }
-                    return matchSpu && matchStatus && matchTime;
+                    return matchSpu && matchStatus && matchType && matchTime;
                 });
             });
 
-            // 🔴 核心 1：【单个获取】刷新单行数据的接口
             const refreshRow = async (row) => {
                 if (!row.id) return;
                 row.isRefreshing = true;
                 try {
                     const res = await axios.post(`http://localhost:8080/api/tasks/${row.id}/refresh`);
-                    if (res.data.success) {
-                        const updatedTask = res.data.data;
-                        Object.assign(row, updatedTask); // 丝滑原地替换
-
-                        if (updatedTask.status === 'SUCCESS') {
-                            ElementPlus.ElMessage.success(`任务 ${row.id} 已完成！结果图已拉取。`);
-                        } else if (updatedTask.status === 'FAILED') {
-                            ElementPlus.ElMessage.error(`任务 ${row.id} 生成失败：${updatedTask.errorMessage}`);
-                        }
-                    }
-                } catch (e) {
-                    console.error('单行刷新失败', e);
-                } finally {
-                    row.isRefreshing = false;
-                }
+                    if (res.data.success) Object.assign(row, res.data.data);
+                } catch (e) { console.error('单行刷新失败', e); } finally { row.isRefreshing = false; }
             };
 
-            // 🔴 核心 2：【全局获取】一键同步所有处理中的任务
             const syncAllProcessing = async () => {
-                // 找出所有还在处理中的任务
-                const processingTasks = rawData.value.filter(
-                    row => row.status === 'PROCESSING' || row.status === 'GENERATING'
-                );
-
-                if (processingTasks.length === 0) {
-                    ElementPlus.ElMessage.info('当前大盘没有正在处理中的任务');
-                    return;
-                }
-
+                const processingTasks = rawData.value.filter(row => row.status === 'PROCESSING' || row.status === 'GENERATING');
+                if (processingTasks.length === 0) return ElementPlus.ElMessage.info('没有处理中的任务');
                 isBatchRefreshing.value = true;
-                ElementPlus.ElMessage.success(`开始拉取 ${processingTasks.length} 个任务的最新结果...`);
-
-                // 组装 Promise 数组，并发向后端索要结果
-                const promises = processingTasks.map(row => refreshRow(row));
-
-                // 使用 Promise.allSettled 确保所有请求都跑完，不被个别错误中断
-                await Promise.allSettled(promises);
-
-                isBatchRefreshing.value = false;
-                ElementPlus.ElMessage.success('🎉 所有处理中任务同步完毕！');
+                await Promise.allSettled(processingTasks.map(row => refreshRow(row)));
+                isBatchRefreshing.value = false; ElementPlus.ElMessage.success('同步完毕！');
             };
 
-            // 批量下载 ZIP
             const batchDownload = async () => {
-                const ids = selectedRows.value.map(row => row.id);
-                loading.value = true;
+                const ids = selectedRows.value.map(row => row.id); loading.value = true;
                 try {
-                    const res = await axios.post('http://localhost:8080/api/tasks/download-zip',
-                        { ids: ids },
-                        { responseType: 'blob' }
-                    );
-                    const url = window.URL.createObjectURL(new Blob([res.data]));
-                    const link = document.createElement('a');
-                    link.href = url;
-                    link.setAttribute('download', `AI_Results_${Date.now()}.zip`);
-                    document.body.appendChild(link);
-                    link.click();
-                    link.remove();
-                } catch (e) {
-                    ElementPlus.ElMessage.error('下载失败，请检查后端批量下载接口实现');
-                } finally {
-                    loading.value = false;
-                }
+                    const res = await axios.post('http://localhost:8080/api/tasks/download-zip', { ids: ids }, { responseType: 'blob' });
+                    const url = window.URL.createObjectURL(new Blob([res.data])), link = document.createElement('a');
+                    link.href = url; link.setAttribute('download', `AI_Results_${Date.now()}.zip`);
+                    document.body.appendChild(link); link.click(); link.remove();
+                } catch (e) { ElementPlus.ElMessage.error('下载失败'); } finally { loading.value = false; }
             };
 
-            const resetFilters = () => {
-                filters.spu = ''; filters.status = ''; filters.timeRange = null;
-            };
-
-            const getStatusType = (status) => {
-                switch (status) {
-                    case 'SUCCESS': return 'success';
-                    case 'PROCESSING':
-                    case 'GENERATING': return 'warning';
-                    case 'FAILED': return 'danger';
-                    default: return 'info';
-                }
-            };
-
+            const resetFilters = () => { filters.spu = ''; filters.status = ''; filters.taskType = null; filters.timeRange = null; };
+            const getStatusType = (status) => { switch (status) { case 'SUCCESS': return 'success'; case 'PROCESSING': case 'GENERATING': return 'warning'; case 'FAILED': return 'danger'; default: return 'info'; } };
             const formatTime = (t) => t ? t.replace('T', ' ').split('.')[0] : '-';
             const handleSelectionChange = (val) => { selectedRows.value = val; };
-            const goToIndex = () => { window.location.href = 'index.html'; };
+
+            const goToColor = () => { window.location.href = 'index.html'; };
+            const goToScene = () => { window.location.href = 'scene.html'; };
 
             onMounted(fetchData);
 
+            // 🔴 致命错误修复点：必须返回大盘专属的这些变量，绝对不能照抄提交页面的！
             return {
                 rawData, filteredData, filters, loading, isBatchRefreshing, selectedRows,
                 fetchData, getStatusType, formatTime, handleSelectionChange,
-                goToIndex, batchDownload, resetFilters,
-                refreshRow, syncAllProcessing // 🔴 暴露给模板
+                goToColor, goToScene, batchDownload, resetFilters, refreshRow, syncAllProcessing
             };
         }
     }).use(ElementPlus).mount('#app');

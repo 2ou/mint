@@ -1,8 +1,10 @@
 package com.ai.service;
 
 import com.ai.dto.TaskCreateResponse;
+import org.springframework.data.domain.Page;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 public interface ImageTaskService {
@@ -39,7 +41,9 @@ public interface ImageTaskService {
      * @param colorUrl   已上传到 OSS 的颜色图完整 URL
      * @return 任务创建结果 (包含落库后的任务 ID)
      */
-    TaskCreateResponse createWithUrl(String spu, String prompt, String resolution, String model, String inputUrl, String colorUrl);
+    TaskCreateResponse createWithUrl(String spu, String prompt, String resolution, String model, String inputUrl, String colorUrl, Integer taskType);
 
     void batchDownloadZip(List<Long> ids, jakarta.servlet.http.HttpServletResponse response);
+
+    Page<TaskCreateResponse> getTaskPage(int page, int size, String spu, String status, LocalDateTime startTime, LocalDateTime endTime);
 }

@@ -5,34 +5,30 @@ import com.ai.dto.TaskCreateResponse;
 import com.ai.service.ImageTaskService;
 import com.ai.dto.ApiResponse;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.MediaType;
+import org.springframework.data.domain.Page;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.multipart.MultipartFile;
 
-import jakarta.validation.constraints.NotBlank;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
 @RestController
 @RequestMapping("/api/tasks")
 @RequiredArgsConstructor
-@CrossOrigin // 加这行，允许所有跨域请求
+@CrossOrigin // 允许所有跨域请求
 public class ImageTaskController {
 
     private final ImageTaskService imageTaskService;
 
     /**
-     * 批量创建换色任务 (纯 JSON 交互，不接收物理文件)
-     * * @param request 包含 SPU、模型参数以及多组【原图URL+颜色图URL】的纯文本请求体
-     * @return 返回生成的任务列表详细信息
+     * 批量创建任务 (换色 / 场景生成)
      */
     @PostMapping(value = "/create")
     public ApiResponse<List<TaskCreateResponse>> create(@RequestBody BatchTaskRequest request) {
         List<TaskCreateResponse> responses = new ArrayList<>();
 
-        // 防空判断：确保前端传来了配对数据
         if (request.getPairs() != null) {
-            // 遍历前端传来的 URL 组合，拆解为一个个独立任务去底层排队
             for (BatchTaskRequest.TaskPair pair : request.getPairs()) {
                 TaskCreateResponse response = imageTaskService.createWithUrl(
                         request.getSpu(),
@@ -40,40 +36,64 @@ public class ImageTaskController {
                         request.getResolution(),
                         request.getModel(),
                         pair.getInputUrl(),
-                        pair.getColorUrl()
+                        pair.getColorUrl(),
+                        request.getTaskType()
                 );
                 responses.add(response);
             }
         }
-
-        // 返回全部任务的创建结果，供前端展示进度
         return ApiResponse.ok("ok", responses);
     }
 
-
+    /**
+     * 刷新单条任务状态
+     * 🔴 修复点：明确指定 PathVariable 的值为 "id"
+     */
     @PostMapping("/{id}/refresh")
     public ApiResponse<TaskCreateResponse> refresh(@PathVariable("id") Long id) {
         TaskCreateResponse response = imageTaskService.refreshTask(id);
         return ApiResponse.ok("ok", response);
     }
 
+    /**
+     * 大盘列表 (配合前端的极速秒查，直接一次性返回全部数据)
+     * 🔴 修复点：移除各种 int 传参，彻底告别 parameter missing 报错
+     */
     @GetMapping("/list")
-    public ApiResponse<List<TaskCreateResponse>> listAll() {
+    public ApiResponse<List<TaskCreateResponse>> listTasks() {
         List<TaskCreateResponse> tasks = imageTaskService.listAllTasks();
         return ApiResponse.ok("ok", tasks);
     }
 
+    /**
+     * 备用分页接口 (供你以后使用 Postman 测试查阅，代码已修复报错问题)
+     * 🔴 修复点：明确给每个 RequestParam 加上 value = "xxx"
+     */
+    @GetMapping("/page")
+    public ApiResponse<Page<TaskCreateResponse>> pageTasks(
+            @RequestParam(value = "page", defaultValue = "1") int page,
+            @RequestParam(value = "size", defaultValue = "20") int size,
+            @RequestParam(value = "spu", required = false) String spu,
+            @RequestParam(value = "status", required = false) String status,
+            @RequestParam(value = "startTime", required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime startTime,
+            @RequestParam(value = "endTime", required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime endTime) {
+
+        Page<TaskCreateResponse> taskPage = imageTaskService.getTaskPage(page, size, spu, status, startTime, endTime);
+        return ApiResponse.ok("ok", taskPage);
+    }
+
+    /**
+     * 获取单条任务详情
+     */
     @GetMapping("/{id}")
-    public ApiResponse<TaskCreateResponse> getTask(@PathVariable Long id) {
+    public ApiResponse<TaskCreateResponse> getTask(@PathVariable("id") Long id) {
         TaskCreateResponse response = imageTaskService.getTaskById(id);
         return ApiResponse.ok("ok", response);
     }
 
-    @GetMapping("/{id}/download")
-    public void downloadTask(@PathVariable Long id) {
-        imageTaskService.downloadTaskFile(id);
-    }
-
+    /**
+     * 打包下载多个任务结果图
+     */
     @PostMapping("/download-zip")
     public void downloadZip(@RequestBody com.ai.dto.BatchIdRequest request, jakarta.servlet.http.HttpServletResponse response) {
         imageTaskService.batchDownloadZip(request.getIds(), response);

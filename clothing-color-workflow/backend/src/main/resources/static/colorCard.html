@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>系统色卡库管理</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
+    <script src="https://unpkg.com/element-plus"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <style>
+        body { margin: 0; min-height: 100vh; padding: 20px; font-family: 'PingFang SC', sans-serif; background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); }
+        .page-wrap { max-width: 1400px; margin: 0 auto; }
+        .dashboard-card { border-radius: 12px !important; box-shadow: 0 8px 24px rgba(0,0,0,0.1) !important; border: none !important; }
+        .el-card__header { background: #67c23a; color: white; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
+        .thumbnail { width: 60px; height: 60px; border-radius: 6px; border: 1px solid #ddd; object-fit: cover; }
+        .preview-box { width: 100px; height: 100px; border: 1px dashed #dcdfe6; border-radius: 6px; display: flex; align-items: center; justify-content: center; overflow: hidden; margin-top: 10px; background: #fafafa; }
+        .preview-box img { width: 100%; height: 100%; object-fit: cover; }
+        .hidden-input { display: none; }
+    </style>
+</head>
+<body>
+<div id="app">
+    <div class="page-wrap">
+        <el-card class="dashboard-card">
+            <template #header>
+                <span>📚 品牌数字资产 - 系统色卡库管理</span>
+                <div style="display: flex; gap: 10px;">
+                    <el-button type="primary" color="#1e88e5" @click="goToWorkflow">🎨 去换色工作流</el-button>
+                    <el-button color="#f5f7fa" style="color: #606266; font-weight: bold;" @click="goToList">📊 任务大盘</el-button>
+                </div>
+            </template>
+
+            <div style="margin-bottom: 20px; display: flex; gap: 15px; align-items: center; background: #fff; padding: 15px; border-radius: 8px;">
+                <el-button type="success" @click="openDialog()">➕ 新增色卡</el-button>
+                <el-divider direction="vertical"></el-divider>
+                <el-input v-model="filters.patternName" placeholder="搜索花型 (支持,隔开多选)" style="width: 300px" clearable></el-input>
+                <el-input v-model="filters.fabricType" placeholder="搜索面料" style="width: 200px" clearable></el-input>
+                <el-select v-model="filters.printType" placeholder="印花类型" clearable style="width: 120px">
+                    <el-option label="纯色" :value="1"></el-option>
+                    <el-option label="印花" :value="2"></el-option>
+                </el-select>
+            </div>
+
+            <el-table :data="filteredTableData" v-loading="loading" border stripe style="width: 100%">
+                <el-table-column prop="id" label="ID" width="70" align="center"></el-table-column>
+                <el-table-column label="色卡图" width="100" align="center">
+                    <template #default="scope">
+                        <el-image v-if="scope.row.colorCardUrl" class="thumbnail" :src="scope.row.colorCardUrl" :preview-src-list="[scope.row.colorCardUrl]" preview-teleported fit="cover"></el-image>
+                        <span v-else style="color: #999; font-size: 12px;">无图</span>
+                    </template>
+                </el-table-column>
+                <el-table-column label="案例图" width="100" align="center">
+                    <template #default="scope">
+                        <el-image v-if="scope.row.exampleUrl" class="thumbnail" :src="scope.row.exampleUrl" :preview-src-list="[scope.row.exampleUrl]" preview-teleported fit="cover"></el-image>
+                        <span v-else style="color: #999; font-size: 12px;">无图</span>
+                    </template>
+                </el-table-column>
+                <el-table-column prop="fabricType" label="面料类型" min-width="150"></el-table-column>
+                <el-table-column prop="patternName" label="花型名称" min-width="120"></el-table-column>
+                <el-table-column prop="patternCode" label="花型编号" width="100" align="center"></el-table-column>
+                <el-table-column label="印花类型" width="100" align="center">
+                    <template #default="scope">
+                        <el-tag :type="scope.row.printType === 1 ? 'info' : 'warning'">{{ scope.row.printType === 1 ? '纯色' : '印花' }}</el-tag>
+                    </template>
+                </el-table-column>
+                <el-table-column label="操作" width="160" align="center" fixed="right">
+                    <template #default="scope">
+                        <el-button size="small" type="primary" plain @click="openDialog(scope.row)">编辑</el-button>
+                        <el-button size="small" type="danger" plain @click="handleDelete(scope.row.id)">删除</el-button>
+                    </template>
+                </el-table-column>
+            </el-table>
+        </el-card>
+
+        <el-dialog :title="form.id ? '✏️ 编辑色卡' : '➕ 新增色卡'" v-model="dialogVisible" width="600px" @close="resetForm">
+            <el-form label-width="100px" v-loading="uploading">
+                <el-row :gutter="20">
+                    <el-col :span="12"><el-form-item label="面料类型"><el-input v-model="form.fabricType" placeholder="如: 666气流冰丝皱"></el-input></el-form-item></el-col>
+                    <el-col :span="12">
+                        <el-form-item label="印花类型">
+                            <el-select v-model="form.printType" style="width: 100%;">
+                                <el-option label="纯色 (1)" :value="1"></el-option>
+                                <el-option label="印花 (2)" :value="2"></el-option>
+                            </el-select>
+                        </el-form-item>
+                    </el-col>
+                </el-row>
+                <el-row :gutter="20">
+                    <el-col :span="12"><el-form-item label="花型名称"><el-input v-model="form.patternName" placeholder="如: 黑底灰蝴蝶"></el-input></el-form-item></el-col>
+                    <el-col :span="12"><el-form-item label="花型编号"><el-input v-model="form.patternCode" placeholder="如: 21#"></el-input></el-form-item></el-col>
+                </el-row>
+                <el-form-item label="色卡原图">
+                    <el-button type="primary" plain size="small" @click="$refs.colorInput.click()">上传色卡图</el-button>
+                    <input type="file" ref="colorInput" class="hidden-input" accept="image/*" @change="e => uploadToOss(e, 'colorCardUrl')">
+                    <div class="preview-box" v-if="form.colorCardUrl"><img :src="form.colorCardUrl" /></div>
+                </el-form-item>
+                <el-form-item label="参考案例图">
+                    <el-button type="info" plain size="small" @click="$refs.exampleInput.click()">上传案例图 (选填)</el-button>
+                    <input type="file" ref="exampleInput" class="hidden-input" accept="image/*" @change="e => uploadToOss(e, 'exampleUrl')">
+                    <div class="preview-box" v-if="form.exampleUrl"><img :src="form.exampleUrl" /></div>
+                </el-form-item>
+            </el-form>
+            <template #footer>
+                <span class="dialog-footer"><el-button @click="dialogVisible = false">取消</el-button><el-button type="success" @click="submitForm" :loading="saving">保存色卡</el-button></span>
+            </template>
+        </el-dialog>
+    </div>
+</div>
+
+<script>
+    const { createApp, ref, reactive, computed, onMounted } = Vue;
+    createApp({
+        setup() {
+            const tableData = ref([]), loading = ref(false), dialogVisible = ref(false), uploading = ref(false), saving = ref(false);
+            const filters = reactive({ patternName: '', fabricType: '', printType: null });
+
+            const filteredTableData = computed(() => {
+                return tableData.value.filter(item => {
+                    const matchFabric = !filters.fabricType || (item.fabricType && item.fabricType.includes(filters.fabricType));
+                    const matchType = !filters.printType || item.printType === filters.printType;
+                    if (!filters.patternName) return matchFabric && matchType;
+                    const keywords = filters.patternName.toLowerCase().replace(/，/g, ',').split(',').map(s => s.trim()).filter(s => s);
+                    const matchPattern = keywords.some(key => item.patternName && item.patternName.toLowerCase().includes(key));
+                    return matchFabric && matchType && matchPattern;
+                });
+            });
+
+            const form = reactive({ id: null, fabricType: '', printType: 1, patternName: '', patternCode: '', colorCardUrl: '', exampleUrl: '' });
+
+            const fetchData = async () => {
+                loading.value = true;
+                try {
+                    const res = await axios.get('http://localhost:8080/api/color-cards/list');
+                    if (res.data.success) tableData.value = res.data.data;
+                } catch (e) { ElementPlus.ElMessage.error('获取失败'); } finally { loading.value = false; }
+            };
+
+            const openDialog = (row = null) => {
+                if (row) Object.assign(form, row);
+                else resetForm();
+                dialogVisible.value = true;
+            };
+
+            const resetForm = () => { form.id = null; form.fabricType = ''; form.printType = 1; form.patternName = ''; form.patternCode = ''; form.colorCardUrl = ''; form.exampleUrl = ''; };
+
+            const uploadToOss = async (event, fieldName) => {
+                const file = event.target.files[0]; if (!file) return;
+                uploading.value = true;
+                try {
+                    const policyRes = await axios.get('http://localhost:8080/api/oss/policy');
+                    const policyData = policyRes.data.data;
+                    const suffix = file.name.substring(file.name.lastIndexOf('.'));
+                    const finalKey = `${policyData.dir}color_card_${Date.now()}_${Math.random().toString(36).substr(2, 6)}${suffix}`;
+                    const fd = new FormData();
+                    fd.append('key', finalKey); fd.append('policy', policyData.policy); fd.append('OSSAccessKeyId', policyData.accessid); fd.append('success_action_status', '200'); fd.append('signature', policyData.signature); fd.append('file', file);
+                    await axios.post(policyData.host, fd);
+                    form[fieldName] = `${policyData.host}/${finalKey}`;
+                    ElementPlus.ElMessage.success('上传成功！');
+                } catch (e) { ElementPlus.ElMessage.error('上传失败'); } finally { uploading.value = false; event.target.value = ''; }
+            };
+
+            const submitForm = async () => {
+                if (!form.fabricType || !form.colorCardUrl) return ElementPlus.ElMessage.warning('信息不完整！');
+                saving.value = true;
+                try {
+                    const res = await axios.post('http://localhost:8080/api/color-cards/save', form);
+                    if (res.data.success) { ElementPlus.ElMessage.success('保存成功！'); dialogVisible.value = false; fetchData(); }
+                } catch (e) { ElementPlus.ElMessage.error('保存失败'); } finally { saving.value = false; }
+            };
+
+            const handleDelete = async (id) => {
+                try {
+                    await ElementPlus.ElMessageBox.confirm('确认要永久删除这个色卡吗?', '警告', { type: 'warning' });
+                    const res = await axios.delete(`http://localhost:8080/api/color-cards/${id}`);
+                    if (res.data.success) { ElementPlus.ElMessage.success('删除成功！'); fetchData(); }
+                } catch (e) { if (e !== 'cancel') ElementPlus.ElMessage.error('删除失败'); }
+            };
+
+            const goToWorkflow = () => window.location.href = 'index.html';
+            const goToList = () => window.location.href = 'list.html';
+
+            onMounted(fetchData);
+
+            // 🔴 最终核心修复点：把计算属性和筛选状态 return 出来给 template 使用
+            return {
+                tableData, loading, dialogVisible, form, uploading, saving,
+                fetchData, openDialog, resetForm, uploadToOss, submitForm, handleDelete,
+                goToWorkflow, goToList, filters, filteredTableData
+            };
+        }
+    }).use(ElementPlus).mount('#app');
+</script>
+</body>
+</html>

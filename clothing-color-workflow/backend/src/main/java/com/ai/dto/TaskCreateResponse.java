@@ -20,6 +20,7 @@ public class TaskCreateResponse {
     private String prompt;
     private String model;
     private String resolution;
+    private Integer taskType;
 
     private String inputImageUrl;
     private String colorImageUrl;
@@ -44,5 +45,6 @@ public class TaskCreateResponse {
         this.spu = task.getSpu();
         this.model = task.getModel();
         this.resolution = task.getResolution();
+        this.taskType = task.getTaskType();
     }
 }
