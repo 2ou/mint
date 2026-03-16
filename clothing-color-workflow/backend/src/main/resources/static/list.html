@@ -139,8 +139,24 @@
 
                 <el-table-column label="结果图" width="85" align="center">
                     <template #default="scope">
-                        <el-image v-if="scope.row.resultOssUrl || scope.row.resultTempUrl" class="thumbnail" style="border: 2px solid #67c23a" :src="scope.row.resultOssUrl || scope.row.resultTempUrl" :preview-src-list="[scope.row.resultOssUrl || scope.row.resultTempUrl]" preview-teleported fit="cover"></el-image>
-                        <div v-else class="empty-img">{{ scope.row.status === 'PROCESSING' ? '生成中' : '暂无' }}</div>
+                        <el-image
+                                v-if="scope.row.resultOssUrl"
+                                class="thumbnail"
+                                style="border: 2px solid #67c23a"
+                                :src="scope.row.resultOssUrl + '?x-oss-process=image/resize,w_200'"
+                                :preview-src-list="[scope.row.resultOssUrl]"
+                                preview-teleported
+                                fit="cover">
+                        </el-image>
+                        <el-image
+                                v-else-if="scope.row.resultTempUrl"
+                                class="thumbnail"
+                                :src="scope.row.resultTempUrl"
+                                :preview-src-list="[scope.row.resultTempUrl]"
+                                preview-teleported
+                                fit="cover">
+                        </el-image>
+                        <div v-else class="empty-img">{{ scope.row.status === 'PROCESSING' || scope.row.status === 'GENERATING' ? '生成中' : '暂无' }}</div>
                     </template>
                 </el-table-column>
 

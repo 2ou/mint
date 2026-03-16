@@ -13,6 +13,8 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -154,15 +156,36 @@ public class ImageTaskServiceImpl implements ImageTaskService {
     // ... 在 ImageTaskServiceImpl 中实现方法
     @Override
     public void batchDownloadZip(List<Long> ids, jakarta.servlet.http.HttpServletResponse response) {
-        // 设置响应头，告知浏览器这是一个 ZIP 文件下载
         response.setContentType("application/zip");
-        response.setHeader("Content-Disposition", "attachment; filename=tasks_results.zip");
+        response.setHeader("Content-Disposition", "attachment; filename=AI_tasks_results.zip");
 
         try (ZipOutputStream zos = new ZipOutputStream(response.getOutputStream())) {
             for (Long id : ids) {
                 imageTaskRepository.findById(id).ifPresent(task -> {
-                    // 🔴 根据您的要求，获取 resultTempUrl 字段
-                    String imageUrl = task.getResultTempUrl();
+
+                    // 🔴 步骤 1：最高优先级，直接从服务器的“本地物理硬盘”读取，速度是网络的 100 倍！
+                    String localPath = task.getLocalPath();
+                    if (localPath != null && !localPath.isEmpty()) {
+                        File localFile = new File(localPath);
+                        if (localFile.exists()) {
+                            try (InputStream is = new FileInputStream(localFile)) {
+                                String fileName = task.getSpu() + "_" + task.getId() + ".png";
+                                zos.putNextEntry(new ZipEntry(fileName));
+                                byte[] buffer = new byte[8192]; // 加大缓冲区，8KB 提升写入速度
+                                int length;
+                                while ((length = is.read(buffer)) > 0) {
+                                    zos.write(buffer, 0, length);
+                                }
+                                zos.closeEntry();
+                                return; // ⚡ 本地读取成功，直接跳过后面的网络下载步骤，进入下一张图
+                            } catch (Exception e) {
+                                log.error("从本地硬盘读取打包失败，将尝试网络兜底: " + localPath, e);
+                            }
+                        }
+                    }
+
+                    // 🔴 步骤 2：如果本地文件被误删了，再去请求网络链接（优先使用你的阿里云 OSS 链接，速度比临时外网链接快得多）
+                    String imageUrl = task.getResultOssUrl() != null ? task.getResultOssUrl() : task.getResultTempUrl();
                     if (imageUrl == null || imageUrl.isEmpty()) return;
 
                     try {
@@ -170,13 +193,12 @@ public class ImageTaskServiceImpl implements ImageTaskService {
                         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
                         conn.setRequestMethod("GET");
                         conn.setConnectTimeout(5000);
+                        conn.setReadTimeout(30000); // ❗️ 关键：读取超时放宽到 30 秒，防止 4K 大图下载一半断开
 
-                        // 构造压缩包内的文件名：SPU_ID.png
-                        String fileName = task.getSpu() + "_" + task.getId() + ".png";
-
+                        String fileName = task.getSpu() + "_" + task.getId() + "_net.png";
                         try (InputStream is = conn.getInputStream()) {
                             zos.putNextEntry(new ZipEntry(fileName));
-                            byte[] buffer = new byte[4096];
+                            byte[] buffer = new byte[8192];
                             int length;
                             while ((length = is.read(buffer)) > 0) {
                                 zos.write(buffer, 0, length);
@@ -184,7 +206,7 @@ public class ImageTaskServiceImpl implements ImageTaskService {
                             zos.closeEntry();
                         }
                     } catch (Exception e) {
-                        log.error("下载图片失败: " + imageUrl, e);
+                        log.error("网络下载兜底打包失败: " + imageUrl, e);
                     }
                 });
             }
