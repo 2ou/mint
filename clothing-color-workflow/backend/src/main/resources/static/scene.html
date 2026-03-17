@@ -144,7 +144,6 @@
         setup() {
             const basePromptTemplate = "Generate a high-quality product photography shot of the item, placed naturally in a realistic scene. Match the lighting and shadows naturally. Keep the product details exactly the same.";
 
-            // 🔴 新增全局变量 modelRole 和 itemType
             const form = reactive({
                 spu: '', model: 'nano-banana-pro', resolution: '4K', aspect_ratio: 'auto',
                 modelRole: '25岁成年女性', itemType: ''
@@ -155,7 +154,6 @@
             // 独立任务池
             const tasks = ref([]);
 
-            // 新增一个空白任务
             const addTask = () => {
                 tasks.value.push({
                     id: Date.now() + '_' + Math.random(),
@@ -165,7 +163,6 @@
                 });
             };
 
-            // 初始默认给一个空任务
             addTask();
 
             const removeTask = (index) => {
@@ -180,11 +177,10 @@
                 e.target.value = '';
             };
 
-            // 🔴 模板库动态提取逻辑
+            // 模板库动态提取逻辑
             const templateDrawer = ref(false);
             const dbTemplates = ref([]);
-            const globalSuffix = ref('');
-            const currentTaskIndex = ref(null); // 记录当前点开抽屉的是哪个卡片
+            const currentTaskIndex = ref(null);
 
             const openTemplateDrawer = async (index) => {
                 currentTaskIndex.value = index;
@@ -195,31 +191,22 @@
                     try {
                         const res = await axios.get('http://localhost:8080/api/templates/list');
                         if (res.data.success) dbTemplates.value = res.data.data.filter(t => t.isActive);
-
-                        const configRes = await axios.get('http://localhost:8080/api/templates/config?key=UNIVERSAL_QUALITY_SUFFIX');
-                        if (configRes.data.success && configRes.data.data) {
-                            globalSuffix.value = configRes.data.data.configValue;
-                        }
                     } catch (e) { ElementPlus.ElMessage.error('获取模板库失败'); }
                 }
             };
 
-            // 🔴 智能拼装与动态替换占位符
+            // 智能拼装与动态替换占位符
             const applyTemplate = (template) => {
                 if (currentTaskIndex.value === null) return;
 
-                // 1. 获取当前用户填写的模特角色，如果没有填就用默认的“模特”
                 const role = form.modelRole && form.modelRole.trim() ? form.modelRole : '模特';
 
-                // 2. 将模板和全局后缀里的 {模特角色} 占位符全部替换掉
                 const base = template.basePrompt.replace(/\{模特角色\}/g, role);
-                const suffix = globalSuffix.value.replace(/\{模特角色\}/g, role);
 
-                // 3. 结合用户填写的“穿搭主体” (比如: 穿着黑色高领毛衣)
                 const item = form.itemType ? ` 穿着${form.itemType}。` : '';
 
-                // 4. 拼装成最终发给 AI 的完整提示词，并赋给对应的卡片
-                tasks.value[currentTaskIndex.value].prompt = base + item + suffix;
+                // 拼装成最终提示词
+                tasks.value[currentTaskIndex.value].prompt = base + item;
 
                 templateDrawer.value = false;
                 ElementPlus.ElMessage.success('🎉 模板套用成功！');
@@ -284,7 +271,6 @@
                             taskType: 2,
                             pairs: [{
                                 inputUrl: task.input.ossUrl,
-                                // 处理可选参考图
                                 colorUrl: task.ref.url ? task.ref.ossUrl : ""
                             }]
                         };

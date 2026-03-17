@@ -74,22 +74,6 @@
                         </el-table-column>
                     </el-table>
                 </el-tab-pane>
-
-                <el-tab-pane label="⚙️ 全局防崩后缀配置" name="config">
-                    <div style="padding: 20px; background: #fff; border-radius: 8px;">
-                        <h3 style="margin-top: 0; color: #303133;">万能防崩后缀 (Universal Quality Suffix)</h3>
-                        <p style="color: #909399; font-size: 14px; margin-bottom: 20px;">
-                            这里配置的文本，将会在 AI 提交任务时自动追加到所有模板提示词的最后面。用于控制画面质量、防止手指崩坏等。
-                        </p>
-                        <el-input
-                                type="textarea"
-                                v-model="globalSuffix"
-                                :rows="6"
-                                placeholder="例如: 20 岁成年女性模特，优雅洗练的魅力，健康的性感，自然的表情，颈线优美，指尖细腻，自然的体型比例，照片级真实，高品质，杂志写真拍摄，自然光，无过度夸张，无不自然的手指，无崩坏的关节">
-                        </el-input>
-                        <el-button type="warning" style="margin-top: 20px;" @click="saveGlobalSuffix" :loading="savingConfig">💾 保存全局后缀</el-button>
-                    </div>
-                </el-tab-pane>
             </el-tabs>
         </el-card>
 
@@ -124,7 +108,7 @@
                 </div>
 
                 <el-form-item label="完整提示词" required>
-                    <el-input type="textarea" v-model="form.basePrompt" :rows="4" placeholder="核心提示词，提交给AI的最终文本（不含全局后缀）"></el-input>
+                    <el-input type="textarea" v-model="form.basePrompt" :rows="4" placeholder="核心提示词，提交给AI的最终文本"></el-input>
                 </el-form-item>
 
                 <el-form-item label="效果参考图">
@@ -155,7 +139,6 @@
             const dialogVisible = ref(false);
             const uploading = ref(false);
             const saving = ref(false);
-            const savingConfig = ref(false);
 
             // 搜索过滤
             const searchKeyword = ref('');
@@ -179,9 +162,6 @@
                 basePrompt: '', exampleImageUrl: '', isActive: true
             });
 
-            // 全局配置
-            const globalSuffix = ref('');
-
             const fetchTemplates = async () => {
                 loading.value = true;
                 try {
@@ -189,25 +169,6 @@
                     if (res.data.success) templates.value = res.data.data;
                 } catch (e) { ElementPlus.ElMessage.error('获取模板失败'); }
                 finally { loading.value = false; }
-            };
-
-            const fetchGlobalConfig = async () => {
-                try {
-                    const res = await axios.get('http://localhost:8080/api/templates/config?key=UNIVERSAL_QUALITY_SUFFIX');
-                    if (res.data.success && res.data.data) {
-                        globalSuffix.value = res.data.data.configValue;
-                    }
-                } catch (e) { console.error('获取全局配置失败'); }
-            };
-
-            const saveGlobalSuffix = async () => {
-                savingConfig.value = true;
-                try {
-                    const payload = { configKey: 'UNIVERSAL_QUALITY_SUFFIX', configValue: globalSuffix.value, description: '万能防崩后缀' };
-                    const res = await axios.post('http://localhost:8080/api/templates/config/save', payload);
-                    if (res.data.success) ElementPlus.ElMessage.success('全局后缀保存成功！');
-                } catch (e) { ElementPlus.ElMessage.error('保存失败'); }
-                finally { savingConfig.value = false; }
             };
 
             const openDialog = (row = null) => {
@@ -222,7 +183,6 @@
                 form.basePrompt = ''; form.exampleImageUrl = ''; form.isActive = true;
             };
 
-            // ✨ 核心魔法：一键拼接提示词
             const autoGeneratePrompt = () => {
                 const parts = [];
                 if (form.sceneDesc) parts.push(form.sceneDesc);
@@ -233,12 +193,10 @@
                     ElementPlus.ElMessage.warning('请先填写上面的模块描述');
                     return;
                 }
-                // 用中文逗号连接，结尾加句号，格式化得漂漂亮亮
                 form.basePrompt = parts.join('，') + '。';
                 ElementPlus.ElMessage.success('拼接成功！可在此基础上微调');
             };
 
-            // OSS 直传
             const uploadToOss = async (event, fieldName) => {
                 const file = event.target.files[0]; if (!file) return;
                 uploading.value = true;
@@ -291,14 +249,13 @@
 
             onMounted(() => {
                 fetchTemplates();
-                fetchGlobalConfig();
             });
 
             return {
-                activeTab, templates, loading, dialogVisible, form, uploading, saving, savingConfig,
-                searchKeyword, searchCategory, filteredTemplates, globalSuffix,
+                activeTab, templates, loading, dialogVisible, form, uploading, saving,
+                searchKeyword, searchCategory, filteredTemplates,
                 fetchTemplates, openDialog, resetForm, uploadToOss, submitForm, handleDelete, toggleActive,
-                saveGlobalSuffix, autoGeneratePrompt, goToScene, goToColorManage
+                autoGeneratePrompt, goToScene, goToColorManage
             };
         }
     }).use(ElementPlus).mount('#app');

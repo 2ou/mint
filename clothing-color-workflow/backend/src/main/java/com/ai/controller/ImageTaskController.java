@@ -66,8 +66,7 @@ public class ImageTaskController {
     }
 
     /**
-     * 备用分页接口 (供你以后使用 Postman 测试查阅，代码已修复报错问题)
-     * 🔴 修复点：明确给每个 RequestParam 加上 value = "xxx"
+     * 服务端真分页查询大盘
      */
     @GetMapping("/page")
     public ApiResponse<Page<TaskCreateResponse>> pageTasks(
@@ -75,10 +74,11 @@ public class ImageTaskController {
             @RequestParam(value = "size", defaultValue = "20") int size,
             @RequestParam(value = "spu", required = false) String spu,
             @RequestParam(value = "status", required = false) String status,
+            @RequestParam(value = "taskType", required = false) Integer taskType, // 🔴 新增
             @RequestParam(value = "startTime", required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime startTime,
             @RequestParam(value = "endTime", required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime endTime) {
 
-        Page<TaskCreateResponse> taskPage = imageTaskService.getTaskPage(page, size, spu, status, startTime, endTime);
+        Page<TaskCreateResponse> taskPage = imageTaskService.getTaskPage(page, size, spu, status, taskType, startTime, endTime);
         return ApiResponse.ok("ok", taskPage);
     }
 

@@ -17,7 +17,6 @@
         .thumbnail { width: 55px; height: 55px; border-radius: 6px; border: 1px solid #ddd; cursor: pointer; object-fit: cover; }
         .empty-img { width: 55px; height: 55px; background: #eee; color: #999; font-size: 10px; display: flex; align-items: center; justify-content: center; border-radius: 6px; border: 1px dashed #ccc; }
         .prompt-text { font-size: 12px; color: #666; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.4; }
-        .muted-id { font-family: monospace; color: #909399; font-size: 11px; }
     </style>
 </head>
 <body>
@@ -31,31 +30,33 @@
                     <el-button type="warning" :loading="isBatchRefreshing" @click="syncAllProcessing">⚡ 同步处理中任务</el-button>
                     <el-button @click="goToColor" plain>🎨 换色提交</el-button>
                     <el-button @click="goToScene" plain>🖼️ 场景提交</el-button>
-                    <el-button type="primary" @click="fetchData" :loading="loading">刷新大盘</el-button>
+                    <el-button type="primary" @click="handleSearch" :loading="loading">刷新大盘</el-button>
                 </div>
             </template>
 
             <div class="filter-bar">
-                <el-input v-model="filters.spu" placeholder="输入款号 (SPU) 搜索" clearable style="width: 160px"></el-input>
+                <el-input v-model="filters.spu" placeholder="输入款号 (SPU) 搜索" clearable style="width: 160px" @keyup.enter="handleSearch"></el-input>
 
-                <el-select v-model="filters.taskType" placeholder="任务类型" clearable style="width: 140px">
+                <el-select v-model="filters.taskType" placeholder="任务类型" clearable style="width: 140px" @change="handleSearch">
                     <el-option label="🎨 换色任务" :value="1"></el-option>
                     <el-option label="🖼️ 场景生成" :value="2"></el-option>
                 </el-select>
 
-                <el-select v-model="filters.status" placeholder="状态" clearable style="width: 120px">
+                <el-select v-model="filters.status" placeholder="状态" clearable style="width: 120px" @change="handleSearch">
                     <el-option label="SUCCESS" value="SUCCESS"></el-option>
                     <el-option label="PROCESSING" value="PROCESSING"></el-option>
                     <el-option label="FAILED" value="FAILED"></el-option>
                 </el-select>
 
                 <el-date-picker v-model="filters.timeRange" type="datetimerange" range-separator="至" start-placeholder="开始" end-placeholder="结束" value-format="YYYY-MM-DD HH:mm:ss" style="width: 320px"></el-date-picker>
+
+                <el-button type="primary" @click="handleSearch">搜索</el-button>
                 <el-button @click="resetFilters">重置</el-button>
             </div>
 
-            <el-table :data="filteredData" v-loading="loading" @selection-change="handleSelectionChange" border stripe style="width: 100%" height="72vh">
+            <el-table :data="rawData" v-loading="loading" @selection-change="handleSelectionChange" border stripe style="width: 100%" height="65vh">
                 <el-table-column type="selection" width="50" align="center"></el-table-column>
-                <el-table-column prop="id" label="ID" width="70" align="center" sortable></el-table-column>
+                <el-table-column prop="id" label="ID" width="70" align="center"></el-table-column>
                 <el-table-column prop="spu" label="SPU" width="100" align="center"></el-table-column>
 
                 <el-table-column label="任务类型" width="110" align="center">
@@ -108,38 +109,76 @@
                     </template>
                 </el-table-column>
             </el-table>
+
+            <div style="margin-top: 20px; display: flex; justify-content: flex-end;">
+                <el-pagination
+                        v-model:current-page="currentPage"
+                        v-model:page-size="pageSize"
+                        :page-sizes="[10, 20, 50, 100]"
+                        background
+                        layout="total, sizes, prev, pager, next, jumper"
+                        :total="total"
+                        @size-change="handleSizeChange"
+                        @current-change="handleCurrentChange"
+                />
+            </div>
         </el-card>
     </div>
 </div>
 
 <script>
-    const { createApp, ref, reactive, computed, onMounted } = Vue;
+    const { createApp, ref, reactive, onMounted } = Vue;
     createApp({
         setup() {
-            const rawData = ref([]), selectedRows = ref([]), loading = ref(false), isBatchRefreshing = ref(false);
+            const rawData = ref([]);
+            const selectedRows = ref([]);
+            const loading = ref(false);
+            const isBatchRefreshing = ref(false);
+
+            // 分页参数
+            const currentPage = ref(1);
+            const pageSize = ref(20);
+            const total = ref(0);
+
             const filters = reactive({ spu: '', status: '', taskType: null, timeRange: null });
 
+            // 🔴 核心：调用后端的 /page 接口进行服务端分页和筛选
             const fetchData = async () => {
                 loading.value = true;
                 try {
-                    const res = await axios.get('http://localhost:8080/api/tasks/list');
-                    if (res.data.success) rawData.value = res.data.data.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+                    const params = {
+                        page: currentPage.value,
+                        size: pageSize.value,
+                        spu: filters.spu || null,
+                        status: filters.status || null,
+                        taskType: filters.taskType || null
+                    };
+                    if (filters.timeRange && filters.timeRange.length === 2) {
+                        params.startTime = filters.timeRange[0];
+                        params.endTime = filters.timeRange[1];
+                    }
+                    const res = await axios.get('http://localhost:8080/api/tasks/page', { params });
+                    if (res.data.success) {
+                        rawData.value = res.data.data.content; // 分页内容列表
+                        total.value = res.data.data.totalElements; // 库中总条数
+                    }
                 } catch (e) { ElementPlus.ElMessage.error('获取列表失败'); } finally { loading.value = false; }
             };
 
-            const filteredData = computed(() => {
-                return rawData.value.filter(item => {
-                    const matchSpu = !filters.spu || (item.spu && item.spu.toLowerCase().includes(filters.spu.toLowerCase()));
-                    const matchStatus = !filters.status || item.status === filters.status;
-                    const matchType = !filters.taskType || item.taskType === filters.taskType;
-                    let matchTime = true;
-                    if (filters.timeRange && filters.timeRange.length === 2) {
-                        const start = new Date(filters.timeRange[0]).getTime(), end = new Date(filters.timeRange[1]).getTime(), current = new Date(item.createdAt).getTime();
-                        matchTime = current >= start && current <= end;
-                    }
-                    return matchSpu && matchStatus && matchType && matchTime;
-                });
-            });
+            const handleSearch = () => {
+                currentPage.value = 1; // 搜索时重置为第一页
+                fetchData();
+            };
+
+            const handleSizeChange = (val) => {
+                pageSize.value = val;
+                fetchData();
+            };
+
+            const handleCurrentChange = (val) => {
+                currentPage.value = val;
+                fetchData();
+            };
 
             const refreshRow = async (row) => {
                 if (!row.id) return;
@@ -152,7 +191,7 @@
 
             const syncAllProcessing = async () => {
                 const processingTasks = rawData.value.filter(row => row.status === 'PROCESSING' || row.status === 'GENERATING');
-                if (processingTasks.length === 0) return ElementPlus.ElMessage.info('没有处理中的任务');
+                if (processingTasks.length === 0) return ElementPlus.ElMessage.info('当前页没有处理中的任务');
                 isBatchRefreshing.value = true;
                 await Promise.allSettled(processingTasks.map(row => refreshRow(row)));
                 isBatchRefreshing.value = false; ElementPlus.ElMessage.success('同步完毕！');
@@ -168,7 +207,11 @@
                 } catch (e) { ElementPlus.ElMessage.error('下载失败'); } finally { loading.value = false; }
             };
 
-            const resetFilters = () => { filters.spu = ''; filters.status = ''; filters.taskType = null; filters.timeRange = null; };
+            const resetFilters = () => {
+                filters.spu = ''; filters.status = ''; filters.taskType = null; filters.timeRange = null;
+                handleSearch();
+            };
+
             const getStatusType = (status) => { switch (status) { case 'SUCCESS': return 'success'; case 'PROCESSING': case 'GENERATING': return 'warning'; case 'FAILED': return 'danger'; default: return 'info'; } };
             const formatTime = (t) => t ? t.replace('T', ' ').split('.')[0] : '-';
             const handleSelectionChange = (val) => { selectedRows.value = val; };
@@ -178,11 +221,12 @@
 
             onMounted(fetchData);
 
-            // 🔴 致命错误修复点：必须返回大盘专属的这些变量，绝对不能照抄提交页面的！
             return {
-                rawData, filteredData, filters, loading, isBatchRefreshing, selectedRows,
-                fetchData, getStatusType, formatTime, handleSelectionChange,
-                goToColor, goToScene, batchDownload, resetFilters, refreshRow, syncAllProcessing
+                rawData, filters, loading, isBatchRefreshing, selectedRows,
+                currentPage, pageSize, total,
+                fetchData, handleSearch, handleSizeChange, handleCurrentChange, resetFilters,
+                getStatusType, formatTime, handleSelectionChange, refreshRow, syncAllProcessing,
+                goToColor, goToScene, batchDownload
             };
         }
     }).use(ElementPlus).mount('#app');
