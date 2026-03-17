@@ -52,8 +52,10 @@
                 <span>📊 AI 任务管理大盘 (换色 & 场景生成)</span>
                 <div style="display: flex; gap: 10px; align-items: center;">
                     <el-button color="#8a2be2" :disabled="selectedRows.length === 0" @click="batchDownload">📦 批量下载 ZIP ({{ selectedRows.length }})</el-button>
-                    <el-tooltip content="系统已开启后台定时任务，每5分钟自动抓取一次结果" placement="bottom" effect="light">
-                        <el-button type="warning" :loading="isBatchRefreshing" @click="syncAllProcessing">⚡ 同步处理中任务 (自动: 5分钟/次)</el-button>
+                    <el-tooltip content="系统已开启后台自动同步（5分钟/次），无需手动操作" placement="bottom" effect="light">
+                        <el-button type="warning" disabled style="cursor: not-allowed;">
+                            ⚡ 自动同步运行中...
+                        </el-button>
                     </el-tooltip>
                     <el-button @click="goToColor" plain>🎨 换色提交</el-button>
                     <el-button @click="goToScene" plain>🖼️ 场景提交</el-button>

@@ -35,18 +35,26 @@ public class KieClientServiceImpl implements KieClientService {
             ObjectNode inputNode = objectMapper.createObjectNode();
             inputNode.put("prompt", prompt);
 
-            // 🔴 核心修复：使用 Jackson 的 ArrayNode 动态构建图片数组
+            // 🔴 核心优化点：动态构建真正的图片数组
             ArrayNode imageArray = objectMapper.createArrayNode();
 
+            // 1. 处理原图 (支持逗号分隔的多图)
             if (inputUrl != null && !inputUrl.trim().isEmpty()) {
-                imageArray.add(inputUrl); // 必填的原图
+                // 将前端传来的 "url1,url2,url3" 拆分为数组并逐一添加
+                String[] urls = inputUrl.split(",");
+                for (String u : urls) {
+                    if (!u.trim().isEmpty()) {
+                        imageArray.add(u.trim());
+                    }
+                }
             }
 
+            // 2. 处理颜色图/参考图 (如果有的话)
             if (colorUrl != null && !colorUrl.trim().isEmpty()) {
-                imageArray.add(colorUrl); // 可选的参考图，只有不为空时才加进去
+                imageArray.add(colorUrl.trim());
             }
 
-            // 🔴 将动态构建的数组塞入 inputNode (注意这里用的是 set 方法)
+            // 🔴 确保 image_input 字段是一个纯净的数组，例如 ["oss_url1", "oss_url2", "oss_url_ref"]
             inputNode.set("image_input", imageArray);
 
             inputNode.put("aspect_ratio", "auto");
