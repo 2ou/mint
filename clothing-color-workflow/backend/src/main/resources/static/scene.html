@@ -7,6 +7,9 @@
     <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css"/>
     <script src="https://unpkg.com/element-plus"></script>
     <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+
+    <script src="auth.js"></script>
+
     <style>
         body { background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); min-height: 100vh; margin: 0; font-family: 'PingFang SC', sans-serif; padding-top: 3vh; padding-bottom: 5vh; }
         .workflow-card { max-width: 1000px; margin: 0 auto; border-radius: 16px !important; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08) !important; border: none !important; }
@@ -16,10 +19,10 @@
 
         .task-card { margin-bottom: 15px; position: relative; border-radius: 8px; border: 1px solid #ebeef5; transition: 0.3s; }
         .task-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); border-color: #c0c4cc; }
-        .upload-box { width: 100%; height: 140px; border: 2px dashed #dcdfe6; border-radius: 8px; display: flex; align-items: center; justify-content: center; cursor: pointer; background: #fafafa; color: #909399; transition: 0.3s; box-sizing: border-box; }
+        .upload-box { border: 2px dashed #dcdfe6; border-radius: 8px; display: flex; align-items: center; justify-content: center; cursor: pointer; background: #fafafa; color: #909399; transition: 0.3s; box-sizing: border-box; }
         .upload-box:hover { border-color: #409EFF; color: #409EFF; background: #f0f7ff; }
-        .img-preview-box { width: 100%; height: 140px; position: relative; border: 1px solid #ebeef5; border-radius: 8px; box-sizing: border-box; overflow: hidden; }
-        .remove-img-btn { position: absolute; top: 4px; right: 4px; background-color: rgba(245, 108, 108, 0.9); color: white; border-radius: 50%; width: 22px; height: 22px; line-height: 20px; text-align: center; cursor: pointer; z-index: 10; font-size: 12px; font-weight: bold; }
+        .img-preview-box { position: relative; border: 1px solid #ebeef5; border-radius: 8px; box-sizing: border-box; overflow: hidden; }
+        .remove-img-btn { position: absolute; top: 2px; right: 2px; background-color: rgba(245, 108, 108, 0.9); color: white; border-radius: 50%; width: 20px; height: 20px; line-height: 18px; text-align: center; cursor: pointer; z-index: 10; font-size: 12px; font-weight: bold; }
         .remove-img-btn:hover { background-color: #f56c6c; transform: scale(1.1); }
     </style>
 </head>
@@ -55,16 +58,10 @@
                 </el-col>
                 <el-col :span="6"><el-form-item label="画面比例"><el-input v-model="form.aspect_ratio" placeholder="auto"/></el-form-item></el-col>
             </el-row>
-
             <el-row :gutter="20">
-                <el-col :span="12">
+                <el-col :span="24">
                     <el-form-item label="模特角色">
                         <el-input v-model="form.modelRole" placeholder="如: 25岁混血女模" />
-                    </el-form-item>
-                </el-col>
-                <el-col :span="12">
-                    <el-form-item label="穿搭主体">
-                        <el-input v-model="form.itemType" placeholder="如: 黑色高领毛衣" />
                     </el-form-item>
                 </el-col>
             </el-row>
@@ -76,54 +73,62 @@
                 <el-button type="danger" icon="Delete" circle style="position: absolute; right: 15px; top: 15px; z-index: 10;" @click="removeTask(index)"></el-button>
 
                 <div style="display: flex; gap: 20px;">
-                    <div style="width: 140px;">
-                        <div style="font-weight: bold; margin-bottom: 8px; font-size: 14px; color: #303133;">📦 原图 <span style="color:#f56c6c">*</span></div>
-                        <div v-if="task.input.url" class="img-preview-box">
-                            <el-image :src="task.input.url" fit="cover" style="width: 100%; height: 100%;"></el-image>
-                            <div class="remove-img-btn" @click="task.input = {file: null, url: '', ossUrl: ''}">X</div>
+                    <div style="width: 260px; border-right: 1px dashed #ebeef5; padding-right: 15px;">
+                        <div style="font-weight: bold; margin-bottom: 8px; font-size: 14px; color: #303133;">📦 原图 (最多4张) <span style="color:#f56c6c">*</span></div>
+                        <div style="display: flex; flex-wrap: wrap; gap: 10px;">
+                            <div v-for="(inp, iIndex) in task.inputs" :key="iIndex" class="img-preview-box" style="width: 70px; height: 70px;">
+                                <el-image :src="inp.url" fit="cover" style="width: 100%; height: 100%;"></el-image>
+                                <div class="remove-img-btn" @click="removeInput(index, iIndex)">X</div>
+                            </div>
+                            <label class="upload-box" style="width: 70px; height: 70px;" v-show="task.inputs.length < 4">
+                                <div style="text-align: center; font-size: 20px;">➕</div>
+                                <input type="file" style="display: none;" multiple @change="e => handleUploadMultiple(e, index)" accept="image/*" />
+                            </label>
                         </div>
-                        <label v-else class="upload-box">
-                            <div style="text-align: center; line-height: 1.5;">➕<br>点击上传<br>原图</div>
-                            <input type="file" style="display: none;" @change="e => handleUpload(e, index, 'input')" accept="image/*" />
-                        </label>
                     </div>
 
-                    <div style="width: 140px;">
+                    <div style="width: 120px;">
                         <div style="font-weight: bold; margin-bottom: 8px; font-size: 14px; color: #303133;">🖼️ 参考图 (可选)</div>
-                        <div v-if="task.ref.url" class="img-preview-box">
+                        <div v-if="task.ref.url" class="img-preview-box" style="width: 100%; height: 120px;">
                             <el-image :src="task.ref.url" fit="cover" style="width: 100%; height: 100%;"></el-image>
                             <div class="remove-img-btn" @click="task.ref = {file: null, url: '', ossUrl: ''}">X</div>
                         </div>
-                        <label v-else class="upload-box">
-                            <div style="text-align: center; line-height: 1.5;">➕<br>点击上传<br>参考图</div>
-                            <input type="file" style="display: none;" @change="e => handleUpload(e, index, 'ref')" accept="image/*" />
+                        <label v-else class="upload-box" style="width: 100%; height: 120px;">
+                            <div style="text-align: center; line-height: 1.5; font-size: 12px;">➕<br>点击上传</div>
+                            <input type="file" style="display: none;" @change="e => handleUploadRef(e, index)" accept="image/*" />
                         </label>
                     </div>
 
                     <div style="flex: 1; padding-right: 40px;">
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                             <div style="font-weight: bold; font-size: 14px; color: #303133;">📝 专属提示词 <span style="color:#f56c6c">*</span></div>
-                            <el-button type="success" plain size="small" @click="openTemplateDrawer(index)">
-                                📚 从库套用神仙提示词
-                            </el-button>
+                            <el-button type="success" plain size="small" @click="openTemplateDrawer(index)">📚 从库套用神仙提示词</el-button>
                         </div>
-                        <el-input type="textarea" v-model="task.prompt" :rows="5" placeholder="可手动输入，或点击上方按钮一键套用库中绝美提示词..."></el-input>
+                        <el-input type="textarea" v-model="task.prompt" :rows="4" placeholder="可手动输入，或点击上方按钮一键套用库中绝美提示词..."></el-input>
                     </div>
                 </div>
             </el-card>
 
             <el-button type="primary" plain dashed style="width: 100%; height: 50px; border-style: dashed; font-size: 16px;" @click="addTask">
-                ➕ 添加一个场景生成任务
+                ➕ 添加一个新的场景任务
             </el-button>
         </div>
 
         <el-button type="primary" class="submit-btn" @click="submit" :loading="loading" :disabled="tasks.length === 0">
-            {{ loading ? uploadProgressMsg : `🚀 立即并发提交 ${tasks.length} 个独立场景任务` }}
+            {{ loading ? uploadProgressMsg : `🚀 立即并发提交任务` }}
         </el-button>
     </el-card>
 
     <el-drawer v-model="templateDrawer" title="📚 AI 动作场景模板库" size="50%">
-        <el-table :data="dbTemplates" border stripe>
+        <div style="margin-bottom: 15px; display: flex; gap: 10px; padding: 0 10px;">
+            <el-input
+                    v-model="templateSearchText"
+                    placeholder="搜索模板标题或内容..."
+                    prefix-icon="Search"
+                    clearable
+            ></el-input>
+        </div>
+        <el-table :data="filteredTemplates" border stripe>
             <el-table-column prop="title" label="动作场景标题" width="160"></el-table-column>
             <el-table-column prop="category" label="分类" width="110" align="center">
                 <template #default="scope"><el-tag size="small" type="success">{{ scope.row.category }}</el-tag></template>
@@ -131,7 +136,7 @@
             <el-table-column prop="basePrompt" label="提示词预览" min-width="200" show-overflow-tooltip></el-table-column>
             <el-table-column label="操作" width="110" align="center" fixed="right">
                 <template #default="scope">
-                    <el-button type="primary" size="small" plain @click="applyTemplate(scope.row)">套用此模板</el-button>
+                    <el-button type="primary" size="small" plain @click="applyTemplate(scope.row)">套用</el-button>
                 </template>
             </el-table-column>
         </el-table>
@@ -139,75 +144,90 @@
 </div>
 
 <script>
-    const {createApp, ref, reactive} = Vue;
+    const {createApp, ref, reactive, computed} = Vue;
     createApp({
         setup() {
-            const basePromptTemplate = "Generate a high-quality product photography shot of the item, placed naturally in a realistic scene. Match the lighting and shadows naturally. Keep the product details exactly the same.";
-
             const form = reactive({
-                spu: '', model: 'nano-banana-pro', resolution: '4K', aspect_ratio: 'auto',
-                modelRole: '25岁成年女性', itemType: ''
+                spu: '', model: 'nano-banana-pro', resolution: '4K', aspect_ratio: 'auto', modelRole: '25岁成年女性'
             });
             const loading = ref(false);
             const uploadProgressMsg = ref('正在处理...');
-
-            // 独立任务池
             const tasks = ref([]);
 
             const addTask = () => {
                 tasks.value.push({
                     id: Date.now() + '_' + Math.random(),
-                    input: { file: null, url: '', ossUrl: '' },
+                    inputs: [], // 原图数组
                     ref: { file: null, url: '', ossUrl: '' },
-                    prompt: '' // 默认置空，引导用户去套用模板
+                    prompt: ''
                 });
             };
-
             addTask();
 
-            const removeTask = (index) => {
-                tasks.value.splice(index, 1);
+            const removeTask = (index) => tasks.value.splice(index, 1);
+
+            const removeInput = (taskIndex, inputIndex) => {
+                tasks.value[taskIndex].inputs.splice(inputIndex, 1);
             };
 
-            const handleUpload = (e, index, type) => {
+            // 🔴 核心逻辑1：控制最多上传 4 张图
+            const handleUploadMultiple = (e, index) => {
+                const files = e.target.files;
+                if (!files || files.length === 0) return;
+
+                let currentCount = tasks.value[index].inputs.length;
+                let addCount = files.length;
+
+                if (currentCount + addCount > 4) {
+                    ElementPlus.ElMessage.warning('每个任务最多只能上传 4 张原图辅助生成！');
+                    addCount = 4 - currentCount; // 计算还能上传多少张
+                }
+
+                for (let i = 0; i < addCount; i++) {
+                    const url = URL.createObjectURL(files[i]);
+                    tasks.value[index].inputs.push({ file: files[i], url, ossUrl: null });
+                }
+                e.target.value = ''; // 清空 value，使得重复选择同一文件也能触发
+            };
+
+            const handleUploadRef = (e, index) => {
                 const file = e.target.files[0];
                 if (!file) return;
-                const url = URL.createObjectURL(file);
-                tasks.value[index][type] = { file, url, ossUrl: null };
+                tasks.value[index].ref = { file, url: URL.createObjectURL(file), ossUrl: null };
                 e.target.value = '';
             };
 
-            // 模板库动态提取逻辑
             const templateDrawer = ref(false);
             const dbTemplates = ref([]);
+            const templateSearchText = ref(''); // 🟢 搜索文本
+
+            // 🟢 核心逻辑：计算过滤后的模板列表
+            const filteredTemplates = computed(() => {
+                if (!templateSearchText.value) return dbTemplates.value;
+                const search = templateSearchText.value.toLowerCase();
+                return dbTemplates.value.filter(t =>
+                    (t.title && t.title.toLowerCase().includes(search)) ||
+                    (t.basePrompt && t.basePrompt.toLowerCase().includes(search)) ||
+                    (t.category && t.category.toLowerCase().includes(search))
+                );
+            });
             const currentTaskIndex = ref(null);
 
             const openTemplateDrawer = async (index) => {
                 currentTaskIndex.value = index;
                 templateDrawer.value = true;
-
-                // 仅首次打开时拉取接口
                 if (dbTemplates.value.length === 0) {
                     try {
                         const res = await axios.get('http://localhost:8080/api/templates/list');
                         if (res.data.success) dbTemplates.value = res.data.data.filter(t => t.isActive);
-                    } catch (e) { ElementPlus.ElMessage.error('获取模板库失败'); }
+                    } catch (e) { ElementPlus.ElMessage.error('获取库失败'); }
                 }
             };
 
-            // 智能拼装与动态替换占位符
             const applyTemplate = (template) => {
                 if (currentTaskIndex.value === null) return;
-
                 const role = form.modelRole && form.modelRole.trim() ? form.modelRole : '模特';
-
-                const base = template.basePrompt.replace(/\{模特角色\}/g, role);
-
-                const item = form.itemType ? ` 穿着${form.itemType}。` : '';
-
-                // 拼装成最终提示词
-                tasks.value[currentTaskIndex.value].prompt = base + item;
-
+                tasks.value[currentTaskIndex.value].prompt = template.basePrompt.replace(/\{模特角色\}/g, role);
                 templateDrawer.value = false;
                 ElementPlus.ElMessage.success('🎉 模板套用成功！');
             };
@@ -228,19 +248,13 @@
                 if (tasks.value.length === 0) return ElementPlus.ElMessage.warning('请至少添加一个任务！');
 
                 for (let i = 0; i < tasks.value.length; i++) {
-                    if (!tasks.value[i].input.url) return ElementPlus.ElMessage.warning(`第 ${i+1} 个任务缺少必填的【原图】！`);
+                    if (tasks.value[i].inputs.length === 0) return ElementPlus.ElMessage.warning(`第 ${i+1} 个任务缺少必填的【原图】！`);
                     if (!tasks.value[i].prompt.trim()) return ElementPlus.ElMessage.warning(`第 ${i+1} 个任务缺少必填的【提示词】！`);
                 }
 
                 try {
-                    await ElementPlus.ElMessageBox.confirm(
-                        `系统将为您并发提交 ${tasks.value.length} 个独立的场景生成任务，是否立即执行？`,
-                        '任务提交确认',
-                        { confirmButtonText: '确认执行', cancelButtonText: '我再检查下', type: 'warning' }
-                    );
-                } catch (e) {
-                    return;
-                }
+                    await ElementPlus.ElMessageBox.confirm(`系统将为您并发提交这些场景任务，是否立即执行？`, '确认提交', { type: 'warning' });
+                } catch (e) { return; }
 
                 loading.value = true;
                 try {
@@ -250,7 +264,7 @@
 
                     const itemsToUpload = [];
                     tasks.value.forEach(t => {
-                        if (t.input.file && !t.input.ossUrl) itemsToUpload.push(t.input);
+                        t.inputs.forEach(inp => { if (inp.file && !inp.ossUrl) itemsToUpload.push(inp); });
                         if (t.ref.file && !t.ref.ossUrl) itemsToUpload.push(t.ref);
                     });
 
@@ -261,6 +275,7 @@
 
                     uploadProgressMsg.value = '派发 AI 任务...';
 
+                    // 🔴 核心逻辑2：将每个任务的 1~4 张原图，用逗号拼接成一个字符串发送
                     const apiRequests = tasks.value.map(task => {
                         const payload = {
                             spu: form.spu,
@@ -270,7 +285,7 @@
                             prompt: task.prompt,
                             taskType: 2,
                             pairs: [{
-                                inputUrl: task.input.ossUrl,
+                                inputUrl: task.inputs.map(inp => inp.ossUrl).join(','), // 用逗号拼接
                                 colorUrl: task.ref.url ? task.ref.ossUrl : ""
                             }]
                         };
@@ -278,12 +293,9 @@
                     });
 
                     await Promise.all(apiRequests);
-
-                    ElementPlus.ElMessage.success(`🚀 提交成功！已派发 ${tasks.value.length} 个独立场景任务。`);
-
+                    ElementPlus.ElMessage.success(`🚀 提交成功！已派发 ${tasks.value.length} 个场景任务。`);
                     tasks.value = [];
                     addTask();
-
                 } catch (e) {
                     ElementPlus.ElMessage.error('处理失败：请检查网络或配置！');
                 } finally {
@@ -298,9 +310,11 @@
 
             return {
                 form, tasks, loading, uploadProgressMsg,
-                addTask, removeTask, handleUpload, submit,
+                addTask, removeTask, handleUploadMultiple, handleUploadRef, removeInput, submit,
                 goToColor, goToList, goToColorManage, goToTemplateManage,
-                templateDrawer, dbTemplates, openTemplateDrawer, applyTemplate
+                templateDrawer, dbTemplates, openTemplateDrawer, applyTemplate,
+                templateSearchText,
+                filteredTemplates
             };
         }
     }).use(ElementPlus).mount('#app');

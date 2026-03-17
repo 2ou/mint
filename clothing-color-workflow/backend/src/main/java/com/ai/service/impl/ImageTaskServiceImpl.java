@@ -71,11 +71,15 @@ public class ImageTaskServiceImpl implements ImageTaskService {
     }
 
     @Override
-    public TaskCreateResponse createWithUrl(String spu, String prompt, String resolution, String model, String inputUrl, String colorUrl, Integer taskType) {
+    public TaskCreateResponse createWithUrl(String spu, String prompt, String resolution, String model, String inputUrl, String colorUrl, Integer taskType, String operator, String shopName) {
         ImageTask task = new ImageTask();
         task.setSpu(spu); task.setPrompt(prompt); task.setResolution(resolution); task.setModel(model);
         task.setInputImageUrl(inputUrl); task.setColorImageUrl(colorUrl); task.setStatus("CREATED");
         task.setTaskType(taskType != null ? taskType : 1);
+
+        // 🔴 落库归属店铺和操作人
+        task.setOperator(operator);
+        task.setShopName(shopName);
 
         try {
             String taskId = kieClientService.createTask(spu, prompt, resolution, model, inputUrl, colorUrl);
@@ -91,30 +95,46 @@ public class ImageTaskServiceImpl implements ImageTaskService {
 
     @Override
     public TaskCreateResponse refreshTask(Long id) {
-        ImageTask task = imageTaskRepository.findById(id).orElseThrow(() -> new RuntimeException("未找到该任务 ID: " + id));
-        if ("SUCCESS".equals(task.getStatus()) || "FAILED".equals(task.getStatus())) return new TaskCreateResponse(task);
+        ImageTask task = imageTaskRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("未找到该任务 ID: " + id));
+
+        // 如果任务已经终结，不需要重复同步
+        if ("SUCCESS".equals(task.getStatus()) || "FAILED".equals(task.getStatus())) {
+            return new TaskCreateResponse(task);
+        }
 
         try {
-            String resultUrl = kieClientService.getResultUrl(task.getTaskId());
-            if (resultUrl != null && !resultUrl.isEmpty()) {
-                task.setResultTempUrl(resultUrl); task.setStatus("SUCCESS"); task.setErrorMessage(null);
+            // 1. 获取 AI 厂商的临时结果链接
+            String tempAiUrl = kieClientService.getResultUrl(task.getTaskId());
+
+            if (tempAiUrl != null && !tempAiUrl.isEmpty()) {
+                task.setResultTempUrl(tempAiUrl);
+                task.setStatus("SUCCESS");
+                task.setErrorMessage(null);
+
                 try {
-                    String localPath = ossService.saveResultToLocal(task.getSpu(), resultUrl, localSaveRoot);
-                    task.setLocalPath(localPath);
-                    task.setResultOssUrl("http://localhost:8080/ai-images/" + task.getSpu() + "/" + new File(localPath).getName());
+                    // 2. 核心：将图片转存到您自己的阿里云 OSS (永久链接)
+                    // 不再调用 saveResultToLocal，彻底取消本地下载逻辑
+                    String permanentOssUrl = ossService.uploadResultToOss(task.getSpu(), tempAiUrl);
+                    task.setResultOssUrl(permanentOssUrl);
+
+                    // 清除本地路径记录
+                    task.setLocalPath(null);
                 } catch (Exception subEx) {
-                    log.warn("保存到本地硬盘失败: {}", subEx.getMessage());
-                    task.setErrorMessage("图片获取成功，但存入本地硬盘失败: " + subEx.getMessage());
+                    log.error("转存自有 OSS 失败: {}", subEx.getMessage());
+                    // 转存失败则保底使用 AI 临时链接，确保前端能看到图
+                    task.setResultOssUrl(tempAiUrl);
                 }
+
                 imageTaskRepository.save(task);
             } else {
-                task.setStatus("PROCESSING"); imageTaskRepository.save(task);
+                task.setStatus("PROCESSING");
+                imageTaskRepository.save(task);
             }
         } catch (Exception e) {
-            log.error("刷新任务 ID: {} 发生异常", id, e);
+            log.error("刷新任务异常", e);
             task.setStatus("FAILED");
-            String errorMsg = e.getMessage() != null ? e.getMessage() : e.toString();
-            task.setErrorMessage(errorMsg.length() > 2000 ? errorMsg.substring(0, 1990) + "..." : errorMsg);
+            task.setErrorMessage(e.getMessage());
             imageTaskRepository.save(task);
         }
         return new TaskCreateResponse(task);

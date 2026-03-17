@@ -8,6 +8,9 @@
     <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css" />
     <script src="https://unpkg.com/element-plus"></script>
     <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+
+    <script src="auth.js"></script>
+
     <style>
         body { margin: 0; min-height: 100vh; padding: 20px; font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif; background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); }
         .page-wrap { max-width: 1600px; margin: 0 auto; }
@@ -17,6 +20,28 @@
         .thumbnail { width: 55px; height: 55px; border-radius: 6px; border: 1px solid #ddd; cursor: pointer; object-fit: cover; }
         .empty-img { width: 55px; height: 55px; background: #eee; color: #999; font-size: 10px; display: flex; align-items: center; justify-content: center; border-radius: 6px; border: 1px dashed #ccc; }
         .prompt-text { font-size: 12px; color: #666; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.4; }
+        /* 微调缩略图容器 */
+        .image-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 40px); /* 每行 2 张，每张 40px */
+            grid-gap: 4px;                          /* 图片间距 */
+            justify-content: center;
+            padding: 5px 0;
+        }
+
+        /* 微调单张图片样式 */
+        .grid-thumb {
+            width: 40px;
+            height: 40px;
+            border-radius: 4px;
+            border: 1px solid #ebeef5;
+            transition: transform 0.2s;
+        }
+
+        .grid-thumb:hover {
+            transform: scale(1.1); /* 鼠标悬停轻微放大，增加交互感 */
+            z-index: 10;
+        }
     </style>
 </head>
 <body>
@@ -27,7 +52,9 @@
                 <span>📊 AI 任务管理大盘 (换色 & 场景生成)</span>
                 <div style="display: flex; gap: 10px; align-items: center;">
                     <el-button color="#8a2be2" :disabled="selectedRows.length === 0" @click="batchDownload">📦 批量下载 ZIP ({{ selectedRows.length }})</el-button>
-                    <el-button type="warning" :loading="isBatchRefreshing" @click="syncAllProcessing">⚡ 同步处理中任务</el-button>
+                    <el-tooltip content="系统已开启后台定时任务，每5分钟自动抓取一次结果" placement="bottom" effect="light">
+                        <el-button type="warning" :loading="isBatchRefreshing" @click="syncAllProcessing">⚡ 同步处理中任务 (自动: 5分钟/次)</el-button>
+                    </el-tooltip>
                     <el-button @click="goToColor" plain>🎨 换色提交</el-button>
                     <el-button @click="goToScene" plain>🖼️ 场景提交</el-button>
                     <el-button type="primary" @click="handleSearch" :loading="loading">刷新大盘</el-button>
@@ -58,7 +85,17 @@
                 <el-table-column type="selection" width="50" align="center"></el-table-column>
                 <el-table-column prop="id" label="ID" width="70" align="center"></el-table-column>
                 <el-table-column prop="spu" label="SPU" width="100" align="center"></el-table-column>
-
+                <el-table-column prop="resolution" label="分辨率" width="80" align="center">
+                    <template #default="scope">
+                        <el-tag size="small" type="info" effect="plain">{{ scope.row.resolution || '默认' }}</el-tag>
+                    </template>
+                </el-table-column>
+                <el-table-column label="店铺" width="140" align="center">
+                    <template #default="scope">
+                        <div style="font-weight: bold; color: #409EFF; font-size: 13px;">{{ scope.row.shopName || '-' }}</div>
+                        <div style="font-size: 12px; color: #909399;">{{ scope.row.operator || '-' }}</div>
+                    </template>
+                </el-table-column>
                 <el-table-column label="任务类型" width="110" align="center">
                     <template #default="scope">
                         <el-tag :type="scope.row.taskType === 2 ? 'success' : 'primary'" effect="plain">
@@ -71,9 +108,23 @@
                     <template #default="scope"><el-tag :type="getStatusType(scope.row.status)" effect="dark">{{ scope.row.status }}</el-tag></template>
                 </el-table-column>
 
-                <el-table-column label="主图/原图" width="85" align="center">
+                <el-table-column label="主图/原图" width="120" align="center">
                     <template #default="scope">
-                        <el-image v-if="scope.row.inputImageUrl" class="thumbnail" :src="scope.row.inputImageUrl" :preview-src-list="[scope.row.inputImageUrl]" preview-teleported fit="cover"></el-image>
+                        <div v-if="scope.row.inputImageUrl">
+                            <div class="image-grid">
+                                <el-image
+                                        v-for="(url, idx) in scope.row.inputImageUrl.split(',')"
+                                        :key="idx"
+                                        class="grid-thumb"
+                                        :src="url + '?x-oss-process=image/resize,w_100'"
+                                        :preview-src-list="scope.row.inputImageUrl.split(',')"
+                                        :initial-index="idx"
+                                        preview-teleported
+                                        fit="cover"
+                                >
+                                </el-image>
+                            </div>
+                        </div>
                         <div v-else class="empty-img">无图</div>
                     </template>
                 </el-table-column>
@@ -130,6 +181,20 @@
     const { createApp, ref, reactive, onMounted } = Vue;
     createApp({
         setup() {
+            // 🔴 新增：从 localStorage 读取登录信息
+            const currentUserName = ref(localStorage.getItem("user_name") || '未知用户');
+            const currentShopName = ref(localStorage.getItem("shop_name") || '未知店铺');
+
+            // 🔴 新增：退出登录的方法
+            const handleLogout = () => {
+                ElementPlus.ElMessageBox.confirm('确定要退出登录吗？', '提示', { type: 'warning' }).then(() => {
+                    localStorage.removeItem("user_token");
+                    localStorage.removeItem("user_name");
+                    localStorage.removeItem("shop_name");
+                    window.location.href = 'login.html';
+                }).catch(() => {});
+            };
+
             const rawData = ref([]);
             const selectedRows = ref([]);
             const loading = ref(false);
@@ -222,6 +287,9 @@
             onMounted(fetchData);
 
             return {
+                // 🔴 新增暴漏的变量和方法
+                currentUserName, currentShopName, handleLogout,
+
                 rawData, filters, loading, isBatchRefreshing, selectedRows,
                 currentPage, pageSize, total,
                 fetchData, handleSearch, handleSizeChange, handleCurrentChange, resetFilters,

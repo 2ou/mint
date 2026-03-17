@@ -56,6 +56,12 @@ public class ImageTask {
     @Column
     private Integer taskType;
 
+    @Column(length = 100)
+    private String shopName;
+
+    @Column(length = 50)
+    private String operator;
+
     @CreationTimestamp
     private LocalDateTime createdAt;
 

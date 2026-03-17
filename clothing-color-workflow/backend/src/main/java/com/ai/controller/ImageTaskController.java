@@ -25,8 +25,13 @@ public class ImageTaskController {
      * 批量创建任务 (换色 / 场景生成)
      */
     @PostMapping(value = "/create")
-    public ApiResponse<List<TaskCreateResponse>> create(@RequestBody BatchTaskRequest request) {
+    public ApiResponse<List<TaskCreateResponse>> create(@RequestBody BatchTaskRequest request,
+                                                        jakarta.servlet.http.HttpServletRequest httpServletRequest) {
         List<TaskCreateResponse> responses = new ArrayList<>();
+
+        // 🔴 从拦截器里拿出当前登录人的身份信息
+        String operator = (String) httpServletRequest.getAttribute("operator");
+        String shopName = (String) httpServletRequest.getAttribute("shopName");
 
         if (request.getPairs() != null) {
             for (BatchTaskRequest.TaskPair pair : request.getPairs()) {
@@ -37,7 +42,9 @@ public class ImageTaskController {
                         request.getModel(),
                         pair.getInputUrl(),
                         pair.getColorUrl(),
-                        request.getTaskType()
+                        request.getTaskType(),
+                        operator,
+                        shopName
                 );
                 responses.add(response);
             }

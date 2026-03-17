@@ -21,6 +21,8 @@ public class TaskCreateResponse {
     private String model;
     private String resolution;
     private Integer taskType;
+    private String shopName;
+    private String operator;
 
     private String inputImageUrl;
     private String colorImageUrl;
@@ -46,5 +48,7 @@ public class TaskCreateResponse {
         this.model = task.getModel();
         this.resolution = task.getResolution();
         this.taskType = task.getTaskType();
+        this.shopName = task.getShopName();
+        this.operator = task.getOperator();
     }
 }

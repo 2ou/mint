@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>AI 换图小工具 - 系统登录</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css"/>
+    <script src="https://unpkg.com/element-plus"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <style>
+        body { margin: 0; display: flex; justify-content: center; align-items: center; height: 100vh; background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); font-family: 'PingFang SC', sans-serif;}
+        .login-box { width: 400px; padding: 40px; background: #fff; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); text-align: center; }
+        .title { font-size: 24px; font-weight: bold; color: #303133; margin-bottom: 30px; }
+        .submit-btn { width: 100%; height: 45px; font-size: 16px; margin-top: 10px; }
+    </style>
+</head>
+<body>
+<div id="app">
+    <div class="login-box">
+        <div class="title">✨ AI 矩阵系统 - 内部登录</div>
+        <el-form :model="form" @keyup.enter="handleLogin">
+            <el-form-item>
+                <el-input v-model="form.username" placeholder="请输入账号" size="large" prefix-icon="User"></el-input>
+            </el-form-item>
+            <el-form-item>
+                <el-input v-model="form.password" type="password" placeholder="请输入密码" size="large" prefix-icon="Lock" show-password></el-input>
+            </el-form-item>
+            <el-button type="primary" class="submit-btn" :loading="loading" @click="handleLogin">登 录</el-button>
+        </el-form>
+    </div>
+</div>
+
+<script>
+    const { createApp, reactive, ref } = Vue;
+    createApp({
+        setup() {
+            const form = reactive({ username: '', password: '' });
+            const loading = ref(false);
+
+            const handleLogin = async () => {
+                if (!form.username || !form.password) return ElementPlus.ElMessage.warning("请填写完整账号密码");
+                loading.value = true;
+                try {
+                    const res = await axios.post('http://localhost:8080/api/auth/login', form);
+                    if (res.data.success) {
+                        // 登录成功，将 Token 和 账号信息 存入本地浏览器
+                        localStorage.setItem("user_token", res.data.data.token);
+                        localStorage.setItem("user_name", res.data.data.realName);
+                        localStorage.setItem("shop_name", res.data.data.shopName);
+
+                        ElementPlus.ElMessage.success("登录成功！即将跳转...");
+                        setTimeout(() => window.location.href = 'index.html', 1000);
+                    } else {
+                        ElementPlus.ElMessage.error(res.data.message || "登录失败");
+                    }
+                } catch (e) {
+                    ElementPlus.ElMessage.error("网络或服务异常");
+                } finally {
+                    loading.value = false;
+                }
+            };
+            return { form, loading, handleLogin };
+        }
+    }).use(ElementPlus).mount('#app');
+</script>
+</body>
+</html>

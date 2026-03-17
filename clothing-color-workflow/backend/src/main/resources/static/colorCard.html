@@ -8,6 +8,11 @@
     <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
     <script src="https://unpkg.com/element-plus"></script>
     <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+
+    <script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js"></script>
+
+    <script src="auth.js"></script>
+
     <style>
         body { margin: 0; min-height: 100vh; padding: 20px; font-family: 'PingFang SC', sans-serif; background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); }
         .page-wrap { max-width: 1400px; margin: 0 auto; }
@@ -33,6 +38,12 @@
 
             <div style="margin-bottom: 20px; display: flex; gap: 15px; align-items: center; background: #fff; padding: 15px; border-radius: 8px;">
                 <el-button type="success" @click="openDialog()">➕ 新增色卡</el-button>
+
+                <el-tooltip content="请包含列名：面料类型, 印花类型(填纯色/印花), 花型名称, 花型编号, 色卡图片链接, 参考案例链接" placement="top">
+                    <el-button type="warning" plain @click="$refs.excelInput.click()" :loading="importing">📥 表格批量导入</el-button>
+                </el-tooltip>
+                <input type="file" ref="excelInput" class="hidden-input" accept=".xlsx, .xls, .csv" @change="handleExcelImport">
+
                 <el-divider direction="vertical"></el-divider>
                 <el-input v-model="filters.patternName" placeholder="搜索花型 (支持,隔开多选)" style="width: 300px" clearable></el-input>
                 <el-input v-model="filters.fabricType" placeholder="搜索面料" style="width: 200px" clearable></el-input>
@@ -42,7 +53,7 @@
                 </el-select>
             </div>
 
-            <el-table :data="filteredTableData" v-loading="loading" border stripe style="width: 100%">
+            <el-table :data="filteredTableData" v-loading="loading || importing" border stripe style="width: 100%">
                 <el-table-column prop="id" label="ID" width="70" align="center"></el-table-column>
                 <el-table-column label="色卡图" width="100" align="center">
                     <template #default="scope">
@@ -113,6 +124,7 @@
     createApp({
         setup() {
             const tableData = ref([]), loading = ref(false), dialogVisible = ref(false), uploading = ref(false), saving = ref(false);
+            const importing = ref(false); // 导入状态
             const filters = reactive({ patternName: '', fabricType: '', printType: null });
 
             const filteredTableData = computed(() => {
@@ -177,15 +189,72 @@
                 } catch (e) { if (e !== 'cancel') ElementPlus.ElMessage.error('删除失败'); }
             };
 
+            // 🔴 纯前端处理 Excel 的黑科技
+            const handleExcelImport = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+
+                const reader = new FileReader();
+                reader.onload = async (evt) => {
+                    try {
+                        const data = evt.target.result;
+                        const workbook = XLSX.read(data, { type: 'binary' });
+                        // 默认读取第一张表
+                        const sheetName = workbook.SheetNames[0];
+                        const sheet = workbook.Sheets[sheetName];
+                        // 转换为 JSON 数组
+                        const jsonData = XLSX.utils.sheet_to_json(sheet);
+
+                        if(jsonData.length === 0) {
+                            return ElementPlus.ElMessage.warning('表格数据为空！');
+                        }
+
+                        importing.value = true;
+                        let successCount = 0;
+
+                        // 循环自动发起保存请求
+                        for (const row of jsonData) {
+                            const payload = {
+                                fabricType: row['面料类型'] || '',
+                                printType: row['印花类型'] === '印花' ? 2 : 1, // 如果写了'印花'就存2，否则默认存1
+                                patternName: row['花型名称'] || '',
+                                patternCode: String(row['花型编号'] || ''),
+                                colorCardUrl: row['色卡图片链接'] || '',
+                                exampleUrl: row['参考案例链接'] || ''
+                            };
+
+                            // 只要有面料类型和图片链接，就认为是合法行
+                            if(payload.fabricType && payload.colorCardUrl) {
+                                try {
+                                    await axios.post('http://localhost:8080/api/color-cards/save', payload);
+                                    successCount++;
+                                } catch (err) {
+                                    console.warn('保存单条失败:', row);
+                                }
+                            }
+                        }
+
+                        ElementPlus.ElMessage.success(`🎉 导入完毕！成功添加 ${successCount} 条色卡数据。`);
+                        fetchData(); // 刷新表格
+
+                    } catch (err) {
+                        ElementPlus.ElMessage.error('解析 Excel 文件失败，请检查文件格式！');
+                    } finally {
+                        importing.value = false;
+                        e.target.value = ''; // 清空选择器，允许二次上传同名文件
+                    }
+                };
+                reader.readAsBinaryString(file);
+            };
+
             const goToWorkflow = () => window.location.href = 'index.html';
             const goToList = () => window.location.href = 'list.html';
 
             onMounted(fetchData);
 
-            // 🔴 最终核心修复点：把计算属性和筛选状态 return 出来给 template 使用
             return {
-                tableData, loading, dialogVisible, form, uploading, saving,
-                fetchData, openDialog, resetForm, uploadToOss, submitForm, handleDelete,
+                tableData, loading, dialogVisible, form, uploading, saving, importing,
+                fetchData, openDialog, resetForm, uploadToOss, submitForm, handleDelete, handleExcelImport,
                 goToWorkflow, goToList, filters, filteredTableData
             };
         }
