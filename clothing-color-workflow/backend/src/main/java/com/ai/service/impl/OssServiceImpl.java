@@ -22,12 +22,12 @@ public class OssServiceImpl implements OssService {
     private final AppProperties appProperties;
     private final OSS ossClient;
 
-    // 🔴 全局网络超时配置，放宽到 30 分钟 (1800秒)
+    // 🔴 全局网络超时配置
     private final OkHttpClient httpClient = new OkHttpClient.Builder()
             .connectTimeout(15, TimeUnit.SECONDS)
-            .readTimeout(300, TimeUnit.SECONDS)  // 读写间隔允许卡顿 5 分钟
+            .readTimeout(600, TimeUnit.SECONDS)  // 🔴 读超时：允许 KIE 服务器发呆 10 分钟不传数据
             .writeTimeout(300, TimeUnit.SECONDS)
-            .callTimeout(1800, TimeUnit.SECONDS) // 🔴 总下载时间底线：30 分钟 (1800秒)！
+            .callTimeout(3600, TimeUnit.SECONDS) // 🔴 总下载时间底线：60 分钟 ！
             .build();
 
     // 终极防御核心：建立一个有 10 个护士的“隔离线程池”
@@ -83,7 +83,15 @@ public class OssServiceImpl implements OssService {
             AppProperties.Oss oss = appProperties.getOss();
 
             String localRoot = appProperties.getLocalSaveRoot();
-            if (localRoot == null) localRoot = "D:/AiResult";
+            if (localRoot == null) {
+                // 自动判断系统：如果是 Windows 就用 D 盘，否则（Linux/Mac）用用户目录下的文件夹
+                String os = System.getProperty("os.name").toLowerCase();
+                if (os.contains("win")) {
+                    localRoot = "D:/AiResult";
+                } else {
+                    localRoot = "/tmp/ai-result"; // 或者其他 Linux 路径
+                }
+            }
 
             String extension = resultUrl.toLowerCase().contains(".jpg") ? ".jpg" : ".png";
             String fileName = System.currentTimeMillis() + extension;
@@ -98,7 +106,6 @@ public class OssServiceImpl implements OssService {
             Callable<String> isolationTask = () -> {
                 log.info("【双保险】正在下载到本地: {}", permanentFile.getAbsolutePath());
 
-                // 🔴 步骤 1：下载 KIE 图片到本地硬盘
                 okhttp3.Request request = new okhttp3.Request.Builder()
                         .url(resultUrl)
                         .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0")
@@ -108,6 +115,8 @@ public class OssServiceImpl implements OssService {
                     if (!response.isSuccessful() || response.body() == null) {
                         throw new RuntimeException("KIE图片下载失败: HTTP " + response.code());
                     }
+
+                    // 🔴 核心防护：专门捕获流传输异常
                     try (InputStream in = response.body().byteStream();
                          FileOutputStream out = new FileOutputStream(permanentFile)) {
                         byte[] buffer = new byte[8192];
@@ -115,10 +124,17 @@ public class OssServiceImpl implements OssService {
                         while ((len = in.read(buffer)) != -1) {
                             out.write(buffer, 0, len);
                         }
+                    } catch (Exception streamEx) {
+                        // 如果下到一半断开了，文件已经生成了但只有半截（会导致黑屏）
+                        // 必须立刻将其销毁，防止残次品流入后续环节！
+                        if (permanentFile.exists()) {
+                            permanentFile.delete();
+                            log.error("【残次品拦截】下载中途数据流中断，已销毁半截图片: {}", permanentFile.getName());
+                        }
+                        throw new RuntimeException("网络流中断，图片下载不完整", streamEx);
                     }
                 }
 
-                // 下载完成后进行校验，这一步如果报错，说明本地也没存下来，直接抛异常阻断
                 if (!permanentFile.exists() || permanentFile.length() == 0) {
                     throw new RuntimeException("本地保存文件失败，文件未生成或大小为0");
                 }
@@ -128,7 +144,6 @@ public class OssServiceImpl implements OssService {
                 String finalLocalPath = permanentFile.getAbsolutePath();
                 String ossUrl = "";
 
-                // 🔴 步骤 2：解绑 OSS 上传！单独套上 try-catch
                 try {
                     File fileToUpload = permanentFile.getAbsoluteFile();
                     String objectName = spu + "/result/" + fileName;
@@ -138,11 +153,9 @@ public class OssServiceImpl implements OssService {
 
                     log.info("【OSS上传成功】链接: {}", ossUrl);
                 } catch (Exception ossEx) {
-                    // ⚠️ 核心：仅仅打印日志，绝不抛出异常！保护已经成功的 finalLocalPath！
                     log.error("【OSS上传降级】本地已保存，但上传云端失败: {}", ossEx.getMessage());
                 }
 
-                // 🔴 步骤 3：智能清理。只有 OSS 成功了 (ossUrl 不为空)，才允许删除本地文件
                 if (appProperties.isDeleteLocalAfterUpload()) {
                     if (!ossUrl.isEmpty()) {
                         boolean deleted = permanentFile.delete();
@@ -155,19 +168,17 @@ public class OssServiceImpl implements OssService {
                     log.info("【开发环境】本地图片已保留: {}", finalLocalPath);
                 }
 
-                // 返回拼接结果，如果 OSS 失败，ossUrl 就是空字符串，Service 层照样能拿到本地路径
                 return ossUrl + "|" + finalLocalPath;
             };
 
-            // 🔴 提交任务到隔离池，并设置 1810 秒的底线等待时间 (30分钟 + 10秒缓冲)
             future = isolationPool.submit(isolationTask);
-            return future.get(1810, TimeUnit.SECONDS);
+            // 🔴 配合上面的 1 小时 (3600秒) 总超时，这里护士的等待时间给到 3610 秒
+            return future.get(3610, TimeUnit.SECONDS);
 
         } catch (TimeoutException e) {
             if (future != null) future.cancel(true);
-            // 🔴 日志文案也顺手改一下
-            log.error("【转存严重超时】下载动作耗时超过 30 分钟，已强制终止该线程！");
-            throw new RuntimeException("图片下载严重超时 (超30分钟)");
+            log.error("【转存严重超时】下载动作耗时超过 1 小时，已强制终止该线程！");
+            throw new RuntimeException("图片下载严重超时 (超1小时)");
         } catch (ExecutionException e) {
             Throwable cause = e.getCause();
             log.error("【本地保存失败】: {}", cause != null ? cause.getMessage() : e.getMessage());

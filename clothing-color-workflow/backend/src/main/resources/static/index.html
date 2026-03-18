@@ -254,48 +254,74 @@
                 if (!form.spu) return ElementPlus.ElMessage.warning('SPU 款号不能为空！');
                 if (activeTaskCount.value === 0) return ElementPlus.ElMessage.warning('当前没有选中的有效搭配任务！');
 
-                // 🔴 插入二次确认提示框
+                // 1. 确认弹窗
                 try {
                     await ElementPlus.ElMessageBox.confirm(
                         `系统将为您生成 ${activeTaskCount.value} 个换色任务，是否立即开始？`,
                         '提交确认',
-                        {
-                            confirmButtonText: '确定提交',
-                            cancelButtonText: '我再想想',
-                            type: 'info',
-                        }
+                        { confirmButtonText: '确定提交', cancelButtonText: '我再想想', type: 'info' }
                     );
-                } catch (e) {
-                    // 用户点击了取消或关闭弹窗
-                    return;
-                }
+                } catch (e) { return; }
 
+                // 2. 正式提交流程 (合并为一个 try-catch-finally)
                 loading.value = true;
                 try {
-                    // ... 原有的 OSS 签名获取及图片上传逻辑 ...
-                } catch (e) {
-                    /* 异常处理 */
-                } finally {
-                    loading.value = false;
-                }
-
-                loading.value = true;
-                try {
+                    // 第一步：获取 OSS 策略
                     const policyRes = await axios.get('http://localhost:8080/api/oss/policy');
                     const policyData = policyRes.data.data;
+
+                    // 第二步：上传图片
                     const neededInputs = new Set(), neededColors = new Set();
-                    inputPool.value.forEach(inp => colorPool.value.forEach(col => { if (pairingState[`${inp.id}_${col.id}`]) { neededInputs.add(inp); neededColors.add(col); } }));
+                    inputPool.value.forEach(inp => colorPool.value.forEach(col => {
+                        if (pairingState[`${inp.id}_${col.id}`]) {
+                            neededInputs.add(inp); neededColors.add(col);
+                        }
+                    }));
+
                     uploadProgressMsg.value = `并发上传 ${neededInputs.size + neededColors.size} 张图...`;
                     await Promise.all([...neededInputs, ...neededColors].map(item => directUploadToOss(item, policyData)));
+
+                    // 第三步：派发任务
                     const pairsPayload = [];
-                    inputPool.value.forEach(inp => colorPool.value.forEach(col => { if (pairingState[`${inp.id}_${col.id}`]) pairsPayload.push({ inputUrl: inp.ossUrl, colorUrl: col.ossUrl }); }));
-                    const finalPayload = { spu: form.spu, prompt: form.prompt, model: form.model, resolution: form.resolution, aspect_ratio: form.aspect_ratio, pairs: pairsPayload, taskType: 1 };
+                    inputPool.value.forEach(inp => colorPool.value.forEach(col => {
+                        if (pairingState[`${inp.id}_${col.id}`]) pairsPayload.push({ inputUrl: inp.ossUrl, colorUrl: col.ossUrl });
+                    }));
+
+                    const finalPayload = {
+                        spu: form.spu, prompt: form.prompt, model: form.model,
+                        resolution: form.resolution, aspect_ratio: form.aspect_ratio,
+                        pairs: pairsPayload, taskType: 1
+                    };
+
+                    uploadProgressMsg.value = '正在派发任务到 AI 队列...';
                     const res = await axios.post('http://localhost:8080/api/tasks/create', finalPayload);
-                    if (res.data.success) {
-                        ElementPlus.ElMessage.success(`🚀 提交成功！已派发 ${res.data.data.length} 个任务。`);
-                        inputPool.value = []; colorPool.value = []; for (let key in pairingState) delete pairingState[key];
-                    } else ElementPlus.ElMessage.error(res.data.message);
-                } catch (e) { ElementPlus.ElMessage.error('处理失败'); } finally { loading.value = false; }
+
+                    // 🔴 关键修复：增加安全性判断
+                    if (res.data && res.data.success) {
+                        // 使用更健壮的方式获取长度，防止报错中断
+                        const count = (res.data.data && Array.isArray(res.data.data)) ? res.data.data.length : pairsPayload.length;
+
+                        // 弹出强力提示
+                        ElementPlus.ElMessage({
+                            message: `🚀 提交成功！已派发 ${count} 个换色任务。`,
+                            type: 'success',
+                            duration: 5000, // 显示 5 秒
+                            showClose: true
+                        });
+
+                        // 清空矩阵
+                        inputPool.value = []; colorPool.value = [];
+                        for (let key in pairingState) delete pairingState[key];
+                    } else {
+                        ElementPlus.ElMessage.error(res.data.message || '后端返回失败');
+                    }
+                } catch (e) {
+                    console.error("提交过程发生错误:", e);
+                    ElementPlus.ElMessage.error('处理失败：请检查网络或 OSS 签名');
+                } finally {
+                    loading.value = false;
+                    uploadProgressMsg.value = '正在处理...';
+                }
             };
 
             const goToScene = () => { window.location.href = 'scene.html'; };

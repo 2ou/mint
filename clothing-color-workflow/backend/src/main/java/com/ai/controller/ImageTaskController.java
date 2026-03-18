@@ -32,9 +32,11 @@ public class ImageTaskController {
                                                         jakarta.servlet.http.HttpServletRequest httpServletRequest) {
         List<TaskCreateResponse> responses = new ArrayList<>();
 
-        // 🔴 从拦截器里拿出当前登录人的身份信息
+        // 🔴 1. 确保从拦截器放入 Request 域的属性被正确取出
         String operator = (String) httpServletRequest.getAttribute("operator");
         String shopName = (String) httpServletRequest.getAttribute("shopName");
+
+        log.info("【收到任务请求】操作人: {}, 所属店铺: {}", operator, shopName);
 
         if (request.getPairs() != null) {
             for (BatchTaskRequest.TaskPair pair : request.getPairs()) {

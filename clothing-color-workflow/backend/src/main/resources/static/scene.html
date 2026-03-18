@@ -247,9 +247,10 @@
                 if (!form.spu) return ElementPlus.ElMessage.warning('SPU 款号不能为空！');
                 if (tasks.value.length === 0) return ElementPlus.ElMessage.warning('请至少添加一个任务！');
 
+                // 基础校验...
                 for (let i = 0; i < tasks.value.length; i++) {
-                    if (tasks.value[i].inputs.length === 0) return ElementPlus.ElMessage.warning(`第 ${i+1} 个任务缺少必填的【原图】！`);
-                    if (!tasks.value[i].prompt.trim()) return ElementPlus.ElMessage.warning(`第 ${i+1} 个任务缺少必填的【提示词】！`);
+                    if (tasks.value[i].inputs.length === 0) return ElementPlus.ElMessage.warning(`第 ${i+1} 个任务缺少原图`);
+                    if (!tasks.value[i].prompt.trim()) return ElementPlus.ElMessage.warning(`第 ${i+1} 个任务缺少提示词`);
                 }
 
                 try {
@@ -258,7 +259,7 @@
 
                 loading.value = true;
                 try {
-                    uploadProgressMsg.value = '获取 OSS 签名...';
+                    uploadProgressMsg.value = '正在上传素材...';
                     const policyRes = await axios.get('http://localhost:8080/api/oss/policy');
                     const policyData = policyRes.data.data;
 
@@ -269,37 +270,45 @@
                     });
 
                     if (itemsToUpload.length > 0) {
-                        uploadProgressMsg.value = `并发上传 ${itemsToUpload.length} 张图片到云端...`;
                         await Promise.all(itemsToUpload.map(item => directUploadToOss(item, policyData)));
                     }
 
-                    uploadProgressMsg.value = '派发 AI 任务...';
-
-                    // 🔴 核心逻辑2：将每个任务的 1~4 张原图，用逗号拼接成一个字符串发送
+                    uploadProgressMsg.value = '正在派发 AI 场景任务...';
                     const apiRequests = tasks.value.map(task => {
                         const payload = {
-                            spu: form.spu,
-                            model: form.model,
-                            resolution: form.resolution,
-                            aspect_ratio: form.aspect_ratio,
-                            prompt: task.prompt,
-                            taskType: 2,
+                            spu: form.spu, model: form.model, resolution: form.resolution,
+                            aspect_ratio: form.aspect_ratio, prompt: task.prompt, taskType: 2,
                             pairs: [{
-                                inputUrl: task.inputs.map(inp => inp.ossUrl).join(','), // 用逗号拼接
-                                colorUrl: task.ref.url ? task.ref.ossUrl : ""
+                                inputUrl: task.inputs.map(inp => inp.ossUrl).join(','),
+                                colorUrl: (task.ref && task.ref.ossUrl) ? task.ref.ossUrl : ""
                             }]
                         };
                         return axios.post('http://localhost:8080/api/tasks/create', payload);
                     });
 
-                    await Promise.all(apiRequests);
-                    ElementPlus.ElMessage.success(`🚀 提交成功！已派发 ${tasks.value.length} 个场景任务。`);
-                    tasks.value = [];
-                    addTask();
+                    const results = await Promise.all(apiRequests);
+
+                    // 🔴 核心修复：检查每个请求的 success 状态
+                    const failedTasks = results.filter(r => !r.data || !r.data.success);
+
+                    if (failedTasks.length === 0) {
+                        ElementPlus.ElMessage({
+                            message: `🚀 提交成功！已派发 ${tasks.value.length} 个场景生成任务。`,
+                            type: 'success',
+                            duration: 5000,
+                            showClose: true
+                        });
+                        tasks.value = [];
+                        addTask();
+                    } else {
+                        ElementPlus.ElMessage.warning(`部分任务派发失败（失败数: ${failedTasks.length}），请前往大盘核对。`);
+                    }
                 } catch (e) {
-                    ElementPlus.ElMessage.error('处理失败：请检查网络或配置！');
+                    console.error("提交异常:", e);
+                    ElementPlus.ElMessage.error('系统崩溃：请确认网络连接或 Token 是否过期');
                 } finally {
                     loading.value = false;
+                    uploadProgressMsg.value = '正在处理...';
                 }
             };
 
