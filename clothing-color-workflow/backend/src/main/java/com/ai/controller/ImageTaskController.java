@@ -86,9 +86,10 @@ public class ImageTaskController {
             @RequestParam(value = "status", required = false) String status,
             @RequestParam(value = "taskType", required = false) Integer taskType, // 🔴 新增
             @RequestParam(value = "startTime", required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime startTime,
-            @RequestParam(value = "endTime", required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime endTime) {
+            @RequestParam(value = "endTime", required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime endTime,
+            @RequestParam(value = "taskId", required = false) String taskId) {
 
-        Page<TaskCreateResponse> taskPage = imageTaskService.getTaskPage(page, size, spu, status, taskType, startTime, endTime);
+        Page<TaskCreateResponse> taskPage = imageTaskService.getTaskPage(page, size, spu, status, taskType, startTime, endTime, taskId);
         return ApiResponse.ok("ok", taskPage);
     }
 

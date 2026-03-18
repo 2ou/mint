@@ -10,6 +10,9 @@ public interface OssService {
     // 上传结果到 OSS
     String uploadResultToOss(String spu, String resultUrl);
 
+    // 🔴 新增：直接将 File 对象上传到 OSS 的方法
+    String uploadFileToOss(String spu, java.io.File file);
+
     // 保存结果到本地
     String saveResultToLocal(String spu, String resultUrl, String localRootPath);
 

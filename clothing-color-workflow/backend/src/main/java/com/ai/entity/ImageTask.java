@@ -67,4 +67,6 @@ public class ImageTask {
 
     @UpdateTimestamp
     private LocalDateTime updatedAt;
+
+    private LocalDateTime completeTime; // 🔴 新增：任务完成时间戳 (毫秒)
 }

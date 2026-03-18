@@ -1,6 +1,7 @@
 package com.ai.service.impl;
 
 import com.ai.config.AppProperties;
+import com.ai.dto.KieTaskResult;
 import com.ai.dto.TaskCreateResponse;
 import com.ai.entity.ImageTask;
 import com.ai.repository.ImageTaskRepository;
@@ -23,7 +24,9 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -37,6 +40,9 @@ import java.util.zip.ZipOutputStream;
 @Service
 @Slf4j
 public class ImageTaskServiceImpl implements ImageTaskService {
+
+    // 🔴 1. 将后台轮询的限流并发数提升到 10
+    private final ExecutorService pollingPool = Executors.newFixedThreadPool(10);
 
     private final ImageTaskRepository imageTaskRepository;
     private final KieClientService kieClientService;
@@ -54,15 +60,6 @@ public class ImageTaskServiceImpl implements ImageTaskService {
             .readTimeout(60, TimeUnit.SECONDS)
             .build();
 
-    // 🔴 专门用于兜底下载的客户端 (给足 3 分钟超时时间)
-    private final okhttp3.OkHttpClient compensationClient = new okhttp3.OkHttpClient.Builder()
-            .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(180, TimeUnit.SECONDS)
-            .build();
-
-    // 🔴 带“限流阀”的专用多线程池，最多同时压缩 3 张图，防止服务器内存溢出！
-    private final ExecutorService compressThreadPool = Executors.newFixedThreadPool(3);
-
     public ImageTaskServiceImpl(ImageTaskRepository imageTaskRepository, KieClientService kieClientService, OssService ossService) {
         this.imageTaskRepository = imageTaskRepository;
         this.kieClientService = kieClientService;
@@ -70,8 +67,7 @@ public class ImageTaskServiceImpl implements ImageTaskService {
     }
 
     // ======================== 核心业务逻辑 ========================
-
-    @Scheduled(fixedRate = 300000)
+    @Scheduled(fixedRate = 300000) // 5分钟跑一次
     public void scheduledRefreshProcessingTasks() {
         log.info("【定时任务】开始自动刷新处理中的 AI 任务...");
         List<ImageTask> processingTasks = imageTaskRepository.findAll((root, query, cb) -> cb.or(
@@ -84,14 +80,23 @@ public class ImageTaskServiceImpl implements ImageTaskService {
             return;
         }
 
-        for (ImageTask task : processingTasks) {
-            try {
-                refreshTask(task.getId());
-            } catch (Exception e) {
-                log.error("【定时任务】刷新任务 ID: {} 失败", task.getId(), e);
-            }
-        }
-        log.info("【定时任务】自动刷新完成，共处理 {} 个任务。", processingTasks.size());
+        log.info("【定时任务】捞出 {} 个处理中任务，开始并发检测 (最大并发数: 10)...", processingTasks.size());
+
+        // 🔴 核心修复：把普通的 for 循环改成并行派发！把任务扔给 pollingPool
+        List<CompletableFuture<Void>> futures = processingTasks.stream()
+                .map(task -> CompletableFuture.runAsync(() -> {
+                    try {
+                        refreshTask(task.getId());
+                    } catch (Exception e) {
+                        log.error("【定时任务】并发刷新任务 ID: {} 发生异常: {}", task.getId(), e.getMessage());
+                    }
+                }, pollingPool)) // 👈 这里才真正用到了你定义的 10 线程池！
+                .collect(Collectors.toList());
+
+        // 🔴 阻塞主定时任务：等待这 10 个护士把活干完（或者超时强杀），再结束本轮定时任务
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+
+        log.info("【定时任务】本轮自动刷新完成，共处理 {} 个任务。", processingTasks.size());
     }
 
     @Override
@@ -115,6 +120,7 @@ public class ImageTaskServiceImpl implements ImageTaskService {
         return new TaskCreateResponse(imageTaskRepository.save(task));
     }
 
+
     @Override
     public TaskCreateResponse refreshTask(Long id) {
         ImageTask task = imageTaskRepository.findById(id)
@@ -125,146 +131,149 @@ public class ImageTaskServiceImpl implements ImageTaskService {
         }
 
         try {
-            log.info("【步骤1】开始向 KIE 请求任务状态...");
-            String tempAiUrl = kieClientService.getResultUrl(task.getTaskId());
+            log.info("【步骤1】向 KIE 请求完整结果...");
+            KieTaskResult kieResult = kieClientService.getFullResult(task.getTaskId());
 
-            if (tempAiUrl != null && !tempAiUrl.isEmpty()) {
-                log.info("【步骤2】成功解析到临时链接: {}", tempAiUrl);
-                task.setResultTempUrl(tempAiUrl);
+            if (kieResult.isSuccess() && kieResult.getResultUrl() != null) {
+                log.info("【步骤2】KIE 任务已完成，获取到原始结果链接！");
+
+                // 🔴 核心逻辑 1：立刻赋值保底数据，并修改状态为 SUCCESS
+                task.setResultTempUrl(kieResult.getResultUrl());
                 task.setStatus("SUCCESS");
-                task.setErrorMessage(null);
+                task.setErrorMessage(null); // 清除可能存在的历史错误
 
-                try {
-                    log.info("【步骤3】准备抓取并转存到自有 OSS...");
-                    String permanentOssUrl = ossService.uploadResultToOss(task.getSpu(), tempAiUrl);
-                    task.setResultOssUrl(permanentOssUrl);
-                    task.setLocalPath(null);
-                    log.info("【步骤4】OSS 转存成功，永久链接: {}", permanentOssUrl);
-                } catch (Exception subEx) {
-                    log.error("【步骤4-异常】转存自有 OSS 失败: {}", subEx.getMessage());
-                    task.setResultOssUrl(null);
+                // 转换时间
+                if (kieResult.getCompleteTime() != null) {
+                    task.setCompleteTime(java.time.Instant.ofEpochMilli(kieResult.getCompleteTime())
+                            .atZone(java.time.ZoneId.systemDefault())
+                            .toLocalDateTime());
                 }
 
-                log.info("【步骤5】准备保存进 MySQL 数据库...");
+                // 🔴 核心逻辑 2：第一段提交！立刻存入数据库保底！
+                // 这样就算下一秒服务器断电，这张图的原始链接也已经安全躺在你的数据库里了。
                 imageTaskRepository.save(task);
-                log.info("【步骤6】🎉 数据库保存成功！任务流转闭环。");
-            } else {
-                task.setStatus("PROCESSING");
+                log.info("【保底成功】任务 {} 已变更为 SUCCESS，原始链接已入库保护！", task.getId());
+
+                // 🔴 核心逻辑 3：把容易报错的转存功能“隔离”起来
+                try {
+                    log.info("【步骤3】尝试执行双保险转存（本地硬盘 + OSS）...");
+                    String combinedResult = ossService.uploadResultToOss(task.getSpu(), kieResult.getResultUrl());
+
+                    String[] parts = combinedResult.split("\\|");
+                    if (parts.length == 2) {
+                        task.setResultOssUrl(parts[0]);
+                        task.setLocalPath("DELETED".equals(parts[1]) ? null : parts[1]);
+
+                        // 🔴 第二段提交：转存成功了，把 OSS 链接补充进数据库
+                        imageTaskRepository.save(task);
+                        log.info("【转存成功】任务 {} 的 OSS 永久链接补充入库完毕！", task.getId());
+                    }
+                } catch (Exception subEx) {
+                    // 🔴 核心逻辑 4：如果转存报错，仅仅打印日志，绝对不去修改 task 的状态！
+                    // 这样前端看到的状态依然是“成功”，并且能通过临时链接看图。
+                    log.error("【转存降级】本地保存或 OSS 上传失败，但不影响任务成功状态: {}", subEx.getMessage());
+                }
+
+            } else if ("fail".equals(kieResult.getStatus()) || "failed".equals(kieResult.getStatus())) {
+                task.setStatus("FAILED");
+                task.setErrorMessage(kieResult.getErrorMessage());
                 imageTaskRepository.save(task);
             }
         } catch (Throwable e) {
-            log.error("【严重异常】刷新任务 ID: {} 发生奔溃: {}", id, e.getMessage(), e);
+            log.error("刷新任务发生系统崩溃: {}", e.getMessage());
+            // 注意：这里捕获的是 KIE 接口查询本身的崩溃。
+            // 转存的崩溃已经被上面拦截了，不会走到这里。
             task.setStatus("FAILED");
-            task.setErrorMessage(e.getMessage());
-            try {
-                imageTaskRepository.save(task);
-            } catch (Exception saveEx) {
-                log.error("【灾难异常】连写入失败状态都报错了: {}", saveEx.getMessage());
-            }
+            task.setErrorMessage("查询远端结果异常: " + e.getMessage());
+            imageTaskRepository.save(task);
         }
+
         return new TaskCreateResponse(task);
     }
 
 
     // ======================== 下载与查询逻辑 ========================
-
     @Override
     public void batchDownloadZip(List<Long> ids, jakarta.servlet.http.HttpServletResponse response) {
+        // 设置响应头，告知浏览器这是一个 ZIP 文件下载
         response.setContentType("application/zip");
+        // 解决中文乱码问题（如果有中文名），建议使用英文或拼音
         response.setHeader("Content-Disposition", "attachment; filename=AI_tasks_results.zip");
 
-        ExecutorService executor = Executors.newFixedThreadPool(10);
-
-        try (ZipOutputStream zos = new ZipOutputStream(response.getOutputStream())) {
-            List<CompletableFuture<File>> futures = new ArrayList<>();
-            List<String> fileNames = new ArrayList<>();
-
-            for (Long id : ids) {
-                imageTaskRepository.findById(id).ifPresent(task -> {
-                    String imageUrl = task.getResultOssUrl() != null ? task.getResultOssUrl() : task.getResultTempUrl();
-                    if (imageUrl == null || imageUrl.isEmpty()) return;
-
-                    String ext = imageUrl.toLowerCase().contains(".jpg") || imageUrl.toLowerCase().contains(".jpeg") ? ".jpg" : ".png";
-                    String fileName = task.getSpu() + "_" + task.getId() + "_net" + ext;
-
-                    fileNames.add(fileName);
-
-                    CompletableFuture<File> future = CompletableFuture.supplyAsync(() -> {
-                        File tempFile = null;
-                        try {
-                            tempFile = File.createTempFile("zip_dl_", ext);
-                            okhttp3.Request request = new okhttp3.Request.Builder()
-                                    .url(imageUrl)
-                                    .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0")
-                                    .build();
-
-                            try (okhttp3.Response okResponse = httpClient.newCall(request).execute()) {
-                                if (!okResponse.isSuccessful() || okResponse.body() == null) {
-                                    throw new RuntimeException("HTTP 请求失败: " + okResponse.code());
-                                }
-                                try (InputStream is = okResponse.body().byteStream();
-                                     FileOutputStream fos = new FileOutputStream(tempFile)) {
-                                    byte[] buffer = new byte[8192];
-                                    int length;
-                                    while ((length = is.read(buffer)) > 0) {
-                                        fos.write(buffer, 0, length);
-                                    }
-                                }
-                            }
-                            return tempFile;
-                        } catch (Exception e) {
-                            log.error("ZIP并发下载单图失败, 任务ID: {}, 链接: {}", task.getId(), imageUrl, e);
-                            if (tempFile != null && tempFile.exists()) tempFile.delete();
-                            return null;
-                        }
-                    }, executor);
-
-                    futures.add(future);
-                });
-            }
+        // 直接将 ZIP 流绑定到 HTTP 响应流上，实现“边下载边打包边传给用户”
+        try (java.util.zip.ZipOutputStream zos = new java.util.zip.ZipOutputStream(response.getOutputStream())) {
 
             boolean hasFiles = false;
-            for (int i = 0; i < futures.size(); i++) {
-                File tempDownloadedFile = futures.get(i).join();
 
-                if (tempDownloadedFile != null && tempDownloadedFile.exists()) {
-                    try {
-                        zos.putNextEntry(new ZipEntry(fileNames.get(i)));
-                        try (FileInputStream fis = new FileInputStream(tempDownloadedFile)) {
-                            byte[] buffer = new byte[8192];
-                            int length;
-                            while ((length = fis.read(buffer)) > 0) {
-                                zos.write(buffer, 0, length);
+            for (Long id : ids) {
+                try {
+                    // 因为外面用了流，这里用传统方式获取对象更方便处理异常
+                    ImageTask task = imageTaskRepository.findById(id).orElse(null);
+                    if (task == null) continue;
+
+                    // 优先取 OSS 永久链接，没有的话取 KIE 的临时链接
+                    String imageUrl = task.getResultOssUrl() != null ? task.getResultOssUrl() : task.getResultTempUrl();
+                    if (imageUrl == null || imageUrl.isEmpty()) continue;
+
+                    // 构造压缩包内的文件名：SPU_前8位任务ID.png
+                    String ext = imageUrl.toLowerCase().contains(".jpg") ? ".jpg" : ".png";
+                    String shortTaskId = task.getTaskId() != null && task.getTaskId().length() >= 8 ? task.getTaskId().substring(0, 8) : String.valueOf(task.getId());
+                    String fileName = task.getSpu() + "_" + shortTaskId + ext;
+
+                    // 使用 httpClient 直接从网络拉取图片流
+                    okhttp3.Request request = new okhttp3.Request.Builder()
+                            .url(imageUrl)
+                            .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0")
+                            .build();
+
+                    try (okhttp3.Response okResponse = httpClient.newCall(request).execute()) {
+                        if (okResponse.isSuccessful() && okResponse.body() != null) {
+                            // 开启一个新的 ZIP 实体
+                            zos.putNextEntry(new java.util.zip.ZipEntry(fileName));
+
+                            // 直接将网络的 InputStream 灌入 ZIP 的 OutputStream，完全不占本地硬盘和内存！
+                            try (InputStream is = okResponse.body().byteStream()) {
+                                byte[] buffer = new byte[8192];
+                                int length;
+                                while ((length = is.read(buffer)) > 0) {
+                                    zos.write(buffer, 0, length);
+                                }
                             }
+                            zos.closeEntry();
+                            hasFiles = true;
+                        } else {
+                            log.warn("【ZIP打包】单图下载失败: HTTP {}, 链接: {}", okResponse.code(), imageUrl);
                         }
-                        zos.closeEntry();
-                        hasFiles = true;
-                    } finally {
-                        tempDownloadedFile.delete();
                     }
+                } catch (Exception e) {
+                    log.error("【ZIP打包】处理任务 ID: {} 时发生异常: {}", id, e.getMessage());
+                    // 某一张图失败了，跳过它，继续打包下一张，绝不中断整个下载
                 }
             }
 
+            // 如果用户选中的任务全都没图，放一个提示文本进去，防止下载到一个无效的空 ZIP
             if (!hasFiles) {
-                zos.putNextEntry(new ZipEntry("下载失败提示.txt"));
-                String msg = "您选中的任务尚未生成结果，或者网络拦截导致下载失败，因此没有任何图片。";
+                zos.putNextEntry(new java.util.zip.ZipEntry("下载失败提示.txt"));
+                String msg = "您选中的任务尚未生成结果，或者链接已失效，因此没有任何图片。";
                 zos.write(msg.getBytes("UTF-8"));
                 zos.closeEntry();
             }
 
         } catch (Exception e) {
-            log.error("打包 ZIP 彻底崩溃", e);
+            log.error("【ZIP打包】全局严重异常", e);
             throw new RuntimeException("打包 ZIP 失败: " + e.getMessage(), e);
-        } finally {
-            executor.shutdown();
         }
     }
 
     @Override
-    public Page<TaskCreateResponse> getTaskPage(int page, int size, String spu, String status, Integer taskType, LocalDateTime startTime, LocalDateTime endTime) {
+    public Page<TaskCreateResponse> getTaskPage(int page, int size, String spu, String status, Integer taskType, LocalDateTime startTime, LocalDateTime endTime, String taskId) {
         Pageable pageable = PageRequest.of(page - 1, size, Sort.by(Sort.Direction.DESC, "createdAt"));
         Specification<ImageTask> spec = (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
+            // 🔴 新增：任务 ID 模糊搜索
+            if (taskId != null && !taskId.trim().isEmpty()) {
+                predicates.add(cb.like(root.get("taskId"), "%" + taskId.trim() + "%"));
+            }
             if (spu != null && !spu.trim().isEmpty()) predicates.add(cb.like(root.get("spu"), "%" + spu.trim() + "%"));
             if (status != null && !status.trim().isEmpty()) predicates.add(cb.equal(root.get("status"), status.trim()));
             if (taskType != null) predicates.add(cb.equal(root.get("taskType"), taskType));
@@ -288,103 +297,12 @@ public class ImageTaskServiceImpl implements ImageTaskService {
     @Override
     public void downloadTaskFile(Long id) { throw new RuntimeException("此接口已停用，请使用批量下载功能 (ZIP)"); }
 
-
-    // ======================== 后台兜底压缩转存机器人 ========================
-
-    /**
-     * 后台专属兜底机器人 (多线程并发版)
-     */
-    @Scheduled(cron = "0 0/5 * * * ?")
-    public void repairMissingOssTasks() {
-        List<ImageTask> tasks = imageTaskRepository.findTop5ByStatusAndResultTempUrlIsNotNullAndResultOssUrlIsNullOrderByIdDesc("SUCCESS");
-        if (tasks.isEmpty()) return;
-
-        log.info("【OSS兜底】发现 {} 个未转存任务，启动多线程并发抢救...", tasks.size());
-        List<CompletableFuture<Void>> futures = new ArrayList<>();
-
-        for (ImageTask task : tasks) {
-            CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-                File tempRawFile = null;
-                File tempCompressedFile = null;
-                try {
-                    tempRawFile = File.createTempFile("kie_raw_repair_", ".png");
-                    tempCompressedFile = File.createTempFile("kie_zip_repair_", ".jpg");
-
-                    // 下载原图
-                    okhttp3.Request request = new okhttp3.Request.Builder()
-                            .url(task.getResultTempUrl())
-                            .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0")
-                            .build();
-
-                    try (okhttp3.Response response = compensationClient.newCall(request).execute()) {
-                        if (!response.isSuccessful() || response.body() == null) {
-                            log.warn("【OSS兜底】任务 {} 链接失效，跳过", task.getId());
-                            return;
-                        }
-                        try (InputStream is = response.body().byteStream();
-                             FileOutputStream fos = new FileOutputStream(tempRawFile)) {
-                            byte[] buffer = new byte[8192];
-                            int len;
-                            while ((len = is.read(buffer)) != -1) {
-                                fos.write(buffer, 0, len);
-                            }
-                        }
-                    }
-
-                    // 🔴 智能动态压缩：目标体积约 5MB (5 * 1024 * 1024 bytes)
-                    long targetSize = 5 * 1024 * 1024L;
-                    float quality = 0.9f; // 从 90% 的极高画质起步
-
-                    // 最多进行 3 次试探，防止无意义的 CPU 消耗
-                    for (int i = 0; i < 3; i++) {
-                        net.coobird.thumbnailator.Thumbnails.of(tempRawFile)
-                                .scale(1.0) // 保持 4K 原分辨率不缩水
-                                .outputQuality(quality)
-                                .outputFormat("jpg") // 转 JPG 剥离透明通道，减小体积
-                                .toFile(tempCompressedFile);
-
-                        long currentSize = tempCompressedFile.length();
-                        if (currentSize <= targetSize) {
-                            log.info("【OSS兜底】第 {} 次压缩达标！当前体积: {} MB, 画质参数: {}",
-                                    i + 1, String.format("%.2f", currentSize / 1048576.0), quality);
-                            break; // 满足 5MB 以下，直接跳出循环！
-                        }
-
-                        // 如果还大于 5MB，每次将画质降低 15% 继续尝试
-                        quality -= 0.15f;
-                    }
-
-                    // 🔴 并发上传 OSS (完美兼容配置和暴露的 ossClient)
-                    AppProperties.Oss oss = appProperties.getOss();
-                    String objectName = task.getSpu() + "/result/AI_" + System.currentTimeMillis() + "_zip.jpg";
-
-                    ossService.getOssClient().putObject(oss.getResultBucket(), objectName, tempCompressedFile);
-
-                    String finalOssUrl = oss.getResultPublicHost() + "/" + objectName;
-
-                    // 更新数据库
-                    task.setResultOssUrl(finalOssUrl);
-                    imageTaskRepository.save(task);
-                    log.info("【OSS兜底】🎉 任务 {} 抢救成功！已重新挂载至 OSS", task.getId());
-
-                } catch (Exception e) {
-                    log.error("【OSS兜底】❌ 任务 {} 抢救失败: {}", task.getId(), e.getMessage());
-                } finally {
-                    if (tempRawFile != null && tempRawFile.exists()) tempRawFile.delete();
-                    if (tempCompressedFile != null && tempCompressedFile.exists()) tempCompressedFile.delete();
-                }
-
-            }, compressThreadPool);
-
-            futures.add(future);
-        }
-
-        try {
-            // 阻塞主线程，直到这批任务全部被线程池消化完
-            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
-            log.info("【OSS兜底】✅ 本轮多线程抢救执行完毕！");
-        } catch (Exception e) {
-            log.error("【OSS兜底】等待多线程执行异常", e);
+    @jakarta.annotation.PreDestroy
+    public void onDestroy() {
+        log.info("【系统关闭】正在释放轮询线程池...");
+        if (pollingPool != null) {
+            pollingPool.shutdown();
         }
     }
+
 }

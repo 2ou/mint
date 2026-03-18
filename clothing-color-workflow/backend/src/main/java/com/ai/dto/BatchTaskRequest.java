@@ -36,6 +36,9 @@ public class BatchTaskRequest {
     @JsonProperty("aspect_ratio") // 匹配前端传过来的下划线命名
     private String aspectRatio = "auto";
 
+    private String shopName;
+    private String operator;
+
     /**
      * 前端配对好的任务组合列表 (1张原图对应1张颜色图为一组)
      */

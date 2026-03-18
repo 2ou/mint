@@ -1,5 +1,7 @@
 package com.ai.service;
 
+import com.ai.dto.KieTaskResult;
+
 public interface KieClientService {
 
     /**
@@ -14,11 +16,6 @@ public interface KieClientService {
      */
     String createTask(String spu, String prompt, String resolution, String model, String inputUrl, String colorUrl);
 
-    /**
-     * 查询 KIE 任务结果，返回远程图片 URL，如果任务未完成返回 null
-     *
-     * @param taskId KIE 任务ID
-     * @return 生成结果URL，未完成返回 null
-     */
-    String getResultUrl(String taskId);
+    // 🔴 新增：返回完整结果对象的方法
+    KieTaskResult getFullResult(String taskId);
 }

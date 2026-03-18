@@ -29,12 +29,15 @@ public class TaskCreateResponse {
     private String resultTempUrl;
     private String resultOssUrl;
     private String localPath;
+    private LocalDateTime completeTime;
+
 
     private LocalDateTime createdAt;
 
     public TaskCreateResponse(ImageTask task) {
         this.id = task.getId();
         this.taskId = task.getTaskId();
+        this.completeTime = task.getCompleteTime(); // 🔴 新增字段传给前端
         this.status = task.getStatus();
         this.success = "SUCCESS".equals(task.getStatus());
         this.inputImageUrl = task.getInputImageUrl();

@@ -12,4 +12,5 @@ public class KieTaskResult {
     private String taskId;
     private String resultUrl;
     private String errorMessage;
+    private Long completeTime; // 🔴 对应 KIE 返回的 completeTime
 }
