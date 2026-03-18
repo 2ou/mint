@@ -214,7 +214,7 @@
             const openColorCardDialog = async () => {
                 colorCardDrawer.value = true;
                 try {
-                    const res = await axios.get('http://localhost:8080/api/color-cards/list');
+                    const res = await axios.get('/api/color-cards/list');
                     if (res.data.success) dbColorCards.value = res.data.data;
                 } catch (e) { ElementPlus.ElMessage.error('获取色卡库失败'); }
             };
@@ -267,7 +267,7 @@
                 loading.value = true;
                 try {
                     // 第一步：获取 OSS 策略
-                    const policyRes = await axios.get('http://localhost:8080/api/oss/policy');
+                    const policyRes = await axios.get('/api/oss/policy');
                     const policyData = policyRes.data.data;
 
                     // 第二步：上传图片
@@ -294,7 +294,7 @@
                     };
 
                     uploadProgressMsg.value = '正在派发任务到 AI 队列...';
-                    const res = await axios.post('http://localhost:8080/api/tasks/create', finalPayload);
+                    const res = await axios.post('/api/tasks/create', finalPayload);
 
                     // 🔴 关键修复：增加安全性判断
                     if (res.data && res.data.success) {

@@ -395,7 +395,7 @@
                         params.startTime = filters.timeRange[0];
                         params.endTime = filters.timeRange[1];
                     }
-                    const res = await axios.get('http://localhost:8080/api/tasks/page', {params});
+                    const res = await axios.get('/api/tasks/page', {params});
                     if (res.data.success) {
                         rawData.value = res.data.data.content; // 分页内容列表
                         total.value = res.data.data.totalElements; // 库中总条数
@@ -426,7 +426,7 @@
                 if (!row.id) return;
                 row.isRefreshing = true;
                 try {
-                    const res = await axios.post(`http://localhost:8080/api/tasks/${row.id}/refresh`);
+                    const res = await axios.post(`/api/tasks/${row.id}/refresh`);
                     if (res.data.success) Object.assign(row, res.data.data);
                 } catch (e) {
                     console.error('单行刷新失败', e);
@@ -497,7 +497,7 @@
                                 downloadUrl = row.resultOssUrl;
                             } else if (row.resultTempUrl) {
                                 // KIE 兜底走后端透传水管
-                                const baseUrl = window.location.port === '63342' ? 'http://localhost:8080' : '';
+                                const baseUrl = window.location.port === '63342' ? '' : '';
                                 downloadUrl = `${baseUrl}/api/tasks/proxy-download?url=${encodeURIComponent(row.resultTempUrl)}&filename=${encodeURIComponent(fileName)}`;
                             }
 

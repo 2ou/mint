@@ -218,7 +218,7 @@
                 templateDrawer.value = true;
                 if (dbTemplates.value.length === 0) {
                     try {
-                        const res = await axios.get('http://localhost:8080/api/templates/list');
+                        const res = await axios.get('/api/templates/list');
                         if (res.data.success) dbTemplates.value = res.data.data.filter(t => t.isActive);
                     } catch (e) { ElementPlus.ElMessage.error('获取库失败'); }
                 }
@@ -260,7 +260,7 @@
                 loading.value = true;
                 try {
                     uploadProgressMsg.value = '正在上传素材...';
-                    const policyRes = await axios.get('http://localhost:8080/api/oss/policy');
+                    const policyRes = await axios.get('/api/oss/policy');
                     const policyData = policyRes.data.data;
 
                     const itemsToUpload = [];
@@ -283,7 +283,7 @@
                                 colorUrl: (task.ref && task.ref.ossUrl) ? task.ref.ossUrl : ""
                             }]
                         };
-                        return axios.post('http://localhost:8080/api/tasks/create', payload);
+                        return axios.post('/api/tasks/create', payload);
                     });
 
                     const results = await Promise.all(apiRequests);

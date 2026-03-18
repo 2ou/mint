@@ -41,7 +41,7 @@
                 if (!form.username || !form.password) return ElementPlus.ElMessage.warning("请填写完整账号密码");
                 loading.value = true;
                 try {
-                    const res = await axios.post('http://localhost:8080/api/auth/login', form);
+                    const res = await axios.post('/api/auth/login', form);
                     if (res.data.success) {
                         // 登录成功，将 Token 和 账号信息 存入本地浏览器
                         localStorage.setItem("user_token", res.data.data.token);

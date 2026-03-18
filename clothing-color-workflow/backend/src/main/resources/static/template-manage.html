@@ -210,7 +210,7 @@
             const fetchTemplates = async () => {
                 loading.value = true;
                 try {
-                    const res = await axios.get('http://localhost:8080/api/templates/list');
+                    const res = await axios.get('/api/templates/list');
                     if (res.data.success) templates.value = res.data.data;
                 } catch (e) { ElementPlus.ElMessage.error('获取模板失败'); }
                 finally { loading.value = false; }
@@ -246,7 +246,7 @@
                 const file = event.target.files[0]; if (!file) return;
                 uploading.value = true;
                 try {
-                    const policyRes = await axios.get('http://localhost:8080/api/oss/policy');
+                    const policyRes = await axios.get('/api/oss/policy');
                     const policyData = policyRes.data.data;
                     const suffix = file.name.substring(file.name.lastIndexOf('.'));
                     const finalKey = `${policyData.dir}template_${Date.now()}_${Math.random().toString(36).substr(2, 6)}${suffix}`;
@@ -264,7 +264,7 @@
                 if (!form.basePrompt) return ElementPlus.ElMessage.warning('完整提示词不能为空');
                 saving.value = true;
                 try {
-                    const res = await axios.post('http://localhost:8080/api/templates/save', form);
+                    const res = await axios.post('/api/templates/save', form);
                     if (res.data.success) {
                         ElementPlus.ElMessage.success('保存成功！');
                         dialogVisible.value = false;
@@ -276,7 +276,7 @@
 
             const toggleActive = async (row) => {
                 try {
-                    await axios.post('http://localhost:8080/api/templates/save', row);
+                    await axios.post('/api/templates/save', row);
                     ElementPlus.ElMessage.success(`已${row.isActive ? '启用' : '停用'}该模板`);
                 } catch (e) { ElementPlus.ElMessage.error('状态切换失败'); row.isActive = !row.isActive; }
             };
@@ -284,7 +284,7 @@
             const handleDelete = async (id) => {
                 try {
                     await ElementPlus.ElMessageBox.confirm('确认永久删除该模板?', '警告', {type: 'warning'});
-                    const res = await axios.delete(`http://localhost:8080/api/templates/${id}`);
+                    const res = await axios.delete(`/api/templates/${id}`);
                     if (res.data.success) { ElementPlus.ElMessage.success('删除成功！'); fetchTemplates(); }
                 } catch (e) {}
             };
