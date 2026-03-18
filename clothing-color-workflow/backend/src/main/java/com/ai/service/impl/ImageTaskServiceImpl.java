@@ -98,79 +98,155 @@ public class ImageTaskServiceImpl implements ImageTaskService {
         ImageTask task = imageTaskRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("未找到该任务 ID: " + id));
 
-        // 如果任务已经终结，不需要重复同步
         if ("SUCCESS".equals(task.getStatus()) || "FAILED".equals(task.getStatus())) {
             return new TaskCreateResponse(task);
         }
 
         try {
-            // 1. 获取 AI 厂商的临时结果链接
+            log.info("【步骤1】开始向 KIE 请求任务状态...");
             String tempAiUrl = kieClientService.getResultUrl(task.getTaskId());
 
             if (tempAiUrl != null && !tempAiUrl.isEmpty()) {
+                log.info("【步骤2】成功解析到临时链接: {}", tempAiUrl);
                 task.setResultTempUrl(tempAiUrl);
                 task.setStatus("SUCCESS");
                 task.setErrorMessage(null);
 
                 try {
-                    // 2. 核心：将图片转存到您自己的阿里云 OSS (永久链接)
-                    // 不再调用 saveResultToLocal，彻底取消本地下载逻辑
+                    log.info("【步骤3】准备抓取并转存到自有 OSS...");
                     String permanentOssUrl = ossService.uploadResultToOss(task.getSpu(), tempAiUrl);
                     task.setResultOssUrl(permanentOssUrl);
-
-                    // 清除本地路径记录
                     task.setLocalPath(null);
+                    log.info("【步骤4】OSS 转存成功，永久链接: {}", permanentOssUrl);
                 } catch (Exception subEx) {
-                    log.error("转存自有 OSS 失败: {}", subEx.getMessage());
-                    // 转存失败则保底使用 AI 临时链接，确保前端能看到图
-                    task.setResultOssUrl(tempAiUrl);
+                    log.error("【步骤4-异常】转存自有 OSS 失败: {}", subEx.getMessage());
+                    task.setResultOssUrl(null); // 转存失败时不设永久链接，让前端使用临时链接兜底
                 }
 
+                log.info("【步骤5】准备保存进 MySQL 数据库...");
                 imageTaskRepository.save(task);
+                log.info("【步骤6】🎉 数据库保存成功！任务流转闭环。");
             } else {
                 task.setStatus("PROCESSING");
                 imageTaskRepository.save(task);
             }
-        } catch (Exception e) {
-            log.error("刷新任务异常", e);
+        } catch (Throwable e) {  // 🔴 注意：这里改成了 Throwable，连内存溢出等严重错误也能抓到
+            log.error("【严重异常】刷新任务 ID: {} 发生奔溃: {}", id, e.getMessage(), e);
             task.setStatus("FAILED");
             task.setErrorMessage(e.getMessage());
-            imageTaskRepository.save(task);
+            try {
+                imageTaskRepository.save(task);
+            } catch (Exception saveEx) {
+                log.error("【灾难异常】连写入失败状态都报错了（大概率是数据库缺字段或超长）: {}", saveEx.getMessage());
+            }
         }
         return new TaskCreateResponse(task);
     }
+
+    // 🔴 1. 在方法外（类里面）定义一个公用的 OkHttp 客户端（如果您类里还没有的话）
+    private final okhttp3.OkHttpClient httpClient = new okhttp3.OkHttpClient.Builder()
+            .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+            .build();
 
     @Override
     public void batchDownloadZip(List<Long> ids, jakarta.servlet.http.HttpServletResponse response) {
         response.setContentType("application/zip");
         response.setHeader("Content-Disposition", "attachment; filename=AI_tasks_results.zip");
-        try (ZipOutputStream zos = new ZipOutputStream(response.getOutputStream())) {
+
+        // 创建多线程池加速下载
+        java.util.concurrent.ExecutorService executor = java.util.concurrent.Executors.newFixedThreadPool(10);
+
+        try (java.util.zip.ZipOutputStream zos = new java.util.zip.ZipOutputStream(response.getOutputStream())) {
+
+            List<java.util.concurrent.CompletableFuture<File>> futures = new ArrayList<>();
+            List<String> fileNames = new ArrayList<>();
+
             for (Long id : ids) {
                 imageTaskRepository.findById(id).ifPresent(task -> {
-                    String localPath = task.getLocalPath();
-                    if (localPath != null && !localPath.isEmpty() && new File(localPath).exists()) {
-                        try (InputStream is = new FileInputStream(new File(localPath))) {
-                            zos.putNextEntry(new ZipEntry(task.getSpu() + "_" + task.getId() + ".png"));
-                            byte[] buffer = new byte[8192]; int length;
-                            while ((length = is.read(buffer)) > 0) zos.write(buffer, 0, length);
-                            zos.closeEntry(); return;
-                        } catch (Exception e) { log.error("从本地硬盘读取打包失败: " + localPath, e); }
-                    }
                     String imageUrl = task.getResultOssUrl() != null ? task.getResultOssUrl() : task.getResultTempUrl();
                     if (imageUrl == null || imageUrl.isEmpty()) return;
-                    try {
-                        HttpURLConnection conn = (HttpURLConnection) new URL(imageUrl).openConnection();
-                        conn.setRequestMethod("GET"); conn.setConnectTimeout(5000); conn.setReadTimeout(30000);
-                        try (InputStream is = conn.getInputStream()) {
-                            zos.putNextEntry(new ZipEntry(task.getSpu() + "_" + task.getId() + "_net.png"));
-                            byte[] buffer = new byte[8192]; int length;
-                            while ((length = is.read(buffer)) > 0) zos.write(buffer, 0, length);
-                            zos.closeEntry();
+
+                    String ext = imageUrl.toLowerCase().contains(".jpg") || imageUrl.toLowerCase().contains(".jpeg") ? ".jpg" : ".png";
+                    String fileName = task.getSpu() + "_" + task.getId() + "_net" + ext;
+
+                    fileNames.add(fileName);
+
+                    java.util.concurrent.CompletableFuture<File> future = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+                        File tempFile = null;
+                        try {
+                            tempFile = File.createTempFile("zip_dl_", ext);
+
+                            // 🔴 2. 彻底抛弃 HttpURLConnection，改用不卡死的 OkHttp！
+                            okhttp3.Request request = new okhttp3.Request.Builder()
+                                    .url(imageUrl)
+                                    .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0")
+                                    .build();
+
+                            try (okhttp3.Response okResponse = httpClient.newCall(request).execute()) {
+                                if (!okResponse.isSuccessful() || okResponse.body() == null) {
+                                    throw new RuntimeException("HTTP 请求失败: " + okResponse.code());
+                                }
+
+                                // 边下边存到服务器本地临时文件
+                                try (InputStream is = okResponse.body().byteStream();
+                                     java.io.FileOutputStream fos = new java.io.FileOutputStream(tempFile)) {
+                                    byte[] buffer = new byte[8192];
+                                    int length;
+                                    while ((length = is.read(buffer)) > 0) {
+                                        fos.write(buffer, 0, length);
+                                    }
+                                }
+                            }
+                            return tempFile; // 成功返回
+                        } catch (Exception e) {
+                            log.error("ZIP并发下载单图失败, 任务ID: {}, 链接: {}", task.getId(), imageUrl, e);
+                            if (tempFile != null && tempFile.exists()) tempFile.delete();
+                            return null;
                         }
-                    } catch (Exception e) { log.error("网络下载兜底打包失败: " + imageUrl, e); }
+                    }, executor);
+
+                    futures.add(future);
                 });
             }
-        } catch (Exception e) { throw new RuntimeException("打包 ZIP 失败", e); }
+
+            boolean hasFiles = false;
+            // 等待所有图片下载完毕并写入 ZIP
+            for (int i = 0; i < futures.size(); i++) {
+                File tempDownloadedFile = futures.get(i).join();
+
+                if (tempDownloadedFile != null && tempDownloadedFile.exists()) {
+                    try {
+                        zos.putNextEntry(new java.util.zip.ZipEntry(fileNames.get(i)));
+                        try (java.io.FileInputStream fis = new java.io.FileInputStream(tempDownloadedFile)) {
+                            byte[] buffer = new byte[8192];
+                            int length;
+                            while ((length = fis.read(buffer)) > 0) {
+                                zos.write(buffer, 0, length);
+                            }
+                        }
+                        zos.closeEntry();
+                        hasFiles = true;
+                    } finally {
+                        tempDownloadedFile.delete(); // 阅后即焚
+                    }
+                }
+            }
+
+            // 空包兜底
+            if (!hasFiles) {
+                zos.putNextEntry(new java.util.zip.ZipEntry("下载失败提示.txt"));
+                String msg = "您选中的任务尚未生成结果，或者网络拦截导致下载失败，因此没有任何图片。";
+                zos.write(msg.getBytes("UTF-8"));
+                zos.closeEntry();
+            }
+
+        } catch (Exception e) {
+            log.error("打包 ZIP 彻底崩溃", e);
+            throw new RuntimeException("打包 ZIP 失败: " + e.getMessage(), e);
+        } finally {
+            executor.shutdown();
+        }
     }
 
     // 🔴 核心：重构分页查询逻辑，加入 taskType 筛选

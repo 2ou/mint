@@ -93,7 +93,6 @@ public class KieClientServiceImpl implements KieClientService {
     @Override
     public String getResultUrl(String taskId) {
         try {
-            // 1. 按照官方文档拼装 URL 和 GET 参数
             String url = appProperties.getKie().getBaseUrl() + "/jobs/recordInfo?taskId=" + taskId;
 
             Request request = new Request.Builder()
@@ -103,16 +102,19 @@ public class KieClientServiceImpl implements KieClientService {
                     .build();
 
             try (Response response = httpClient.newCall(request).execute()) {
-                String responseBody = response.body().string();
+                // 🔴 1. 完整读取厂商返回的原始报文
+                String responseBody = response.body() != null ? response.body().string() : "";
+
+                // 🔴 2. 核心调试：把 KIE 返回的具体内容打印到控制台，不当“瞎子”！
+                log.info("【KIE 结果查询】taskId: {}, 返回原始报文: {}", taskId, responseBody);
+
                 if (!response.isSuccessful()) {
                     log.warn("KIE 接口请求失败，HTTP 状态码: {}", response.code());
                     return null;
                 }
 
-                // 2. 解析第一层外壳 JSON
                 JsonNode root = objectMapper.readTree(responseBody);
 
-                // 判断 code 是否为 200
                 if (root.has("code") && root.get("code").asInt() != 200) {
                     throw new RuntimeException("KIE 接口返回异常: " + responseBody);
                 }
@@ -122,35 +124,44 @@ public class KieClientServiceImpl implements KieClientService {
                     return null; // 还没数据，继续等
                 }
 
-                // 3. 判断任务 state 状态
                 String state = dataNode.has("state") ? dataNode.get("state").asText().toLowerCase() : "";
 
                 if ("success".equals(state)) {
-                    // 4. 提取 resultJson 字符串
+                    // 🔴 3. 增强解析兼容性（防止 KIE 厂商悄悄改了字段名）
+
+                    // 方案 A: 结果直接放在 data 的 resultUrls 数组里 (新版常见)
+                    if (dataNode.has("resultUrls") && dataNode.get("resultUrls").isArray() && dataNode.get("resultUrls").size() > 0) {
+                        return dataNode.get("resultUrls").get(0).asText();
+                    }
+
+                    // 方案 B: 结果包在 resultJson 字符串里 (你原来的逻辑)
                     if (dataNode.has("resultJson") && !dataNode.get("resultJson").isNull()) {
                         String resultJsonStr = dataNode.get("resultJson").asText();
-
-                        // 🔴 核心操作：对 resultJson 进行二次解析 (把字符串转成真正的 JSON 对象)
                         JsonNode resultObj = objectMapper.readTree(resultJsonStr);
 
-                        // 从 resultUrls 数组中拿出第一张图的链接
+                        // B-1: 找 resultUrls 数组
                         if (resultObj.has("resultUrls") && resultObj.get("resultUrls").isArray() && resultObj.get("resultUrls").size() > 0) {
                             return resultObj.get("resultUrls").get(0).asText();
                         }
+
+                        // B-2: 找单数形式的 imageUrl 或 image_url (很多厂商爱用这俩)
+                        if (resultObj.has("imageUrl")) return resultObj.get("imageUrl").asText();
+                        if (resultObj.has("image_url")) return resultObj.get("image_url").asText();
+                        if (resultObj.has("url")) return resultObj.get("url").asText();
                     }
-                    throw new RuntimeException("任务成功，但无法解析出图片链接: " + responseBody);
+
+                    throw new RuntimeException("任务显示成功，但代码未能从报文中找到图片 URL，请检查上方控制台打印的 JSON！");
 
                 } else if ("fail".equals(state) || "failed".equals(state)) {
-                    // 任务失败，提取失败原因抛出
                     String failMsg = dataNode.has("failMsg") ? dataNode.get("failMsg").asText() : "未知错误";
                     throw new RuntimeException("KIE 生成失败: " + failMsg);
                 }
 
-                // 状态不是 success 也不是 fail（通常是 processing 或 waiting 等），直接返回 null 代表还在排队/画图中
+                // 其他状态如 processing, queueing，继续等
                 return null;
             }
         } catch (Exception e) {
-            log.error("查询 KIE 任务时发生异常", e);
+            log.error("查询 KIE 任务时发生异常: {}", e.getMessage(), e);
             throw new RuntimeException("查询远端结果异常: " + e.getMessage());
         }
     }
