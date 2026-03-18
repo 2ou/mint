@@ -12,4 +12,7 @@ public interface OssService {
 
     // 保存结果到本地
     String saveResultToLocal(String spu, String resultUrl, String localRootPath);
+
+    // 🔴 新增这一行：暴露 OSS 客户端供外部调用
+    com.aliyun.oss.OSS getOssClient();
 }

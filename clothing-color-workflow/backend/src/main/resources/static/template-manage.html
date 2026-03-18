@@ -61,8 +61,33 @@
                         <el-table-column prop="category" label="分类" width="100" align="center">
                             <template #default="scope"><el-tag size="small" type="success">{{ scope.row.category }}</el-tag></template>
                         </el-table-column>
-                        <el-table-column label="完整提示词 (Base Prompt)" min-width="250">
-                            <template #default="scope"><div class="prompt-text" :title="scope.row.basePrompt">{{ scope.row.basePrompt }}</div></template>
+                        <el-table-column label="完整提示词 (Base Prompt)" min-width="280">
+                            <template #default="scope">
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <el-popover
+                                            placement="top-start"
+                                            title="完整提示词"
+                                            :width="400"
+                                            trigger="hover"
+                                    >
+                                        <div style="word-break: break-all; max-height: 300px; overflow-y: auto; line-height: 1.5; color: #606266;">
+                                            {{ scope.row.basePrompt }}
+                                        </div>
+                                        <template #reference>
+                                            <div class="prompt-text" style="flex: 1; cursor: pointer;">{{ scope.row.basePrompt }}</div>
+                                        </template>
+                                    </el-popover>
+
+                                    <el-button
+                                            v-if="scope.row.basePrompt"
+                                            size="small"
+                                            plain
+                                            @click="copyText(scope.row.basePrompt)"
+                                            title="一键复制到剪贴板">
+                                        📄 复制
+                                    </el-button>
+                                </div>
+                            </template>
                         </el-table-column>
                         <el-table-column label="状态" width="80" align="center">
                             <template #default="scope">
@@ -142,6 +167,23 @@
             const dialogVisible = ref(false);
             const uploading = ref(false);
             const saving = ref(false);
+
+            // 🔴 新增：一键复制文本功能
+            const copyText = async (text) => {
+                if (!text) return;
+                try {
+                    await navigator.clipboard.writeText(text);
+                    ElementPlus.ElMessage.success('🎉 提示词复制成功！');
+                } catch (err) {
+                    const textarea = document.createElement('textarea');
+                    textarea.value = text;
+                    document.body.appendChild(textarea);
+                    textarea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(textarea);
+                    ElementPlus.ElMessage.success('🎉 提示词复制成功！');
+                }
+            };
 
             // 搜索过滤
             const searchKeyword = ref('');
@@ -256,7 +298,7 @@
 
             return {
                 activeTab, templates, loading, dialogVisible, form, uploading, saving,
-                searchKeyword, searchCategory, filteredTemplates,
+                searchKeyword, searchCategory, filteredTemplates, copyText,
                 fetchTemplates, openDialog, resetForm, uploadToOss, submitForm, handleDelete, toggleActive,
                 autoGeneratePrompt, goToScene, goToColorManage
             };

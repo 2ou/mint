@@ -61,19 +61,20 @@ public class OssServiceImpl implements OssService {
 
     @Override
     public String uploadResultToOss(String spu, String resultUrl) {
-        // 使用数组包裹临时文件，以便在外层的 finally 中能够安全清理
-        final File[] tempFiles = new File[2];
+        // 只需 1 个临时文件，因为我们不做压缩了
+        final File[] tempFiles = new File[1];
 
         try {
             log.info("【OSS转存-1】开始处理转存，目标链接: {}", resultUrl);
             AppProperties.Oss oss = appProperties.getOss();
-            String extension = ".jpg";
+
+            // 保持原图的后缀名（大概率是 .png）
+            String extension = resultUrl.toLowerCase().contains(".jpg") ? ".jpg" : ".png";
             String objectName = spu + "/result/AI_" + System.currentTimeMillis() + extension;
 
-            // 🔴 建立隔离任务：把所有可能有网络风险的操作，全部关进隔离病房
             Callable<String> isolationTask = () -> {
                 log.info("【OSS转存-2】创建临时文件...");
-                tempFiles[0] = File.createTempFile("ai_result_raw_", ".png");
+                tempFiles[0] = File.createTempFile("ai_result_raw_", extension);
 
                 log.info("【OSS转存-3】(隔离线程) 开始下载远程图片...");
                 Request request = new Request.Builder()
@@ -96,47 +97,43 @@ public class OssServiceImpl implements OssService {
                 }
                 log.info("【OSS转存-4】✅ 下载完成！大小: {} KB", tempFiles[0].length() / 1024);
 
-                log.info("【OSS转存-5】开始进行无损压缩...");
-                tempFiles[1] = File.createTempFile("ai_result_compressed_", extension);
-                net.coobird.thumbnailator.Thumbnails.of(tempFiles[0])
-                        .scale(1.0f)
-                        .outputQuality(0.8f)
-                        .outputFormat("jpg")
-                        .toFile(tempFiles[1]);
-                log.info("【OSS转存-6】✅ 压缩完成！大小: {} KB", tempFiles[1].length() / 1024);
-
-                log.info("【OSS转存-7】调用阿里云 SDK 上传...");
-                ossClient.putObject(oss.getResultBucket(), objectName, tempFiles[1]);
-                log.info("【OSS转存-8】🎉 阿里云 OSS 上传成功！");
+                // 🔴 核心改动：砍掉极度吃 CPU 和内存的压缩代码，直接上传原图！
+                log.info("【OSS转存-5】直接调用阿里云 SDK 上传原图...");
+                ossClient.putObject(oss.getResultBucket(), objectName, tempFiles[0]);
+                log.info("【OSS转存-6】🎉 阿里云 OSS 上传成功！");
 
                 return oss.getResultPublicHost() + "/" + objectName;
             };
 
-            // 🔴 将任务丢进线程池执行，拿到一个 Future (控制权)
             Future<String> future = isolationPool.submit(isolationTask);
 
             try {
-                // 🔴 绝对斩杀线：主线程就在这里等 80 秒，多 1 秒都不等！
-                return future.get(80, TimeUnit.SECONDS);
+                // 🔴 核心改动：斩杀线从 80 秒放宽到 180 秒（3分钟），给小水管服务器充足的时间！
+                return future.get(180, TimeUnit.SECONDS);
             } catch (TimeoutException e) {
-                // 80 秒没出结果？直接拔管，强杀隔离线程！
                 future.cancel(true);
-                throw new RuntimeException("底层网络遭遇极度卡死，耗时超 80 秒，触发系统绝对斩杀防线！");
+                throw new RuntimeException("服务器带宽受限或对方网络极慢，耗时超 180 秒被强杀！");
             }
 
         } catch (Throwable e) {
             log.error("【OSS转存-兜底捕获】任务失败或被斩杀: {}", e.getMessage());
-            throw new RuntimeException("图片抓取、压缩并转存失败：" + e.getMessage(), e);
+            throw new RuntimeException("图片抓取并转存失败：" + e.getMessage(), e);
         } finally {
-            log.info("【OSS转存-9】清理服务器硬盘的临时文件...");
-            // 因为终于能保证主线程百分百会执行到这里，所以硬盘永远不会塞满
+            log.info("【OSS转存-7】清理服务器硬盘的临时文件...");
             if (tempFiles[0] != null && tempFiles[0].exists()) tempFiles[0].delete();
-            if (tempFiles[1] != null && tempFiles[1].exists()) tempFiles[1].delete();
         }
     }
 
     @Override
     public String saveResultToLocal(String spu, String resultUrl, String localRoot) {
         return null; // 此方法已废弃，无需理会
+    }
+
+    // 🔴 新增这个方法来返回底层的 ossClient
+    @Override
+    public com.aliyun.oss.OSS getOssClient() {
+        // 注意：这里的 ossClient 必须是您在这个类最上方定义的那个阿里云 OSS 客户端变量名。
+        // 一般来说就叫 ossClient。如果您的叫其他名字（比如 aliyunOss），请替换掉它。
+        return this.ossClient;
     }
 }

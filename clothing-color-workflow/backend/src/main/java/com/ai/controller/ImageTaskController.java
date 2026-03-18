@@ -5,10 +5,12 @@ import com.ai.dto.TaskCreateResponse;
 import com.ai.service.ImageTaskService;
 import com.ai.dto.ApiResponse;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.*;
 
+import java.net.URLEncoder;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -17,6 +19,7 @@ import java.util.List;
 @RequestMapping("/api/tasks")
 @RequiredArgsConstructor
 @CrossOrigin // 允许所有跨域请求
+@Slf4j
 public class ImageTaskController {
 
     private final ImageTaskService imageTaskService;
@@ -104,5 +107,66 @@ public class ImageTaskController {
     @PostMapping("/download-zip")
     public void downloadZip(@RequestBody com.ai.dto.BatchIdRequest request, jakarta.servlet.http.HttpServletResponse response) {
         imageTaskService.batchDownloadZip(request.getIds(), response);
+    }
+
+    // 在最上方定义一个公用的代理客户端
+    private final okhttp3.OkHttpClient proxyClient = new okhttp3.OkHttpClient.Builder()
+            .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
+            .build();
+
+    @GetMapping("/proxy-download")
+    public void proxyDownload(@RequestParam("url") String url,
+                              @RequestParam("filename") String filename,
+                              jakarta.servlet.http.HttpServletResponse response) {
+        log.info("【流式透传】准备下载文件: {}", filename);
+        log.info("【流式透传】目标 KIE 链接: {}", url);
+
+        try {
+            // 🔴 增强防盗链伪装：不仅伪装浏览器，还伪装来源 (Referer)
+            okhttp3.Request request = new okhttp3.Request.Builder()
+                    .url(url)
+                    .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36")
+                    .addHeader("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
+                    // 如果 KIE 校验来源，随便给个常规域或者它自己的域
+                    .addHeader("Referer", "https://aiquickdraw.com/")
+                    .build();
+
+            try (okhttp3.Response okResponse = proxyClient.newCall(request).execute()) {
+
+                // 🔴 排错关键：如果 KIE 不给图，把真实的错误码打印到 IDEA 控制台！
+                if (!okResponse.isSuccessful() || okResponse.body() == null) {
+                    log.error("【流式透传】❌ 失败！KIE厂商拒绝给图。HTTP 状态码: {}", okResponse.code());
+                    response.sendError(500, "KIE厂商拒绝给图，状态码: " + okResponse.code());
+                    return;
+                }
+
+                response.setContentType("application/octet-stream");
+                response.setHeader("Content-Disposition", "attachment; filename=\"" + java.net.URLEncoder.encode(filename, "UTF-8") + "\"");
+
+                String contentLength = okResponse.header("Content-Length");
+                if (contentLength != null) {
+                    response.setHeader("Content-Length", contentLength);
+                }
+
+                log.info("【流式透传】✅ 成功连上 KIE，开始向前端浏览器倒水...");
+                try (java.io.InputStream is = okResponse.body().byteStream();
+                     java.io.OutputStream os = response.getOutputStream()) {
+                    byte[] buffer = new byte[8192];
+                    int len;
+                    while ((len = is.read(buffer)) != -1) {
+                        os.write(buffer, 0, len);
+                    }
+                    os.flush();
+                }
+                log.info("【流式透传】🎉 下载完成: {}", filename);
+            }
+        } catch (Exception e) {
+            log.error("【流式透传】❌ 发生 Java 代码层面崩溃: ", e);
+            try {
+                response.sendError(500, "服务器内部透传错误");
+            } catch (Exception ignored) {
+            }
+        }
     }
 }

@@ -22,6 +22,8 @@ public class TokenInterceptor implements HandlerInterceptor {
         
         // 允许登录接口直接访问，不拦截
         if (request.getRequestURI().contains("/api/auth/login")) return true;
+        // 🔴 新增：放行流式透传下载接口，因为它没法带 Token
+        if (request.getRequestURI().contains("/proxy-download")) return true;
 
         String token = request.getHeader("X-User-Token");
         
