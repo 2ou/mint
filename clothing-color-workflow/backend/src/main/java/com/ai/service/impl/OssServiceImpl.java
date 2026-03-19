@@ -27,11 +27,11 @@ public class OssServiceImpl implements OssService {
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(600, TimeUnit.SECONDS)  // 🔴 读超时：允许 KIE 服务器发呆 10 分钟不传数据
             .writeTimeout(300, TimeUnit.SECONDS)
-            .callTimeout(3600, TimeUnit.SECONDS) // 🔴 总下载时间底线：60 分钟 ！
+            .callTimeout(5000, TimeUnit.SECONDS) // 🔴 总下载时间底线：5000S ！
             .build();
 
     // 终极防御核心：建立一个有 10 个护士的“隔离线程池”
-    private final ExecutorService isolationPool = Executors.newFixedThreadPool(10);
+    private final ExecutorService isolationPool = Executors.newFixedThreadPool(20);
 
     public OssServiceImpl(AppProperties appProperties) {
         this.appProperties = appProperties;
