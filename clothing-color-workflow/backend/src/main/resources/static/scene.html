@@ -24,6 +24,16 @@
         .img-preview-box { position: relative; border: 1px solid #ebeef5; border-radius: 8px; box-sizing: border-box; overflow: hidden; }
         .remove-img-btn { position: absolute; top: 2px; right: 2px; background-color: rgba(245, 108, 108, 0.9); color: white; border-radius: 50%; width: 20px; height: 20px; line-height: 18px; text-align: center; cursor: pointer; z-index: 10; font-size: 12px; font-weight: bold; }
         .remove-img-btn:hover { background-color: #f56c6c; transform: scale(1.1); }
+        /* 🔴 强制修复 Element Plus 消息提示框被遮挡的问题 */
+        .el-message {
+            z-index: 99999 !important; /* 把层级提到最高，神挡杀神 */
+            top: 80px !important;      /* 强制往下挪 80px，避开顶部导航栏。如果不够可以改成 100px */
+        }
+
+        /* 🔴 顺手修复：如果是居中的“确认删除”弹窗被遮挡，加这个 */
+        .el-overlay.is-message-box {
+            z-index: 99999 !important;
+        }
     </style>
 </head>
 <body>
@@ -234,6 +244,12 @@
 
             const directUploadToOss = async (itemObj, policyData) => {
                 if (itemObj.ossUrl) return itemObj.ossUrl;
+                // 🔴 新增：限制单张图片大小不能超过 5MB
+                if (file.size > 5 * 1024 * 1024) {
+                    ElementPlus.ElMessage.error(`【${file.name}】 图片大小超过 5MB，请压缩后重试！`);
+                    event.target.value = ''; // 清空选中状态，允许用户重新选择同一文件
+                    return; // 拦截，终止上传
+                }
                 const suffix = itemObj.file.name.substring(itemObj.file.name.lastIndexOf('.'));
                 const finalKey = `${policyData.dir}${Date.now()}_${Math.random().toString(36).substr(2, 6)}${suffix}`;
                 const fd = new FormData();

@@ -94,7 +94,8 @@ public class OssServiceImpl implements OssService {
             }
 
             String extension = resultUrl.toLowerCase().contains(".jpg") ? ".jpg" : ".png";
-            String fileName = System.currentTimeMillis() + extension;
+            // 加入一段 8 位的随机 UUID，确保并发时绝对不会重名
+            String fileName = System.currentTimeMillis() + "_" + java.util.UUID.randomUUID().toString().substring(0, 8) + extension;
 
             File targetDir = new File(localRoot + "/" + spu);
             if (!targetDir.exists()) {
@@ -116,14 +117,12 @@ public class OssServiceImpl implements OssService {
                         throw new RuntimeException("KIE图片下载失败: HTTP " + response.code());
                     }
 
-                    // 🔴 核心防护：专门捕获流传输异常
-                    try (InputStream in = response.body().byteStream();
-                         FileOutputStream out = new FileOutputStream(permanentFile)) {
-                        byte[] buffer = new byte[8192];
-                        int len;
-                        while ((len = in.read(buffer)) != -1) {
-                            out.write(buffer, 0, len);
-                        }
+                    // 🔴 修改为引入 Thumbnailator 压缩机制
+                    try (InputStream in = response.body().byteStream()) {
+                        net.coobird.thumbnailator.Thumbnails.of(in)
+                                .scale(1.0)         // 保持原图的宽高分辨率不变 (例如依然是 4K)
+                                .outputQuality(0.9) // 🔴 核心：画质压缩为原来的 90%
+                                .toFile(permanentFile); // 直接输出到本地文件
                     } catch (Exception streamEx) {
                         // 如果下到一半断开了，文件已经生成了但只有半截（会导致黑屏）
                         // 必须立刻将其销毁，防止残次品流入后续环节！
