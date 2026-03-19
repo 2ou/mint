@@ -9,6 +9,8 @@
     <script src="https://unpkg.com/element-plus"></script>
     <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
 
+    <script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js"></script>
+
     <script src="auth.js"></script>
 
     <style>
@@ -454,127 +456,91 @@
                 ElementPlus.ElMessage.success('同步完毕！');
             };
 
-            // 🔴 终极按款号分文件夹本地下载方案 (基于现代浏览器 File System Access API)
+// 🔴 全新升级：直接调用后端的 ZIP 打包下载接口
             const batchDownload = async () => {
                 if (selectedRows.value.length === 0) return ElementPlus.ElMessage.warning('请先勾选需要下载的任务');
 
-                // 1. 安全校验：检查浏览器是否支持文件夹写入黑科技
-                if (!window.showDirectoryPicker) {
-                    return ElementPlus.ElMessage.error('您的浏览器不支持本地文件夹自动创建，请使用最新版 Chrome 或 Edge 浏览器！');
-                }
-
-                let baseDirHandle;
-                try {
-                    // 2. 唤起本地文件夹选择器，让业务员选择一个保存的大本营（比如选择 D盘 或 桌面）
-                    baseDirHandle = await window.showDirectoryPicker({
-                        id: 'ai-download', // 记住用户的偏好路径
-                        mode: 'readwrite'  // 请求读写权限
-                    });
-                } catch (err) {
-                    return; // 用户点击了取消
-                }
-
+                // 过滤出真正有结果图的任务
                 const validTasks = selectedRows.value.filter(row => row.resultOssUrl || row.resultTempUrl);
                 if (validTasks.length === 0) return ElementPlus.ElMessage.warning('选中的任务尚未生成图片');
 
+                // 提取需要下载的 ID 数组
+                const ids = validTasks.map(row => row.id);
+
                 const notify = ElementPlus.ElNotification({
-                    title: '🚀 开始按款号整理下载',
-                    message: '正在创建文件夹结构...',
+                    title: '📦 正在打包下载',
+                    message: `服务器正在为您将 ${ids.length} 张图片打包成 ZIP，请耐心等待...`,
                     duration: 0,
                     type: 'info',
                     offset: 100
                 });
 
-                let success = 0;
-                let fail = 0;
-
                 try {
-                    // 3. 在用户选择的位置，创建主文件夹 "AIResult"
-                    const aiResultDirHandle = await baseDirHandle.getDirectoryHandle('AIResult', { create: true });
+                    // 发送 POST 请求给后端，携带 ids 数组。非常重要：responseType 必须设为 blob
+                    const res = await axios.post('/api/tasks/download-zip', { ids: ids }, {
+                        responseType: 'blob',
+                        timeout: 600000 // 给后端留足 10 分钟的打包时间，防止大批量下载超时
+                    });
 
-                    for (let i = 0; i < validTasks.length; i++) {
-                        const row = validTasks[i];
-                        const spu = row.spu || '未知款号'; // 获取款号
-                        const fileName = `AI_Result_${spu}_${Date.now()}.png`;
+                    // 拿到二进制流，在前端生成文件并触发下载
+                    const blob = new Blob([res.data], { type: 'application/zip' });
+                    const url = window.URL.createObjectURL(blob);
 
-                        notify.title = `正在处理 第 ${i + 1} / ${validTasks.length} 张`;
-                        notify.message = `正在自动归档至: AIResult / ${spu} /`;
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `AI图片打包_${validTasks.length}张_${Date.now()}.zip`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    window.URL.revokeObjectURL(url);
 
-                        try {
-                            let downloadUrl = '';
-                            if (row.resultOssUrl) {
-                                // 阿里云 OSS 直连链接
-                                downloadUrl = row.resultOssUrl;
-                            } else if (row.resultTempUrl) {
-                                // KIE 兜底走后端透传水管
-                                const baseUrl = window.location.port === '63342' ? '' : '';
-                                downloadUrl = `${baseUrl}/api/tasks/proxy-download?url=${encodeURIComponent(row.resultTempUrl)}&filename=${encodeURIComponent(fileName)}`;
-                            }
-
-                            // 4. Fetch 获取图片的二进制流数据 (Blob)
-                            const response = await fetch(downloadUrl);
-                            if (!response.ok) throw new Error('网络请求失败');
-                            const blob = await response.blob();
-
-                            // 5. 按款号创建子文件夹 (如果该款号文件夹已存在，会自动复用)
-                            const spuDirHandle = await aiResultDirHandle.getDirectoryHandle(spu, { create: true });
-
-                            // 6. 在子文件夹中创建图片文件，并用底层句柄直接将流写入硬盘
-                            const fileHandle = await spuDirHandle.getFileHandle(fileName, { create: true });
-                            const writable = await fileHandle.createWritable();
-                            await writable.write(blob);
-                            await writable.close();
-
-                            success++;
-                        } catch (error) {
-                            console.error(`下载失败 [款号: ${spu}]:`, error);
-                            fail++;
-                        }
-                    }
-
-                    notify.title = '🎉 自动归档下载完成';
-                    notify.type = success === validTasks.length ? 'success' : 'warning';
-                    notify.message = `已在您选择的目录生成 AIResult 文件夹！\n成功: ${success} 张，失败: ${fail} 张。`;
+                    notify.close();
+                    ElementPlus.ElMessage.success('🎉 打包下载完成！');
 
                 } catch (error) {
-                    console.error('文件夹操作失败:', error);
-                    notify.title = '❌ 下载中断';
-                    notify.type = 'error';
-                    notify.message = '无法写入文件夹，请确保您在弹窗中授予了浏览器修改文件的权限。';
+                    notify.close();
+                    console.error('打包下载失败:', error);
+                    ElementPlus.ElMessage.error('打包下载失败，请检查网络或稍后重试');
                 }
-
-                setTimeout(() => notify.close(), 6000);
             };
 
-            // 🔴 新增：专属导出链接到 TXT 的方法 (完全不影响原本的批量下载)
+// 🔴 专属导出链接到 Excel 表格的方法
             const exportLinks = () => {
                 if (selectedRows.value.length === 0) return ElementPlus.ElMessage.warning('请先勾选需要导出的任务');
 
-                let urlText = '';
-                let count = 0;
-
-                selectedRows.value.forEach(row => {
-                    // 优先拿阿里云 OSS 链接，如果没有，就拿 KIE 兜底链接
-                    const url = row.resultOssUrl || row.resultTempUrl;
-                    if (url) {
-                        urlText += url + '\n';
-                        count++;
-                    }
+                // 1. 将选中的行数据映射为 Excel 的列名和值
+                const excelData = selectedRows.value.map(row => {
+                    return {
+                        '任务ID': row.taskId || '-',
+                        '临时KIE结果URL': row.resultTempUrl || '-',
+                        'OSS URL': row.resultOssUrl || '-'
+                    };
                 });
 
-                if (count === 0) return ElementPlus.ElMessage.warning('选中的任务尚未生成任何图片链接');
+                try {
+                    // 2. 将 JSON 数据转换为 Excel 工作表
+                    const worksheet = XLSX.utils.json_to_sheet(excelData);
 
-                const blob = new Blob([urlText], { type: 'text/plain;charset=utf-8' });
-                const link = document.createElement('a');
-                link.href = window.URL.createObjectURL(blob);
-                link.download = `AI图片下载链接_${count}张_${Date.now()}.txt`;
+                    // 💡 贴心优化：设置 Excel 每列的默认宽度，防止很长的链接挤成一堆
+                    worksheet['!cols'] = [
+                        { wpx: 250 }, // 任务ID 列宽
+                        { wpx: 400 }, // KIE 临时链接 列宽
+                        { wpx: 400 }  // OSS 链接 列宽
+                    ];
 
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-                window.URL.revokeObjectURL(link.href);
+                    // 3. 创建工作簿并把表塞进去
+                    const workbook = XLSX.utils.book_new();
+                    XLSX.utils.book_append_sheet(workbook, worksheet, "任务链接数据");
 
-                ElementPlus.ElMessage.success(`🎉 成功导出 ${count} 个链接！您可以直接复制到迅雷或 IDM 中极速下载。`);
+                    // 4. 生成 .xlsx 文件并触发浏览器下载
+                    const fileName = `AI任务链接导出_${excelData.length}条_${new Date().getTime()}.xlsx`;
+                    XLSX.writeFile(workbook, fileName);
+
+                    ElementPlus.ElMessage.success(`🎉 成功导出 ${excelData.length} 条数据到 Excel！`);
+                } catch (error) {
+                    console.error('导出 Excel 失败:', error);
+                    ElementPlus.ElMessage.error('导出失败，请检查浏览器是否拦截了下载');
+                }
             };
 
             const resetFilters = () => {
