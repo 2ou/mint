@@ -18,4 +18,7 @@ public interface KieClientService {
 
     // 🔴 新增：返回完整结果对象的方法
     KieTaskResult getFullResult(String taskId);
+
+    // 获取 KIE 原始 JSON 报文
+    String getRawResult(String taskId);
 }

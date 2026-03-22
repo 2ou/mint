@@ -174,4 +174,22 @@ public class KieClientServiceImpl implements KieClientService {
         }
         return null;
     }
+
+    @Override
+    public String getRawResult(String taskId) {
+        try {
+            String url = appProperties.getKie().getBaseUrl() + "/jobs/recordInfo?taskId=" + taskId;
+            Request request = new Request.Builder()
+                    .url(url)
+                    .addHeader("Authorization", "Bearer " + appProperties.getKie().getApiKey())
+                    .get()
+                    .build();
+            try (Response response = httpClient.newCall(request).execute()) {
+                return response.body() != null ? response.body().string() : "{}";
+            }
+        } catch (Exception e) {
+            log.error("直接获取 KIE 原生报文失败", e);
+            return "{\"error\": \"获取失败: " + e.getMessage() + "\"}";
+        }
+    }
 }

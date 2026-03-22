@@ -1,7 +1,10 @@
 package com.ai.config;
 
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.web.servlet.config.annotation.CorsRegistry;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import org.springframework.web.filter.CorsFilter;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 import lombok.RequiredArgsConstructor;
@@ -21,13 +24,18 @@ public class WebMvcConfig implements WebMvcConfigurer {
                 .excludePathPatterns("/api/tasks/proxy-download"); // 排除下载接口
     }
 
+    // 🔴 终极跨域解决方案：使用 CorsFilter 替代原本的 addCorsMappings
+    // 它的执行时机在拦截器之前，能彻底解决“拦截器报错导致跨域头丢失”的难题
+    @Bean
+    public CorsFilter corsFilter() {
+        CorsConfiguration config = new CorsConfiguration();
+        config.addAllowedOriginPattern("*"); // 允许所有前端来源跨域
+        config.addAllowedMethod("*");        // 允许所有请求方法 (GET, POST, OPTIONS 等)
+        config.addAllowedHeader("*");        // 允许所有请求头携带 (包括你的 X-User-Token)
+        config.setAllowCredentials(true);    // 允许跨域携带认证信息
 
-    // 示例：在后端配置类中允许跨域
-    @Override
-    public void addCorsMappings(CorsRegistry registry) {
-        registry.addMapping("/api/**")
-                .allowedOrigins("*") // 生产环境建议指定具体域名
-                .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
-                .allowedHeaders("*");
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", config);
+        return new CorsFilter(source);
     }
 }

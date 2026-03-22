@@ -114,8 +114,27 @@ public class ImageTaskServiceImpl implements ImageTaskService {
         } catch (Exception e) {
             log.error("创建 KIE 任务失败", e);
             task.setStatus("FAILED");
-            String errorMsg = e.getMessage() != null ? e.getMessage() : e.toString();
-            task.setErrorMessage(errorMsg.length() > 2000 ? errorMsg.substring(0, 1990) + "..." : errorMsg);
+            String finalErrorMsg = e.getMessage() != null ? e.getMessage() : "未知异常";
+
+            // 🔴 智能截取：只找 '{' 后面的纯 JSON 部分进行解析
+            try {
+                int jsonStartIndex = finalErrorMsg.indexOf("{");
+                if (jsonStartIndex != -1) {
+                    String pureJson = finalErrorMsg.substring(jsonStartIndex);
+                    com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                    com.fasterxml.jackson.databind.JsonNode root = mapper.readTree(pureJson);
+
+                    // 尝试精准提取 data 里面的 failMsg
+                    if (root.has("data") && root.get("data").has("failMsg") && !root.get("data").get("failMsg").isNull()) {
+                        finalErrorMsg = root.get("data").get("failMsg").asText();
+                    }
+                }
+            } catch (Exception ignored) {
+                // 如果解析失败（比如网络超时没有返回JSON），保持原样，直接存入 finalErrorMsg
+            }
+
+            // TEXT 字段无限长，直接存入！
+            task.setErrorMessage(finalErrorMsg);
         }
         return new TaskCreateResponse(imageTaskRepository.save(task));
     }

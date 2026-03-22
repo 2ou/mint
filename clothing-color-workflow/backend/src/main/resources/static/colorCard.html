@@ -263,26 +263,35 @@
                 if (files.length === 0) return;
 
                 const excelFile = files.find(f => f.name.endsWith('.xlsx') || f.name.endsWith('.xls') || f.name.endsWith('.csv'));
-                const imageFiles = files.filter(f => f.type.startsWith('image/'));
+                let imageFiles = files.filter(f => f.type.startsWith('image/')); // 🔴 注意这里改成了 let
 
-                // 🔴 新增：批量检查图片大小
+                // 🔴 核心优化：批量检查图片大小，踢出大于 5MB 的，保留合规的继续走
                 if (imageFiles.length > 0) {
-                    // 过滤出所有大于 5MB 的图片
-                    const oversizedFiles = imageFiles.filter(f => f.size > 10 * 1024 * 1024);
+                    const oversizedFiles = [];
+                    const validFiles = [];
 
+                    // 分拣合格与不合格的图片
+                    imageFiles.forEach(f => {
+                        if (f.size > 5 * 1024 * 1024) {
+                            oversizedFiles.push(f);
+                        } else {
+                            validFiles.push(f);
+                        }
+                    });
+
+                    // 如果有被踢出的超大图片，给出警告（但不中断程序）
                     if (oversizedFiles.length > 0) {
-                        // 提取几张超大图片的名字展示给用户看，方便他们定位
                         const badNames = oversizedFiles.slice(0, 3).map(f => f.name).join('、');
                         const moreTxt = oversizedFiles.length > 3 ? '等...' : '';
 
-                        ElementPlus.ElMessage.error({
-                            message: `批量导入失败：包含 ${oversizedFiles.length} 张超过 5MB 的超大图片 (${badNames}${moreTxt})，请先压缩！`,
-                            duration: 6000 // 提示框停留长一点让用户看清
+                        ElementPlus.ElMessage.warning({
+                            message: `已自动剔除 ${oversizedFiles.length} 张超过 5MB 的图片 (${badNames}${moreTxt})，将继续为您导入剩余合规文件！`,
+                            duration: 6000
                         });
-
-                        e.target.value = ''; // 清空选中状态
-                        return; // 拦截，彻底终止导入流程
                     }
+
+                    // 🔴 狸猫换太子：把接下来准备上传的图片列表，替换成全是合格的
+                    imageFiles = validFiles;
                 }
 
                 if (!excelFile) {

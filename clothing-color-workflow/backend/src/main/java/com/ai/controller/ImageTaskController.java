@@ -23,6 +23,8 @@ import java.util.List;
 public class ImageTaskController {
 
     private final ImageTaskService imageTaskService;
+    // 🔴 新增：注入 KieClientService
+    private final com.ai.service.KieClientService kieClientService;
 
     /**
      * 批量创建任务 (换色 / 场景生成)
@@ -172,4 +174,13 @@ public class ImageTaskController {
             }
         }
     }
+
+    /**
+     * 直接获取 KIE 原生 JSON 报文
+     */
+    @GetMapping("/kie-raw/{taskId}")
+    public ApiResponse<String> getKieRaw(@PathVariable("taskId") String taskId) {
+        return ApiResponse.ok("ok", kieClientService.getRawResult(taskId));
+    }
+
 }

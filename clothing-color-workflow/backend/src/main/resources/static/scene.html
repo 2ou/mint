@@ -180,13 +180,29 @@
                 tasks.value[taskIndex].inputs.splice(inputIndex, 1);
             };
 
-            // 🔴 核心逻辑1：控制最多上传 4 张图
+            // 🔴 核心逻辑1：控制最多上传 4 张图，且立刻拦截 5MB 以上的图片
             const handleUploadMultiple = (e, index) => {
-                const files = e.target.files;
+                const files = Array.from(e.target.files); // 转成真数组方便操作
                 if (!files || files.length === 0) return;
 
+                // 🚨 先进行 5MB 过滤安检
+                const validFiles = [];
+                files.forEach(file => {
+                    if (file.size > 5 * 1024 * 1024) {
+                        ElementPlus.ElMessage.error(`【${file.name}】超过 5MB，已被拦截！`);
+                    } else {
+                        validFiles.push(file); // 只有合格的图才能留下
+                    }
+                });
+
+                // 如果全军覆没（都超过5MB），直接清空并返回
+                if (validFiles.length === 0) {
+                    e.target.value = '';
+                    return;
+                }
+
                 let currentCount = tasks.value[index].inputs.length;
-                let addCount = files.length;
+                let addCount = validFiles.length;
 
                 if (currentCount + addCount > 4) {
                     ElementPlus.ElMessage.warning('每个任务最多只能上传 4 张原图辅助生成！');
@@ -194,15 +210,24 @@
                 }
 
                 for (let i = 0; i < addCount; i++) {
-                    const url = URL.createObjectURL(files[i]);
-                    tasks.value[index].inputs.push({ file: files[i], url, ossUrl: null });
+                    const url = URL.createObjectURL(validFiles[i]);
+                    tasks.value[index].inputs.push({ file: validFiles[i], url, ossUrl: null });
                 }
                 e.target.value = ''; // 清空 value，使得重复选择同一文件也能触发
             };
 
+            // 🔴 核心逻辑2：单张参考图上传，立刻拦截 5MB
             const handleUploadRef = (e, index) => {
                 const file = e.target.files[0];
                 if (!file) return;
+
+                // 🚨 5MB 拦截
+                if (file.size > 5 * 1024 * 1024) {
+                    ElementPlus.ElMessage.error(`【${file.name}】超过 5MB，已被拦截！`);
+                    e.target.value = '';
+                    return;
+                }
+
                 tasks.value[index].ref = { file, url: URL.createObjectURL(file), ossUrl: null };
                 e.target.value = '';
             };
@@ -244,16 +269,29 @@
 
             const directUploadToOss = async (itemObj, policyData) => {
                 if (itemObj.ossUrl) return itemObj.ossUrl;
-                // 🔴 新增：限制单张图片大小不能超过 5MB
-                if (file.size > 5 * 1024 * 1024) {
-                    ElementPlus.ElMessage.error(`【${file.name}】 图片大小超过 5MB，请压缩后重试！`);
-                    event.target.value = ''; // 清空选中状态，允许用户重新选择同一文件
-                    return; // 拦截，终止上传
+
+                // 🔴 修复 1：兼容不同组件，精准提取真实的 File 对象
+                const realFile = itemObj.raw || itemObj.file || itemObj;
+
+                // 🔴 修复 2：拦截超大图片
+                if (realFile.size > 5 * 1024 * 1024) {
+                    ElementPlus.ElMessage.error(`【${realFile.name}】 图片大小超过 5MB，请压缩后重试！`);
+                    // 🔴 修复 3：因为没有 event，我们直接抛出异常来强行终止 Promise.all 的后台并发上传
+                    throw new Error("FILE_TOO_LARGE");
                 }
-                const suffix = itemObj.file.name.substring(itemObj.file.name.lastIndexOf('.'));
+
+                // 🔴 修复 4：统一使用提取出来的 realFile 获取名字和上传
+                const suffix = realFile.name.substring(realFile.name.lastIndexOf('.'));
                 const finalKey = `${policyData.dir}${Date.now()}_${Math.random().toString(36).substr(2, 6)}${suffix}`;
+
                 const fd = new FormData();
-                fd.append('key', finalKey); fd.append('policy', policyData.policy); fd.append('OSSAccessKeyId', policyData.accessid); fd.append('success_action_status', '200'); fd.append('signature', policyData.signature); fd.append('file', itemObj.file);
+                fd.append('key', finalKey);
+                fd.append('policy', policyData.policy);
+                fd.append('OSSAccessKeyId', policyData.accessid);
+                fd.append('success_action_status', '200');
+                fd.append('signature', policyData.signature);
+                fd.append('file', realFile); // 确保传给阿里云的是真正的文件
+
                 await axios.post(policyData.host, fd);
                 itemObj.ossUrl = `${policyData.host}/${finalKey}`;
                 return itemObj.ossUrl;
@@ -321,7 +359,12 @@
                     }
                 } catch (e) {
                     console.error("提交异常:", e);
-                    ElementPlus.ElMessage.error('系统崩溃：请确认网络连接或 Token 是否过期');
+                    // 🔴 优化报错提示，如果是我们主动拦截的超大文件，就不报“系统崩溃”
+                    if (e.message === "FILE_TOO_LARGE") {
+                        // 提示框已经在上面弹过了，这里静默拦截即可
+                    } else {
+                        ElementPlus.ElMessage.error('处理失败：请检查网络或图片源是否正常');
+                    }
                 } finally {
                     loading.value = false;
                     uploadProgressMsg.value = '正在处理...';
