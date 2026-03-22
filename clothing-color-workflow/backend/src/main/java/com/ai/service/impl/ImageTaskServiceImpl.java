@@ -67,7 +67,7 @@ public class ImageTaskServiceImpl implements ImageTaskService {
     }
 
     // ======================== 核心业务逻辑 ========================
-    @Scheduled(fixedRate = 300000) // 5分钟跑一次
+    @Scheduled(fixedRate = 180000) // 3分钟跑一次
     public void scheduledRefreshProcessingTasks() {
         log.info("【定时任务】开始自动刷新处理中的 AI 任务...");
         List<ImageTask> processingTasks = imageTaskRepository.findAll((root, query, cb) -> cb.or(
