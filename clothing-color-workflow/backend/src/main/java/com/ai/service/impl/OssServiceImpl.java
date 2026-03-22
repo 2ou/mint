@@ -117,20 +117,39 @@ public class OssServiceImpl implements OssService {
                         throw new RuntimeException("KIE图片下载失败: HTTP " + response.code());
                     }
 
-                    // 🔴 修改为引入 Thumbnailator 压缩机制
-                    try (InputStream in = response.body().byteStream()) {
-                        net.coobird.thumbnailator.Thumbnails.of(in)
-                                .scale(1.0)         // 保持原图的宽高分辨率不变 (例如依然是 4K)
-                                .outputQuality(0.9) // 🔴 核心：画质压缩为原来的 90%
-                                .toFile(permanentFile); // 直接输出到本地文件
+                    // 🔴 修复核心：绝对不要让图片压缩器直接读取脆弱的网络流！
+                    // 第一步：用最基础的缓冲流，把网络字节原封不动、100%安全地写到本地硬盘
+                    try (InputStream in = response.body().byteStream();
+                         FileOutputStream fos = new FileOutputStream(permanentFile)) {
+                        byte[] buffer = new byte[8192];
+                        int bytesRead;
+                        while ((bytesRead = in.read(buffer)) != -1) {
+                            fos.write(buffer, 0, bytesRead);
+                        }
                     } catch (Exception streamEx) {
-                        // 如果下到一半断开了，文件已经生成了但只有半截（会导致黑屏）
-                        // 必须立刻将其销毁，防止残次品流入后续环节！
                         if (permanentFile.exists()) {
                             permanentFile.delete();
-                            log.error("【残次品拦截】下载中途数据流中断，已销毁半截图片: {}", permanentFile.getName());
+                            log.error("【残次品拦截】物理网络中断，已销毁不完整文件: {}", permanentFile.getName());
                         }
-                        throw new RuntimeException("网络流中断，图片下载不完整", streamEx);
+                        throw new RuntimeException("底层网络流中断，下载失败", streamEx);
+                    }
+
+                    // 第二步：文件已经完整落地，现在读取本地硬盘的文件进行安全压缩
+                    try {
+                        File tempCompressedFile = new File(permanentFile.getAbsolutePath() + ".tmp");
+                        net.coobird.thumbnailator.Thumbnails.of(permanentFile)
+                                .scale(1.0)
+                                .outputQuality(0.9) // 画质压缩为 90%
+                                .toFile(tempCompressedFile);
+
+                        // 压缩成功，用变小后的临时文件替换掉刚下载的原文件
+                        permanentFile.delete();
+                        tempCompressedFile.renameTo(permanentFile);
+                        log.info("【图片压缩成功】已完成 90% 画质压缩");
+                    } catch (Exception compressEx) {
+                        // 兜底防御：万一这是张损坏或特殊格式的图，导致压缩失败
+                        log.warn("【画质压缩失败】将跳过压缩，直接使用未压缩的原图继续上传: {}", compressEx.getMessage());
+                        // 故意不抛出异常！因为第一步已经把完整的图下好了，就算不压缩也不影响后续上传 OSS！
                     }
                 }
 

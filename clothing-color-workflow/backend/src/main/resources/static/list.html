@@ -203,7 +203,25 @@
 
                 <el-table-column label="任务状态" width="100" align="center">
                     <template #default="scope">
-                        <el-tag :type="getStatusType(scope.row.status)" effect="dark">{{ scope.row.status }}</el-tag>
+                        <el-tooltip
+                                v-if="scope.row.status === 'FAILED' && scope.row.errorMessage"
+                                placement="top"
+                                effect="dark"
+                        >
+                            <template #content>
+                                <div style="max-width: 300px; line-height: 1.5; word-wrap: break-word;">
+                                    ⚠️ 失败原因：<br/>
+                                    {{ scope.row.errorMessage }}
+                                </div>
+                            </template>
+                            <el-tag :type="getStatusType(scope.row.status)" effect="dark" style="cursor: pointer;">
+                                {{ scope.row.status }}
+                            </el-tag>
+                        </el-tooltip>
+
+                        <el-tag v-else :type="getStatusType(scope.row.status)" effect="dark">
+                            {{ scope.row.status }}
+                        </el-tag>
                     </template>
                 </el-table-column>
 
@@ -350,11 +368,6 @@
                 hide-on-click-modal
         />
 
-        <el-dialog title="📡 KIE 厂商原生返回报文" v-model="rawDialogVisible" width="600px">
-            <div v-loading="rawLoading">
-                <pre style="background: #282c34; color: #abb2bf; padding: 15px; border-radius: 8px; overflow: auto; max-height: 400px; font-size: 13px;">{{ rawJsonData }}</pre>
-            </div>
-        </el-dialog>
     </div>
 </div>
 
@@ -622,39 +635,44 @@
             const rawJsonData = ref('');
             const rawLoading = ref(false);
 
-// 🔴 坚不可摧的 KIE 详情拉取与解析逻辑
+            // 🔴 简单高效：直接使用 ElMessageBox 强行弹窗，无视任何图层 Bug！
             const fetchKieRaw = async (taskId) => {
-                rawDialogVisible.value = true;
-                rawLoading.value = true;
-                rawJsonData.value = '正在拉取 KIE 数据...';
+                // 开启全屏遮罩 Loading
+                const loadingInstance = ElementPlus.ElLoading.service({ fullscreen: true, text: '正在拉取 KIE 数据...' });
 
                 try {
                     const res = await axios.get(`/api/tasks/kie-raw/${taskId}`);
+                    let jsonStr = '';
 
                     if (res.data && res.data.success) {
                         let data = res.data.data;
                         try {
-                            // 1. 如果 Axios 拿到的是字符串，先把它转成真正的对象
-                            if (typeof data === 'string') {
-                                data = JSON.parse(data);
-                            }
-                            // 2. 把对象格式化为带有 4 个空格缩进的漂亮格式
-                            rawJsonData.value = JSON.stringify(data, null, 4);
-
+                            if (typeof data === 'string') data = JSON.parse(data);
+                            jsonStr = JSON.stringify(data, null, 4);
                         } catch (e) {
-                            // 3. 兜底方案：如果这玩意压根就不是 JSON，原样强行输出！
-                            rawJsonData.value = String(data);
+                            jsonStr = String(data);
                         }
                     } else {
-                        // 后端返回了 fail
-                        rawJsonData.value = '❌ 获取失败：\n' + (res.data ? res.data.message : '未知接口错误');
+                        jsonStr = '❌ 获取失败：\n' + (res.data ? res.data.message : '未知接口错误');
                     }
+
+                    // 💡 核心：直接用 JS 调用全局提示框，注入黑底代码样式
+                    ElementPlus.ElMessageBox.alert(
+                        `<pre style="background: #282c34; color: #abb2bf; padding: 15px; border-radius: 8px; overflow: auto; max-height: 400px; font-size: 13px; white-space: pre-wrap; word-break: break-all; text-align: left; margin: 0;">${jsonStr}</pre>`,
+                        '📡 KIE 厂商原生返回报文',
+                        {
+                            dangerouslyUseHTMLString: true, // 允许解析 HTML
+                            customStyle: { width: '600px', maxWidth: '90vw' }, // 设定弹窗宽度
+                            confirmButtonText: '关闭'
+                        }
+                    );
+
                 } catch (e) {
                     console.error("KIE 详情请求崩溃:", e);
-                    rawJsonData.value = '⚠️ 网络请求彻底失败，请按 F12 检查后端是否报错（如 404 或 500）';
                     ElementPlus.ElMessage.error('获取 KIE 详情失败，请检查网络');
                 } finally {
-                    rawLoading.value = false;
+                    // 关闭 Loading
+                    loadingInstance.close();
                 }
             };
 
@@ -670,8 +688,7 @@
                 exportLinks,
                 fetchData, handleSearch, handleSizeChange, handleCurrentChange, resetFilters,
                 getStatusType, formatTime, handleSelectionChange, refreshRow, syncAllProcessing,
-                formatTaskId,
-                rawDialogVisible, rawJsonData, rawLoading, fetchKieRaw,
+                formatTaskId, fetchKieRaw,
                 goToColor, goToScene, batchDownload
             };
         }

@@ -30,6 +30,7 @@ public class TaskCreateResponse {
     private String resultOssUrl;
     private String localPath;
     private LocalDateTime completeTime;
+    private String errorMessage;
 
 
     private LocalDateTime createdAt;
@@ -53,5 +54,6 @@ public class TaskCreateResponse {
         this.taskType = task.getTaskType();
         this.shopName = task.getShopName();
         this.operator = task.getOperator();
+        this.errorMessage = task.getErrorMessage();
     }
 }

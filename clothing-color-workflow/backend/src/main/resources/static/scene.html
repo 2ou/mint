@@ -80,9 +80,12 @@
         <div class="section-title">2. 独立场景任务池</div>
         <div style="padding: 0 10px;">
             <el-card v-for="(task, index) in tasks" :key="task.id" class="task-card" shadow="never">
-                <el-button type="danger" icon="Delete" circle style="position: absolute; right: 15px; top: 15px; z-index: 10;" @click="removeTask(index)"></el-button>
+                <el-button type="danger" circle style="position: absolute; right: 15px; top: 15px; z-index: 10; font-weight: bold; font-family: monospace; font-size: 16px;" @click="removeTask(index)">
+                    X
+                </el-button>
 
                 <div style="display: flex; gap: 20px;">
+
                     <div style="width: 260px; border-right: 1px dashed #ebeef5; padding-right: 15px;">
                         <div style="font-weight: bold; margin-bottom: 8px; font-size: 14px; color: #303133;">📦 原图 (最多4张) <span style="color:#f56c6c">*</span></div>
                         <div style="display: flex; flex-wrap: wrap; gap: 10px;">
@@ -90,21 +93,31 @@
                                 <el-image :src="inp.url" fit="cover" style="width: 100%; height: 100%;"></el-image>
                                 <div class="remove-img-btn" @click="removeInput(index, iIndex)">X</div>
                             </div>
-                            <label class="upload-box" style="width: 70px; height: 70px;" v-show="task.inputs.length < 4">
-                                <div style="text-align: center; font-size: 20px;">➕</div>
+                            <label class="upload-box" style="width: 70px; height: 70px;" v-show="task.inputs.length < 4"
+                                   @dragover.prevent @dragenter.prevent @drop.prevent="e => handleUploadMultiple(e, index)">
+                                <div style="text-align: center; line-height: 1.2;">
+                                    <div style="font-size: 18px; color: #409EFF; margin-bottom: 2px;">➕</div>
+                                    <div style="font-size: 10px; color: #909399;">拖拽/点击</div>
+                                    <div style="font-size: 9px; color: #A8ABB2; margin-top: 2px; transform: scale(0.95);">大小不超过 5MB</div>
+                                </div>
                                 <input type="file" style="display: none;" multiple @change="e => handleUploadMultiple(e, index)" accept="image/*" />
                             </label>
                         </div>
                     </div>
 
-                    <div style="width: 120px;">
+                    <div style="width: 140px; border-right: 1px dashed #ebeef5; padding-right: 15px;">
                         <div style="font-weight: bold; margin-bottom: 8px; font-size: 14px; color: #303133;">🖼️ 参考图 (可选)</div>
                         <div v-if="task.ref.url" class="img-preview-box" style="width: 100%; height: 120px;">
                             <el-image :src="task.ref.url" fit="cover" style="width: 100%; height: 100%;"></el-image>
                             <div class="remove-img-btn" @click="task.ref = {file: null, url: '', ossUrl: ''}">X</div>
                         </div>
-                        <label v-else class="upload-box" style="width: 100%; height: 120px;">
-                            <div style="text-align: center; line-height: 1.5; font-size: 12px;">➕<br>点击上传</div>
+                        <label v-else class="upload-box" style="width: 100%; height: 120px;"
+                               @dragover.prevent @dragenter.prevent @drop.prevent="e => handleUploadRef(e, index)">
+                            <div style="text-align: center; line-height: 1.6;">
+                                <div style="font-size: 24px; color: #409EFF;">➕</div>
+                                <div style="font-size: 13px; color: #606266; font-weight: bold;">拖拽或点击上传</div>
+                                <div style="font-size: 11px; color: #A8ABB2;">大小不超过 5MB</div>
+                            </div>
                             <input type="file" style="display: none;" @change="e => handleUploadRef(e, index)" accept="image/*" />
                         </label>
                     </div>
@@ -114,8 +127,9 @@
                             <div style="font-weight: bold; font-size: 14px; color: #303133;">📝 专属提示词 <span style="color:#f56c6c">*</span></div>
                             <el-button type="success" plain size="small" @click="openTemplateDrawer(index)">📚 从库套用神仙提示词</el-button>
                         </div>
-                        <el-input type="textarea" v-model="task.prompt" :rows="4" placeholder="可手动输入，或点击上方按钮一键套用库中绝美提示词..."></el-input>
+                        <el-input type="textarea" v-model="task.prompt" :rows="5" placeholder="可手动输入，或直接拖拽图片后，点击上方按钮一键套用库中绝美提示词..."></el-input>
                     </div>
+
                 </div>
             </el-card>
 
@@ -158,7 +172,7 @@
     createApp({
         setup() {
             const form = reactive({
-                spu: '', model: 'nano-banana-pro', resolution: '4K', aspect_ratio: 'auto', modelRole: '25岁成年女性'
+                spu: '', model: 'nano-banana-pro', resolution: '4K', aspect_ratio: 'auto', modelRole: '图中模特'
             });
             const loading = ref(false);
             const uploadProgressMsg = ref('正在处理...');
@@ -180,9 +194,13 @@
                 tasks.value[taskIndex].inputs.splice(inputIndex, 1);
             };
 
-            // 🔴 核心逻辑1：控制最多上传 4 张图，且立刻拦截 5MB 以上的图片
+// 🔴 核心逻辑1：控制最多上传 4 张图，完美兼容【拖拽】与【点击选择】
             const handleUploadMultiple = (e, index) => {
-                const files = Array.from(e.target.files); // 转成真数组方便操作
+                // 巧妙识别：如果是拖拽，文件在 dataTransfer 里；如果是点击，文件在 target 里
+                const rawFiles = e.dataTransfer ? e.dataTransfer.files : e.target.files;
+                // 强行过滤一遍，只允许图片进入，防止用户把 Excel/TXT 拖进来导致报错
+                const files = Array.from(rawFiles).filter(f => f.type.startsWith('image/'));
+
                 if (!files || files.length === 0) return;
 
                 // 🚨 先进行 5MB 过滤安检
@@ -195,9 +213,8 @@
                     }
                 });
 
-                // 如果全军覆没（都超过5MB），直接清空并返回
                 if (validFiles.length === 0) {
-                    e.target.value = '';
+                    if (e.target && e.target.value !== undefined) e.target.value = '';
                     return;
                 }
 
@@ -213,23 +230,27 @@
                     const url = URL.createObjectURL(validFiles[i]);
                     tasks.value[index].inputs.push({ file: validFiles[i], url, ossUrl: null });
                 }
-                e.target.value = ''; // 清空 value，使得重复选择同一文件也能触发
+
+                // 清空 input 缓存，以便下次选同一张图能触发
+                if (e.target && e.target.value !== undefined) e.target.value = '';
             };
 
-            // 🔴 核心逻辑2：单张参考图上传，立刻拦截 5MB
+            // 🔴 核心逻辑2：单张参考图上传，兼容【拖拽】与【点击选择】
             const handleUploadRef = (e, index) => {
-                const file = e.target.files[0];
+                const rawFiles = e.dataTransfer ? e.dataTransfer.files : e.target.files;
+                // 如果用户一口气拖了多张进来，我们只取第一张图片
+                const file = Array.from(rawFiles).find(f => f.type.startsWith('image/'));
                 if (!file) return;
 
                 // 🚨 5MB 拦截
                 if (file.size > 5 * 1024 * 1024) {
                     ElementPlus.ElMessage.error(`【${file.name}】超过 5MB，已被拦截！`);
-                    e.target.value = '';
+                    if (e.target && e.target.value !== undefined) e.target.value = '';
                     return;
                 }
 
                 tasks.value[index].ref = { file, url: URL.createObjectURL(file), ossUrl: null };
-                e.target.value = '';
+                if (e.target && e.target.value !== undefined) e.target.value = '';
             };
 
             const templateDrawer = ref(false);
@@ -267,20 +288,21 @@
                 ElementPlus.ElMessage.success('🎉 模板套用成功！');
             };
 
-            const directUploadToOss = async (itemObj, policyData) => {
-                if (itemObj.ossUrl) return itemObj.ossUrl;
+            // 🔴 满血升级版：加入真实进度回调 (onProgress) 和 120秒防慢网超时
+            const directUploadToOss = async (itemObj, policyData, onProgress) => {
+                if (itemObj.ossUrl) {
+                    // 如果已经上传过（有链接了），直接视为 100% 完成
+                    if (onProgress) onProgress((itemObj.raw || itemObj.file || itemObj).size || 0);
+                    return itemObj.ossUrl;
+                }
 
-                // 🔴 修复 1：兼容不同组件，精准提取真实的 File 对象
                 const realFile = itemObj.raw || itemObj.file || itemObj;
 
-                // 🔴 修复 2：拦截超大图片
                 if (realFile.size > 5 * 1024 * 1024) {
                     ElementPlus.ElMessage.error(`【${realFile.name}】 图片大小超过 5MB，请压缩后重试！`);
-                    // 🔴 修复 3：因为没有 event，我们直接抛出异常来强行终止 Promise.all 的后台并发上传
                     throw new Error("FILE_TOO_LARGE");
                 }
 
-                // 🔴 修复 4：统一使用提取出来的 realFile 获取名字和上传
                 const suffix = realFile.name.substring(realFile.name.lastIndexOf('.'));
                 const finalKey = `${policyData.dir}${Date.now()}_${Math.random().toString(36).substr(2, 6)}${suffix}`;
 
@@ -290,18 +312,31 @@
                 fd.append('OSSAccessKeyId', policyData.accessid);
                 fd.append('success_action_status', '200');
                 fd.append('signature', policyData.signature);
-                fd.append('file', realFile); // 确保传给阿里云的是真正的文件
+                fd.append('file', realFile);
 
-                await axios.post(policyData.host, fd);
-                itemObj.ossUrl = `${policyData.host}/${finalKey}`;
-                return itemObj.ossUrl;
+                try {
+                    await axios.post(policyData.host, fd, {
+                        timeout: 120000, // 宽限到 2 分钟，防止网速慢导致大文件传一半被切断
+                        // 🔴 核心：监听底层网卡的数据传输进度！
+                        onUploadProgress: (progressEvent) => {
+                            if (progressEvent.total && onProgress) {
+                                // 将当前文件已上传的字节数传递出去
+                                onProgress(progressEvent.loaded);
+                            }
+                        }
+                    });
+                    itemObj.ossUrl = `${policyData.host}/${finalKey}`;
+                    return itemObj.ossUrl;
+                } catch (err) {
+                    console.error("OSS 上传底层失败:", err);
+                    throw new Error("OSS_UPLOAD_FAILED");
+                }
             };
 
             const submit = async () => {
                 if (!form.spu) return ElementPlus.ElMessage.warning('SPU 款号不能为空！');
                 if (tasks.value.length === 0) return ElementPlus.ElMessage.warning('请至少添加一个任务！');
 
-                // 基础校验...
                 for (let i = 0; i < tasks.value.length; i++) {
                     if (tasks.value[i].inputs.length === 0) return ElementPlus.ElMessage.warning(`第 ${i+1} 个任务缺少原图`);
                     if (!tasks.value[i].prompt.trim()) return ElementPlus.ElMessage.warning(`第 ${i+1} 个任务缺少提示词`);
@@ -313,8 +348,9 @@
 
                 loading.value = true;
                 try {
-                    uploadProgressMsg.value = '正在上传素材...';
-                    const policyRes = await axios.get('/api/oss/policy');
+                    uploadProgressMsg.value = '正在拉取上传安全凭证...';
+                    const policyRes = await axios.get('/api/oss/policy', { timeout: 10000 });
+                    if (!policyRes.data || !policyRes.data.success) throw new Error("POLICY_FETCH_FAILED");
                     const policyData = policyRes.data.data;
 
                     const itemsToUpload = [];
@@ -324,10 +360,30 @@
                     });
 
                     if (itemsToUpload.length > 0) {
-                        await Promise.all(itemsToUpload.map(item => directUploadToOss(item, policyData)));
+                        // 1. 计算所有需要上传的图片的总大小（字节）
+                        const totalSize = itemsToUpload.reduce((sum, item) => sum + (item.file || item).size, 0);
+                        // 2. 准备一个数组，用来记录每张图片已上传的字节数
+                        const loadedPerFile = new Array(itemsToUpload.length).fill(0);
+
+                        uploadProgressMsg.value = `准备上传素材 (共 ${(totalSize / 1024 / 1024).toFixed(2)} MB)...`;
+
+                        // 3. 并发上传，并实时汇总进度
+                        await Promise.all(itemsToUpload.map(async (item, index) => {
+                            await directUploadToOss(item, policyData, (loadedBytes) => {
+                                // 每次文件有上传进展时，更新它自己的上传量
+                                loadedPerFile[index] = loadedBytes;
+                                // 将所有文件的已上传量加起来
+                                const totalLoaded = loadedPerFile.reduce((a, b) => a + b, 0);
+                                // 计算总体百分比
+                                const percent = Math.round((totalLoaded / totalSize) * 100);
+
+                                // 动态更新按钮文字！
+                                uploadProgressMsg.value = `🚀 上传中: ${percent}% (${(totalLoaded/1024/1024).toFixed(2)}MB / ${(totalSize/1024/1024).toFixed(2)}MB)`;
+                            });
+                        }));
                     }
 
-                    uploadProgressMsg.value = '正在派发 AI 场景任务...';
+                    uploadProgressMsg.value = '上传完成！正在派发 AI 场景任务...';
                     const apiRequests = tasks.value.map(task => {
                         const payload = {
                             spu: form.spu, model: form.model, resolution: form.resolution,
@@ -341,16 +397,12 @@
                     });
 
                     const results = await Promise.all(apiRequests);
-
-                    // 🔴 核心修复：检查每个请求的 success 状态
                     const failedTasks = results.filter(r => !r.data || !r.data.success);
 
                     if (failedTasks.length === 0) {
                         ElementPlus.ElMessage({
                             message: `🚀 提交成功！已派发 ${tasks.value.length} 个场景生成任务。`,
-                            type: 'success',
-                            duration: 5000,
-                            showClose: true
+                            type: 'success', duration: 5000, showClose: true
                         });
                         tasks.value = [];
                         addTask();
@@ -359,11 +411,14 @@
                     }
                 } catch (e) {
                     console.error("提交异常:", e);
-                    // 🔴 优化报错提示，如果是我们主动拦截的超大文件，就不报“系统崩溃”
                     if (e.message === "FILE_TOO_LARGE") {
-                        // 提示框已经在上面弹过了，这里静默拦截即可
+                        // 静默拦截
+                    } else if (e.message === "OSS_UPLOAD_FAILED") {
+                        ElementPlus.ElMessage.error('图片上传阿里云失败，请检查网络是否稳定或刷新重试');
+                    } else if (e.message === "POLICY_FETCH_FAILED") {
+                        ElementPlus.ElMessage.error('获取 OSS 凭证失败，请确认后端服务正常');
                     } else {
-                        ElementPlus.ElMessage.error('处理失败：请检查网络或图片源是否正常');
+                        ElementPlus.ElMessage.error('处理失败：请按 F12 检查网络请求报错');
                     }
                 } finally {
                     loading.value = false;

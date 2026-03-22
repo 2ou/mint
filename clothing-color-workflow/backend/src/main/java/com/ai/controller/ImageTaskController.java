@@ -4,6 +4,7 @@ import com.ai.dto.BatchTaskRequest;
 import com.ai.dto.TaskCreateResponse;
 import com.ai.service.ImageTaskService;
 import com.ai.dto.ApiResponse;
+import com.ai.service.OssService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -181,6 +182,25 @@ public class ImageTaskController {
     @GetMapping("/kie-raw/{taskId}")
     public ApiResponse<String> getKieRaw(@PathVariable("taskId") String taskId) {
         return ApiResponse.ok("ok", kieClientService.getRawResult(taskId));
+    }
+
+    private final OssService ossService;
+
+    /**
+     * 🧪 临时测试接口：测试 KIE 图片转存并压缩功能
+     * 请求示例：GET /api/tasks/test-upload?spu=TEST001&url=https://xxx.com/image.jpg
+     */
+    @GetMapping("/test-upload")
+    public ApiResponse<String> testKieUpload(
+            @RequestParam("spu") String spu,
+            @RequestParam("url") String url) {
+        try {
+            // 直接调用你刚才修复的 Service 方法
+            String result = ossService.uploadResultToOss(spu, url);
+            return ApiResponse.ok("测试成功", result);
+        } catch (Exception e) {
+            return ApiResponse.fail("测试失败：" + e.getMessage());
+        }
     }
 
 }

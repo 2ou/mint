@@ -85,7 +85,14 @@
             </el-row>
             <el-row :gutter="20">
                 <el-col :span="8"><el-form-item label="衣服类型"><el-input v-model="form.type" placeholder="eg: cardigan..." @input="updatePrompt"/></el-form-item></el-col>
-                <el-col :span="16"><el-form-item label="提示词"><el-input type="textarea" v-model="form.prompt" rows="3"/></el-form-item></el-col>
+                <el-col :span="16">
+                    <el-form-item label="提示词">
+                        <div style="display: flex; flex-direction: column; width: 100%;">
+                            <el-input type="textarea" v-model="form.prompt" rows="3"/>
+                            <span style="font-size: 12px; color: #909399; padding-top: 4px;">💡 默认为（纯色提示词）</span>
+                        </div>
+                    </el-form-item>
+                </el-col>
             </el-row>
         </el-form>
 
@@ -93,11 +100,14 @@
         <div class="drop-zones-container">
             <div class="drop-zone" :class="{ 'is-dragover': drag.input }" @click="$refs.inputRef.click()" @dragover.prevent="drag.input = true" @dragleave.prevent="drag.input = false" @drop.prevent="e => handleDrop(e, 'input')">
                 <span class="icon">👕</span><div>点击/拖拽上传 <b>原图</b></div>
+                <div style="font-size: 12px; color: #A8ABB2; margin-top: 8px;">(单张图片大小不超过 5MB)</div>
                 <input type="file" multiple ref="inputRef" @change="e => handleUpload(e, 'input')" accept="image/*" class="hidden-input"/>
             </div>
+
             <div style="flex: 1; display: flex; flex-direction: column; gap: 10px;">
                 <div class="drop-zone" :class="{ 'is-dragover': drag.color }" @click="$refs.colorRef.click()" @dragover.prevent="drag.color = true" @dragleave.prevent="drag.color = false" @drop.prevent="e => handleDrop(e, 'color')" style="height: 100%;">
                     <span class="icon">🎨</span><div>点击/拖拽上传 <b>本地颜色图</b></div>
+                    <div style="font-size: 12px; color: #A8ABB2; margin-top: 8px;">(单张图片大小不超过 5MB)</div>
                     <input type="file" multiple ref="colorRef" @change="e => handleUpload(e, 'color')" accept="image/*" class="hidden-input"/>
                 </div>
                 <el-button type="success" plain @click="openColorCardDialog" style="width: 100%; height: 40px;">
@@ -141,9 +151,16 @@
     </el-card>
 
     <el-drawer v-model="colorCardDrawer" title="📚 系统色卡库 (选取色卡或案例图)" size="55%">
-        <div style="padding: 0 15px 15px 15px; display: flex; gap: 10px;">
-            <el-input v-model="drawerFilter.patternName" placeholder="花型名称筛选 (支持多个,用逗号隔开)" clearable style="flex: 1"></el-input>
-            <el-input v-model="drawerFilter.fabricType" placeholder="面料搜索" clearable style="width: 150px"></el-input>
+        <div style="padding: 0 15px 15px 15px; display: flex; flex-direction: column; gap: 10px;">
+            <div style="display: flex; gap: 10px;">
+                <el-input v-model="drawerFilter.patternName" placeholder="花型名称筛选 (支持多个,用逗号隔开)" clearable style="flex: 1"></el-input>
+                <el-input v-model="drawerFilter.fabricType" placeholder="面料搜索" clearable style="width: 150px"></el-input>
+            </div>
+            <div style="display: flex; gap: 10px;">
+                <el-button type="primary" plain @click="addAll('色卡')">🖼️ 全部选取色卡图</el-button>
+                <el-button type="success" plain @click="addAll('案例')">📸 全部选取案例图</el-button>
+                <el-button type="warning" plain @click="addAll('智能')">✨ 智能选取 (纯色选色卡，印花选案例)</el-button>
+            </div>
         </div>
 
         <el-table :data="filteredDbColorCards" border stripe>
@@ -233,6 +250,68 @@
                     return matchFabric && matchPattern;
                 });
             });
+
+            // 🔴 新增核心逻辑：一键批量添加到矩阵
+            const addAll = (mode) => {
+                if (filteredDbColorCards.value.length === 0) return ElementPlus.ElMessage.warning('当前列表为空！');
+
+                let addedCount = 0;
+                let skippedCount = 0;
+
+                // 遍历当前筛选出来的列表
+                filteredDbColorCards.value.forEach(card => {
+                    let targetUrl = '';
+                    let typeName = '';
+
+                    // 根据按钮类型决定取哪个图
+                    if (mode === '色卡') {
+                        targetUrl = card.colorCardUrl;
+                        typeName = '色卡';
+                    } else if (mode === '案例') {
+                        if (!card.exampleUrl) return; // 没有案例图则跳过
+                        targetUrl = card.exampleUrl;
+                        typeName = '案例';
+                    } else if (mode === '智能') {
+                        if (card.printType === 1) { // 纯色 -> 选色卡
+                            targetUrl = card.colorCardUrl;
+                            typeName = '色卡';
+                        } else { // 印花 -> 选案例
+                            if (!card.exampleUrl) return; // 如果印花没有案例图也跳过
+                            targetUrl = card.exampleUrl;
+                            typeName = '案例';
+                        }
+                    }
+
+                    if (!targetUrl) return;
+
+                    // 生成唯一ID并判断是否已存在
+                    const uniqueId = `db_${card.id}_${typeName === '色卡' ? 'card' : 'example'}`;
+                    const exists = colorPool.value.find(c => c.id === uniqueId);
+
+                    if (exists) {
+                        skippedCount++;
+                    } else {
+                        const newItem = {
+                            id: uniqueId,
+                            dbId: card.id,
+                            file: null,
+                            url: targetUrl,
+                            ossUrl: targetUrl
+                        };
+                        colorPool.value.push(newItem);
+                        // 默认让它与所有原图配对
+                        inputPool.value.forEach(inp => pairingState[`${inp.id}_${newItem.id}`] = true);
+                        addedCount++;
+                    }
+                });
+
+                // 批量执行结束，给出汇总提示
+                if (addedCount > 0) {
+                    ElementPlus.ElMessage.success(`🎉 批量选取成功！已添加 ${addedCount} 张图片到矩阵。` + (skippedCount > 0 ? ` (自动跳过了 ${skippedCount} 张已存在的)` : ''));
+                } else {
+                    ElementPlus.ElMessage.warning(`没有添加新图片 (可能已全部存在或当前列表项缺少对应的链接)。`);
+                }
+            };
 
             const openColorCardDialog = async () => {
                 colorCardDrawer.value = true;
@@ -381,7 +460,7 @@
                 form, inputPool, colorPool, pairingState, loading, uploadProgressMsg, activeTaskCount, drag,
                 updatePrompt, handleUpload, handleDrop, removeImage, togglePair, submit,
                 goToScene, goToList, goToColorManage,
-                colorCardDrawer, dbColorCards, openColorCardDialog, addSingleToMatrix,
+                colorCardDrawer, dbColorCards, openColorCardDialog, addSingleToMatrix, addAll,
                 drawerFilter, filteredDbColorCards
             };
         }
