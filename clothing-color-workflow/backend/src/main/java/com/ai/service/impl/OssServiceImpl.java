@@ -27,7 +27,7 @@ public class OssServiceImpl implements OssService {
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(600, TimeUnit.SECONDS)  // 🔴 读超时：允许 KIE 服务器发呆 10 分钟不传数据
             .writeTimeout(300, TimeUnit.SECONDS)
-            .callTimeout(5000, TimeUnit.SECONDS) // 🔴 总下载时间底线：5000S ！
+            .callTimeout(5400, TimeUnit.SECONDS) // 🔴 总下载时间底线：1.5小时 ！
             .build();
 
     // 终极防御核心：建立一个有 10 个护士的“隔离线程池”
@@ -190,13 +190,13 @@ public class OssServiceImpl implements OssService {
             };
 
             future = isolationPool.submit(isolationTask);
-            // 🔴 配合上面的 1 小时 (3600秒) 总超时，这里护士的等待时间给到 3610 秒
-            return future.get(3610, TimeUnit.SECONDS);
+            // 🔴 配合上面的 1.5 小时 (5400秒) 总超时，这里护士的等待时间给到 5410 秒
+            return future.get(5410, TimeUnit.SECONDS);
 
         } catch (TimeoutException e) {
             if (future != null) future.cancel(true);
-            log.error("【转存严重超时】下载动作耗时超过 1 小时，已强制终止该线程！");
-            throw new RuntimeException("图片下载严重超时 (超1小时)");
+            log.error("【转存严重超时】下载动作耗时超过 1.5 小时，已强制终止该线程！");
+            throw new RuntimeException("图片下载严重超时 (超1.5小时)");
         } catch (ExecutionException e) {
             Throwable cause = e.getCause();
             log.error("【本地保存失败】: {}", cause != null ? cause.getMessage() : e.getMessage());
