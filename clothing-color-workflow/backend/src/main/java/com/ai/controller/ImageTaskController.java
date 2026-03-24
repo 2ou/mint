@@ -193,10 +193,11 @@ public class ImageTaskController {
     @GetMapping("/test-upload")
     public ApiResponse<String> testKieUpload(
             @RequestParam("spu") String spu,
-            @RequestParam("url") String url) {
+            @RequestParam("url") String url,
+            @RequestParam("resolution") String resolution) {
         try {
             // 直接调用你刚才修复的 Service 方法
-            String result = ossService.uploadResultToOss(spu, url);
+            String result = ossService.uploadResultToOss(spu, url, resolution);
             return ApiResponse.ok("测试成功", result);
         } catch (Exception e) {
             return ApiResponse.fail("测试失败：" + e.getMessage());

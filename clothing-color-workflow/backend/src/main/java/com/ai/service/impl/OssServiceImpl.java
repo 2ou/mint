@@ -75,7 +75,7 @@ public class OssServiceImpl implements OssService {
     }
 
     @Override
-    public String uploadResultToOss(String spu, String resultUrl) {
+    public String uploadResultToOss(String spu, String resultUrl, String resolution) {
         Future<String> future = null;
 
         try {
@@ -89,7 +89,7 @@ public class OssServiceImpl implements OssService {
                 if (os.contains("win")) {
                     localRoot = "D:/AiResult";
                 } else {
-                    localRoot = "/tmp/ai-result"; // 或者其他 Linux 路径
+                    localRoot = "/data/ai-images/tmp"; // 或者其他 Linux 路径
                 }
             }
 
@@ -107,9 +107,12 @@ public class OssServiceImpl implements OssService {
             Callable<String> isolationTask = () -> {
                 log.info("【双保险】正在下载到本地: {}", permanentFile.getAbsolutePath());
 
+                // ✅ 修复：补全满血防盗链伪装，防止被 KIE 服务器拦截
                 okhttp3.Request request = new okhttp3.Request.Builder()
                         .url(resultUrl)
-                        .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0")
+                        .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36")
+                        .addHeader("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
+                        .addHeader("Referer", "https://aiquickdraw.com/")
                         .build();
 
                 try (okhttp3.Response response = httpClient.newCall(request).execute()) {
@@ -117,7 +120,6 @@ public class OssServiceImpl implements OssService {
                         throw new RuntimeException("KIE图片下载失败: HTTP " + response.code());
                     }
 
-                    // 🔴 修复核心：绝对不要让图片压缩器直接读取脆弱的网络流！
                     // 第一步：用最基础的缓冲流，把网络字节原封不动、100%安全地写到本地硬盘
                     try (InputStream in = response.body().byteStream();
                          FileOutputStream fos = new FileOutputStream(permanentFile)) {
@@ -134,22 +136,29 @@ public class OssServiceImpl implements OssService {
                         throw new RuntimeException("底层网络流中断，下载失败", streamEx);
                     }
 
-                    // 第二步：文件已经完整落地，现在读取本地硬盘的文件进行安全压缩
-                    try {
+                    // 🔴 第二步：智能判断分辨率。只有 4K 才进行 90% 画质压缩！
+                    if ("4K".equalsIgnoreCase(resolution)) {
                         File tempCompressedFile = new File(permanentFile.getAbsolutePath() + ".tmp");
-                        net.coobird.thumbnailator.Thumbnails.of(permanentFile)
-                                .scale(1.0)
-                                .outputQuality(0.9) // 画质压缩为 90%
-                                .toFile(tempCompressedFile);
+                        try {
+                            net.coobird.thumbnailator.Thumbnails.of(permanentFile)
+                                    .scale(1.0)
+                                    .outputQuality(0.9) // 4K 图片画质压缩为 90%
+                                    .toFile(tempCompressedFile);
 
-                        // 压缩成功，用变小后的临时文件替换掉刚下载的原文件
-                        permanentFile.delete();
-                        tempCompressedFile.renameTo(permanentFile);
-                        log.info("【图片压缩成功】已完成 90% 画质压缩");
-                    } catch (Exception compressEx) {
-                        // 兜底防御：万一这是张损坏或特殊格式的图，导致压缩失败
-                        log.warn("【画质压缩失败】将跳过压缩，直接使用未压缩的原图继续上传: {}", compressEx.getMessage());
-                        // 故意不抛出异常！因为第一步已经把完整的图下好了，就算不压缩也不影响后续上传 OSS！
+                            // 压缩成功，用较小的临时文件替换掉刚下载的原文件 (使用安全的 NIO move)
+                            java.nio.file.Files.move(tempCompressedFile.toPath(), permanentFile.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                            log.info("【图片压缩成功】检测到 4K 分辨率，已完成 90% 画质压缩以节省空间");
+                        } catch (Exception compressEx) {
+                            log.warn("【画质压缩失败】将跳过压缩，直接使用未压缩的 4K 原图: {}", compressEx.getMessage());
+                        } finally {
+                            // 清理可能残留的临时文件
+                            if (tempCompressedFile.exists()) {
+                                tempCompressedFile.delete();
+                            }
+                        }
+                    } else {
+                        // 2K 或其他分辨率，直接跳过压缩
+                        log.info("【跳过压缩】当前任务分辨率为 {}，无需压缩，已保留 100% 原图画质", resolution);
                     }
                 }
 

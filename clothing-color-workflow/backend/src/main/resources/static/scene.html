@@ -203,11 +203,11 @@
 
                 if (!files || files.length === 0) return;
 
-                // 🚨 先进行 5MB 过滤安检
+                // 🚨 先进行 10MB 过滤安检
                 const validFiles = [];
                 files.forEach(file => {
-                    if (file.size > 5 * 1024 * 1024) {
-                        ElementPlus.ElMessage.error(`【${file.name}】超过 5MB，已被拦截！`);
+                    if (file.size > 10 * 1024 * 1024) {
+                        ElementPlus.ElMessage.error(`【${file.name}】超过 10MB，已被拦截！`);
                     } else {
                         validFiles.push(file); // 只有合格的图才能留下
                     }
@@ -242,9 +242,9 @@
                 const file = Array.from(rawFiles).find(f => f.type.startsWith('image/'));
                 if (!file) return;
 
-                // 🚨 5MB 拦截
-                if (file.size > 5 * 1024 * 1024) {
-                    ElementPlus.ElMessage.error(`【${file.name}】超过 5MB，已被拦截！`);
+                // 🚨 10MB 拦截
+                if (file.size > 10 * 1024 * 1024) {
+                    ElementPlus.ElMessage.error(`【${file.name}】超过 10MB，已被拦截！`);
                     if (e.target && e.target.value !== undefined) e.target.value = '';
                     return;
                 }
@@ -298,8 +298,8 @@
 
                 const realFile = itemObj.raw || itemObj.file || itemObj;
 
-                if (realFile.size > 5 * 1024 * 1024) {
-                    ElementPlus.ElMessage.error(`【${realFile.name}】 图片大小超过 5MB，请压缩后重试！`);
+                if (realFile.size > 10 * 1024 * 1024) {
+                    ElementPlus.ElMessage.error(`【${realFile.name}】 图片大小超过 10MB，请压缩后重试！`);
                     throw new Error("FILE_TOO_LARGE");
                 }
 

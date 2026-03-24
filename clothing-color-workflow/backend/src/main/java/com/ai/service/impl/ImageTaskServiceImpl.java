@@ -51,7 +51,7 @@ public class ImageTaskServiceImpl implements ImageTaskService {
     @Autowired
     private AppProperties appProperties;
 
-    @Value("${app.local-save-root:D:/AiResult}")
+    @Value("${app.local-save-root:/data/ai-images/tmp}")
     private String localSaveRoot;
 
     // 🔴 公用的 OkHttp 客户端
@@ -176,7 +176,7 @@ public class ImageTaskServiceImpl implements ImageTaskService {
                 // 🔴 核心逻辑 3：把容易报错的转存功能“隔离”起来
                 try {
                     log.info("【步骤3】尝试执行双保险转存（本地硬盘 + OSS）...");
-                    String combinedResult = ossService.uploadResultToOss(task.getSpu(), kieResult.getResultUrl());
+                    String combinedResult = ossService.uploadResultToOss(task.getSpu(), kieResult.getResultUrl(), task.getResolution());
 
                     String[] parts = combinedResult.split("\\|");
                     if (parts.length == 2) {
@@ -219,10 +219,11 @@ public class ImageTaskServiceImpl implements ImageTaskService {
         // 解决中文乱码问题（如果有中文名），建议使用英文或拼音
         response.setHeader("Content-Disposition", "attachment; filename=AI_tasks_results.zip");
 
-        // 直接将 ZIP 流绑定到 HTTP 响应流上，实现“边下载边打包边传给用户”
+// 直接将 ZIP 流绑定到 HTTP 响应流上，实现“边下载边打包边传给用户”
         try (java.util.zip.ZipOutputStream zos = new java.util.zip.ZipOutputStream(response.getOutputStream())) {
 
             boolean hasFiles = false;
+            int index = 1; // 🔴 新增：用于兜底的序号
 
             for (Long id : ids) {
                 try {
@@ -234,10 +235,22 @@ public class ImageTaskServiceImpl implements ImageTaskService {
                     String imageUrl = task.getResultOssUrl() != null ? task.getResultOssUrl() : task.getResultTempUrl();
                     if (imageUrl == null || imageUrl.isEmpty()) continue;
 
-                    // 构造压缩包内的文件名：SPU_前8位任务ID.png
                     String ext = imageUrl.toLowerCase().contains(".jpg") ? ".jpg" : ".png";
-                    String shortTaskId = task.getTaskId() != null && task.getTaskId().length() >= 8 ? task.getTaskId().substring(0, 8) : String.valueOf(task.getId());
-                    String fileName = task.getSpu() + "_" + shortTaskId + ext;
+
+                    // 🔴 极简提取：直接使用 OSS 链接末尾的原始文件名（包含颜色、序号、时间戳）
+                    String fileName = task.getSpu() + "_" + index + ext; // 默认 SPU 兜底
+                    String colorUrl = task.getColorImageUrl();
+
+                    if (colorUrl != null && colorUrl.contains("/")) {
+                        try {
+                            // 直接截取最后一段，例如得到 "红色_1_1711263456789.jpg"
+                            String lastPart = colorUrl.substring(colorUrl.lastIndexOf("/") + 1);
+                            fileName = java.net.URLDecoder.decode(lastPart, "UTF-8"); // 解码可能被 URL 编码的中文
+                        } catch (Exception e) {
+                            log.warn("解析文件名失败", e);
+                        }
+                    }
+                    index++; // 兜底序号自增
 
                     // 使用 httpClient 直接从网络拉取图片流
                     okhttp3.Request request = new okhttp3.Request.Builder()

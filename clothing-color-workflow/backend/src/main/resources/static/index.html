@@ -100,14 +100,14 @@
         <div class="drop-zones-container">
             <div class="drop-zone" :class="{ 'is-dragover': drag.input }" @click="$refs.inputRef.click()" @dragover.prevent="drag.input = true" @dragleave.prevent="drag.input = false" @drop.prevent="e => handleDrop(e, 'input')">
                 <span class="icon">👕</span><div>点击/拖拽上传 <b>原图</b></div>
-                <div style="font-size: 12px; color: #A8ABB2; margin-top: 8px;">(单张图片大小不超过 5MB)</div>
+                <div style="font-size: 12px; color: #A8ABB2; margin-top: 8px;">(单张图片大小不超过 10MB)</div>
                 <input type="file" multiple ref="inputRef" @change="e => handleUpload(e, 'input')" accept="image/*" class="hidden-input"/>
             </div>
 
             <div style="flex: 1; display: flex; flex-direction: column; gap: 10px;">
                 <div class="drop-zone" :class="{ 'is-dragover': drag.color }" @click="$refs.colorRef.click()" @dragover.prevent="drag.color = true" @dragleave.prevent="drag.color = false" @drop.prevent="e => handleDrop(e, 'color')" style="height: 100%;">
                     <span class="icon">🎨</span><div>点击/拖拽上传 <b>本地颜色图</b></div>
-                    <div style="font-size: 12px; color: #A8ABB2; margin-top: 8px;">(单张图片大小不超过 5MB)</div>
+                    <div style="font-size: 12px; color: #A8ABB2; margin-top: 8px;">(单张图片大小不超过 10MB)</div>
                     <input type="file" multiple ref="colorRef" @change="e => handleUpload(e, 'color')" accept="image/*" class="hidden-input"/>
                 </div>
                 <el-button type="success" plain @click="openColorCardDialog" style="width: 100%; height: 40px;">
@@ -213,9 +213,9 @@
 // 🔴 拦截优化：处理文件前先过滤大小
             const processFiles = (files, type) => {
                 files.forEach(file => {
-                    // 🚨 超过 5MB 直接踢出去，并弹出错误提示
-                    if (file.size > 5 * 1024 * 1024) {
-                        ElementPlus.ElMessage.error(`【${file.name}】超过 5MB，已被拦截！`);
+                    // 🚨 超过 10MB 直接踢出去，并弹出错误提示
+                    if (file.size > 10 * 1024 * 1024) {
+                        ElementPlus.ElMessage.error(`【${file.name}】超过 10MB，已被拦截！`);
                         return; // 中断当前这张图的处理，继续检查下一张
                     }
 
@@ -345,21 +345,32 @@
             const directUploadToOss = async (itemObj, policyData) => {
                 if (itemObj.ossUrl) return itemObj.ossUrl;
 
-                // 🔴 修复 1：兼容不同组件，精准提取真实的 File 对象
                 const realFile = itemObj.raw || itemObj.file || itemObj;
 
-                // 🔴 修复 2：拦截超大图片
-                if (realFile.size > 5 * 1024 * 1024) {
-                    ElementPlus.ElMessage.error(`【${realFile.name}】 图片大小超过 5MB，请压缩后重试！`);
-                    // 🔴 修复 3：因为没有 event，我们直接抛出异常来强行终止 Promise.all 的后台并发上传
+                if (realFile.size > 10 * 1024 * 1024) {
+                    ElementPlus.ElMessage.error(`【${realFile.name}】 图片大小超过 10MB，请压缩后重试！`);
                     throw new Error("FILE_TOO_LARGE");
                 }
 
-                // 🔴 修复 4：统一使用提取出来的 realFile 获取名字和上传
                 const suffix = realFile.name.substring(realFile.name.lastIndexOf('.'));
-                const finalKey = `${policyData.dir}${Date.now()}_${Math.random().toString(36).substr(2, 6)}${suffix}`;
+
+                // 🔴 1. 提取原始图片名称（去掉后缀），并过滤掉特殊字符
+                const rawName = realFile.name.substring(0, realFile.name.lastIndexOf('.')) || realFile.name;
+                const safeName = rawName.replace(/[\\/:*?"<>|]/g, '_');
+
+                // 🔴 2. 动态获取该图片在上传列表中的“序号”
+                let displayIndex = 1;
+                if (colorPool.value.includes(itemObj)) {
+                    displayIndex = colorPool.value.indexOf(itemObj) + 1;
+                } else if (inputPool.value.includes(itemObj)) {
+                    displayIndex = inputPool.value.indexOf(itemObj) + 1;
+                }
+
+                // 🔴 3. 最终上传到 OSS 的完美命名：原名称_序号_时间戳.后缀 (例如: 红色_1_17123456.jpg)
+                const finalKey = `${policyData.dir}${safeName}_${displayIndex}_${Date.now()}${suffix}`;
 
                 const fd = new FormData();
+                fd.append('key', finalKey);
                 fd.append('key', finalKey);
                 fd.append('policy', policyData.policy);
                 fd.append('OSSAccessKeyId', policyData.accessid);

@@ -8,7 +8,7 @@ public interface OssService {
     String uploadInput(String spu, String type, MultipartFile file);
 
     // 上传结果到 OSS
-    String uploadResultToOss(String spu, String resultUrl);
+    String uploadResultToOss(String spu, String resultUrl, String resolution);
 
     // 🔴 新增：直接将 File 对象上传到 OSS 的方法
     String uploadFileToOss(String spu, java.io.File file);
