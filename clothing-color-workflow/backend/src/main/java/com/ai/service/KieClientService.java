@@ -14,7 +14,7 @@ public interface KieClientService {
      * @param colorUrl    颜色参考图OSS URL
      * @return taskId    KIE 任务ID
      */
-    String createTask(String spu, String prompt, String resolution, String model, String inputUrl, String colorUrl);
+    String createTask(String spu, String prompt, String resolution, String aspectRatio, String model, String inputUrl, String colorUrl);
 
     // 🔴 新增：返回完整结果对象的方法
     KieTaskResult getFullResult(String taskId);

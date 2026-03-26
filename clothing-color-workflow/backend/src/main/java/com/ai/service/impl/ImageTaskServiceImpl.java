@@ -100,7 +100,7 @@ public class ImageTaskServiceImpl implements ImageTaskService {
     }
 
     @Override
-    public TaskCreateResponse createWithUrl(String spu, String prompt, String resolution, String model, String inputUrl, String colorUrl, Integer taskType, String operator, String shopName) {
+    public TaskCreateResponse createWithUrl(String spu, String prompt, String resolution, String aspectRatio, String model, String inputUrl, String colorUrl, Integer taskType, String operator, String shopName) {
         ImageTask task = new ImageTask();
         task.setSpu(spu); task.setPrompt(prompt); task.setResolution(resolution); task.setModel(model);
         task.setInputImageUrl(inputUrl); task.setColorImageUrl(colorUrl); task.setStatus("CREATED");
@@ -109,7 +109,7 @@ public class ImageTaskServiceImpl implements ImageTaskService {
         task.setShopName(shopName);
 
         try {
-            String taskId = kieClientService.createTask(spu, prompt, resolution, model, inputUrl, colorUrl);
+            String taskId = kieClientService.createTask(spu, prompt, resolution, aspectRatio, model, inputUrl, colorUrl);
             task.setTaskId(taskId); task.setStatus("PROCESSING");
         } catch (Exception e) {
             log.error("创建 KIE 任务失败", e);

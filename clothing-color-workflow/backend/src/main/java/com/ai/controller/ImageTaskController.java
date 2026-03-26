@@ -47,6 +47,7 @@ public class ImageTaskController {
                         request.getSpu(),
                         request.getPrompt(),
                         request.getResolution(),
+                        request.getAspectRatio(),
                         request.getModel(),
                         pair.getInputUrl(),
                         pair.getColorUrl(),

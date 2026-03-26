@@ -13,7 +13,7 @@ public class AppProperties {
 
     // 🔴 必须确保有这两个字段，Spring 才能把 yml 里的值注入进来
     private String localSaveRoot;
-    private boolean deleteLocalAfterUpload;
+    private boolean deleteLocalAfterUpload = true;
 
     // 🔴 关键修复：必须 new 一下，不能只是 private Kie kie;
     private Kie kie = new Kie();

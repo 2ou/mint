@@ -185,14 +185,20 @@ public class OssServiceImpl implements OssService {
 
                 if (appProperties.isDeleteLocalAfterUpload()) {
                     if (!ossUrl.isEmpty()) {
-                        boolean deleted = permanentFile.delete();
-                        log.info("【正式环境】OSS 上传成功，已自动清理本地图片: {}，删除状态: {}", finalLocalPath, deleted);
-                        finalLocalPath = "DELETED";
-                    } else {
-                        log.warn("【正式环境】因 OSS 上传失败，强制保留本地图片不予删除: {}", finalLocalPath);
+                        try {
+                            // 🔴 停顿 100 毫秒，确保 OSS 客户端彻底松开文件句柄
+                            Thread.sleep(100);
+
+                            // 🔴 放弃愚蠢的 file.delete()，使用 NIO 强力删除！失败了会直接抛出明确的异常！
+                            java.nio.file.Files.deleteIfExists(permanentFile.toPath());
+
+                            log.info("【正式环境】OSS 上传成功，已彻底清理本地图片: {}", finalLocalPath);
+                            finalLocalPath = "DELETED";
+                        } catch (Exception deleteEx) {
+                            // 如果删不掉，这里会明确打印是因为【权限不足】还是【文件被占用】！
+                            log.error("【正式环境】删除本地文件失败，元凶是: {}", deleteEx.getMessage(), deleteEx);
+                        }
                     }
-                } else {
-                    log.info("【开发环境】本地图片已保留: {}", finalLocalPath);
                 }
 
                 return ossUrl + "|" + finalLocalPath;

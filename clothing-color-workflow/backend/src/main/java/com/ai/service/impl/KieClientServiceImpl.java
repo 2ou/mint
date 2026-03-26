@@ -29,7 +29,7 @@ public class KieClientServiceImpl implements KieClientService {
      * 创建 KIE 任务
      */
     @Override
-    public String createTask(String spu, String prompt, String resolution, String model, String inputUrl, String colorUrl) {
+    public String createTask(String spu, String prompt, String resolution, String aspectRatio, String model, String inputUrl, String colorUrl) {
         try {
             String url = appProperties.getKie().getBaseUrl() + "/jobs/createTask";
 
@@ -57,7 +57,8 @@ public class KieClientServiceImpl implements KieClientService {
             }
 
             inputNode.set("image_input", imageArray);
-            inputNode.put("aspect_ratio", "auto");
+            // 🔴 关键修复：不再写死 "auto"，使用传进来的 aspectRatio，如果前端没传则默认 auto
+            inputNode.put("aspect_ratio", aspectRatio != null && !aspectRatio.trim().isEmpty() ? aspectRatio : "auto");
             inputNode.put("resolution", resolution);
             inputNode.put("output_format", "png");
 

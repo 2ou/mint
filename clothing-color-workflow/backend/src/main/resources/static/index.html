@@ -40,15 +40,17 @@
         .db-img-container { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 5px; }
         .db-img-container .el-image { border: 1px solid #eee; transition: 0.3s; }
         .db-img-container .el-image:hover { border-color: #409EFF; transform: translateY(-2px); }
-        /* 🔴 强制修复 Element Plus 消息提示框被遮挡的问题 */
-        .el-message {
-            z-index: 99999 !important; /* 把层级提到最高，神挡杀神 */
-            top: 80px !important;      /* 强制往下挪 80px，避开顶部导航栏。如果不够可以改成 100px */
-        }
+        .el-message { z-index: 99999 !important; top: 80px !important; }
+        .el-overlay.is-message-box { z-index: 99999 !important; }
 
-        /* 🔴 顺手修复：如果是居中的“确认删除”弹窗被遮挡，加这个 */
-        .el-overlay.is-message-box {
-            z-index: 99999 !important;
+        /* 提示词面板高亮样式 */
+        .prompt-panel {
+            background: #f8f9fa;
+            border: 1px solid #e4e7ed;
+            border-radius: 8px;
+            padding: 12px 15px;
+            width: 100%;
+            box-sizing: border-box;
         }
     </style>
 </head>
@@ -84,12 +86,31 @@
                 <el-col :span="6"><el-form-item label="画面比例"><el-input v-model="form.aspect_ratio" placeholder="auto"/></el-form-item></el-col>
             </el-row>
             <el-row :gutter="20">
-                <el-col :span="8"><el-form-item label="衣服类型"><el-input v-model="form.type" placeholder="eg: cardigan..." @input="updatePrompt"/></el-form-item></el-col>
-                <el-col :span="16">
+                <el-col :span="6">
+                    <el-form-item label="衣服类型">
+                        <el-input v-model="form.type" placeholder="eg: cardigan (建议先填)"/>
+                    </el-form-item>
+                </el-col>
+                <el-col :span="18">
                     <el-form-item label="提示词">
-                        <div style="display: flex; flex-direction: column; width: 100%;">
-                            <el-input type="textarea" v-model="form.prompt" rows="3"/>
-                            <span style="font-size: 12px; color: #909399; padding-top: 4px;">💡 默认为（纯色提示词）</span>
+                        <div class="prompt-panel">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                                <el-radio-group v-model="form.promptType" @change="applyTemplate">
+                                    <el-radio value="solid">🟨 纯色模板</el-radio>
+                                    <el-radio value="print">🌸 印花模板</el-radio>
+                                    <el-radio value="custom">✍️ 自定义</el-radio>
+                                </el-radio-group>
+                                <el-button size="small" type="info" text @click="clearPrompt">🗑️ 清空内容</el-button>
+                            </div>
+
+                            <el-input type="textarea" v-model="form.prompt" rows="4"
+                                      placeholder="请在此输入提示词... (可点击上方单选框快速填入参考模板)"
+                                      @input="form.promptType = 'custom'">
+                            </el-input>
+
+                            <div style="font-size: 12px; color: #E6A23C; padding-top: 8px; font-weight: bold; line-height: 1.4;">
+                                💡 提示词仅供参考。选中参考模板后，您依然可以在上方文本框中自由增加或修改内容。
+                            </div>
                         </div>
                     </el-form-item>
                 </el-col>
@@ -204,22 +225,38 @@
     const {createApp, ref, reactive, computed} = Vue;
     createApp({
         setup() {
-            const basePromptTemplate = "Please replace the color of the 【衣服类型】 in the image with the average color from the solid color block in the reference image. Ensure that only the color of the 【衣服类型】 is modified, keeping all other details and the background unchanged.";
-            const form = reactive({ spu: '', model: 'nano-banana-pro', resolution: '4K', type: '', aspect_ratio: 'auto', prompt: basePromptTemplate });
+            // 🔴 纯色和印花的精准模板
+            const solidPromptTemplate = "Please replace the color of the 【衣服类型】 in the image with the average color from the solid color block in the reference image. Ensure that only the color of the 【衣服类型】 is modified, keeping all other details and the background unchanged.";
+            const printPromptTemplate = "根据上传的印花图案参考，严格遵守我提供的印花比例大小，把印花图案以面料纺织技术的印刷工艺，做到有面料纹理质感，光影自然有明暗交接，有服饰的拼接细节，运用到模特的【衣服类型】上，去除【衣服类型】原本颜色的影响，只需按照印花图案颜色做【衣服类型】的贴合效果图";
+
+            // 🔴 默认状态为 custom（自定义），提示词为空
+            const form = reactive({ spu: '', model: 'nano-banana-pro', resolution: '4K', type: '', aspect_ratio: 'auto', promptType: 'custom', prompt: '' });
             const loading = ref(false), uploadProgressMsg = ref('正在处理...');
             const inputPool = ref([]), colorPool = ref([]), pairingState = reactive({}), drag = reactive({input: false, color: false});
 
-            const updatePrompt = () => { form.prompt = basePromptTemplate.replace(/【衣服类型】/g, form.type && form.type.trim() ? form.type : '【衣服类型】'); };
-// 🔴 拦截优化：处理文件前先过滤大小
+            // 🔴 单选框改变时触发：填入模板
+            const applyTemplate = (val) => {
+                const clothingType = form.type && form.type.trim() ? form.type : '【衣服类型】';
+                if (val === 'solid') {
+                    form.prompt = solidPromptTemplate.replace(/【衣服类型】/g, clothingType);
+                } else if (val === 'print') {
+                    form.prompt = printPromptTemplate.replace(/【衣服类型】/g, clothingType);
+                }
+                // 如果选的是 custom，不做处理，让用户自己写
+            };
+
+            // 🔴 清空按钮逻辑
+            const clearPrompt = () => {
+                form.prompt = '';
+                form.promptType = 'custom';
+            };
+
             const processFiles = (files, type) => {
                 files.forEach(file => {
-                    // 🚨 超过 10MB 直接踢出去，并弹出错误提示
                     if (file.size > 10 * 1024 * 1024) {
                         ElementPlus.ElMessage.error(`【${file.name}】超过 10MB，已被拦截！`);
-                        return; // 中断当前这张图的处理，继续检查下一张
+                        return;
                     }
-
-                    // 符合大小的正常塞进池子
                     const newItem = { id: type + '_' + Date.now() + '_' + Math.floor(Math.random() * 1000), file: file, url: URL.createObjectURL(file), ossUrl: null };
                     if (type === 'input') {
                         inputPool.value.push(newItem);
@@ -239,7 +276,7 @@
             // 色卡库功能
             const colorCardDrawer = ref(false);
             const dbColorCards = ref([]);
-            const drawerFilter = reactive({ patternName: '', fabricType: '' });
+            const drawerFilter = reactive({patternName: '', fabricType: ''});
 
             const filteredDbColorCards = computed(() => {
                 return dbColorCards.value.filter(item => {
@@ -251,61 +288,36 @@
                 });
             });
 
-            // 🔴 新增核心逻辑：一键批量添加到矩阵
             const addAll = (mode) => {
                 if (filteredDbColorCards.value.length === 0) return ElementPlus.ElMessage.warning('当前列表为空！');
-
-                let addedCount = 0;
-                let skippedCount = 0;
-
-                // 遍历当前筛选出来的列表
+                let addedCount = 0; let skippedCount = 0;
                 filteredDbColorCards.value.forEach(card => {
-                    let targetUrl = '';
-                    let typeName = '';
-
-                    // 根据按钮类型决定取哪个图
+                    let targetUrl = ''; let typeName = '';
                     if (mode === '色卡') {
-                        targetUrl = card.colorCardUrl;
-                        typeName = '色卡';
+                        targetUrl = card.colorCardUrl; typeName = '色卡';
                     } else if (mode === '案例') {
-                        if (!card.exampleUrl) return; // 没有案例图则跳过
-                        targetUrl = card.exampleUrl;
-                        typeName = '案例';
+                        if (!card.exampleUrl) return;
+                        targetUrl = card.exampleUrl; typeName = '案例';
                     } else if (mode === '智能') {
-                        if (card.printType === 1) { // 纯色 -> 选色卡
-                            targetUrl = card.colorCardUrl;
-                            typeName = '色卡';
-                        } else { // 印花 -> 选案例
-                            if (!card.exampleUrl) return; // 如果印花没有案例图也跳过
-                            targetUrl = card.exampleUrl;
-                            typeName = '案例';
+                        if (card.printType === 1) {
+                            targetUrl = card.colorCardUrl; typeName = '色卡';
+                        } else {
+                            if (!card.exampleUrl) return;
+                            targetUrl = card.exampleUrl; typeName = '案例';
                         }
                     }
-
                     if (!targetUrl) return;
 
-                    // 生成唯一ID并判断是否已存在
                     const uniqueId = `db_${card.id}_${typeName === '色卡' ? 'card' : 'example'}`;
-                    const exists = colorPool.value.find(c => c.id === uniqueId);
-
-                    if (exists) {
+                    if (colorPool.value.find(c => c.id === uniqueId)) {
                         skippedCount++;
                     } else {
-                        const newItem = {
-                            id: uniqueId,
-                            dbId: card.id,
-                            file: null,
-                            url: targetUrl,
-                            ossUrl: targetUrl
-                        };
+                        const newItem = { id: uniqueId, dbId: card.id, file: null, url: targetUrl, ossUrl: targetUrl };
                         colorPool.value.push(newItem);
-                        // 默认让它与所有原图配对
                         inputPool.value.forEach(inp => pairingState[`${inp.id}_${newItem.id}`] = true);
                         addedCount++;
                     }
                 });
-
-                // 批量执行结束，给出汇总提示
                 if (addedCount > 0) {
                     ElementPlus.ElMessage.success(`🎉 批量选取成功！已添加 ${addedCount} 张图片到矩阵。` + (skippedCount > 0 ? ` (自动跳过了 ${skippedCount} 张已存在的)` : ''));
                 } else {
@@ -321,30 +333,19 @@
                 } catch (e) { ElementPlus.ElMessage.error('获取色卡库失败'); }
             };
 
-            // 🔴 核心逻辑：单张图片添加到矩阵 (区分色卡/案例)
             const addSingleToMatrix = (card, imageUrl, typeName) => {
-                // 为图片生成唯一ID，防止同一张色卡被多次添加（区分来源类型）
                 const uniqueId = `db_${card.id}_${typeName === '色卡' ? 'card' : 'example'}`;
-                const exists = colorPool.value.find(c => c.id === uniqueId);
-                if (exists) return ElementPlus.ElMessage.warning(`该${typeName}图已在矩阵中`);
-
-                const newItem = {
-                    id: uniqueId,
-                    dbId: card.id,
-                    file: null, // 非本地上传，设为null
-                    url: imageUrl,
-                    ossUrl: imageUrl // 已经是OSS链接，直接赋值
-                };
-
+                if (colorPool.value.find(c => c.id === uniqueId)) return ElementPlus.ElMessage.warning(`该${typeName}图已在矩阵中`);
+                const newItem = { id: uniqueId, dbId: card.id, file: null, url: imageUrl, ossUrl: imageUrl };
                 colorPool.value.push(newItem);
-                // 默认让它与所有原图配对
                 inputPool.value.forEach(inp => pairingState[`${inp.id}_${newItem.id}`] = true);
                 ElementPlus.ElMessage.success(`已添加${typeName}图 [${card.patternName}] 到搭配矩阵`);
             };
 
+            let globalUploadCounter = 1;
+
             const directUploadToOss = async (itemObj, policyData) => {
                 if (itemObj.ossUrl) return itemObj.ossUrl;
-
                 const realFile = itemObj.raw || itemObj.file || itemObj;
 
                 if (realFile.size > 10 * 1024 * 1024) {
@@ -353,30 +354,20 @@
                 }
 
                 const suffix = realFile.name.substring(realFile.name.lastIndexOf('.'));
-
-                // 🔴 1. 提取原始图片名称（去掉后缀），并过滤掉特殊字符
                 const rawName = realFile.name.substring(0, realFile.name.lastIndexOf('.')) || realFile.name;
                 const safeName = rawName.replace(/[\\/:*?"<>|]/g, '_');
 
-                // 🔴 2. 动态获取该图片在上传列表中的“序号”
-                let displayIndex = 1;
-                if (colorPool.value.includes(itemObj)) {
-                    displayIndex = colorPool.value.indexOf(itemObj) + 1;
-                } else if (inputPool.value.includes(itemObj)) {
-                    displayIndex = inputPool.value.indexOf(itemObj) + 1;
-                }
+                let displayIndex = globalUploadCounter++; // 使用全局自增序号
 
-                // 🔴 3. 最终上传到 OSS 的完美命名：原名称_序号_时间戳.后缀 (例如: 红色_1_17123456.jpg)
                 const finalKey = `${policyData.dir}${safeName}_${displayIndex}_${Date.now()}${suffix}`;
 
                 const fd = new FormData();
-                fd.append('key', finalKey);
                 fd.append('key', finalKey);
                 fd.append('policy', policyData.policy);
                 fd.append('OSSAccessKeyId', policyData.accessid);
                 fd.append('success_action_status', '200');
                 fd.append('signature', policyData.signature);
-                fd.append('file', realFile); // 确保传给阿里云的是真正的文件
+                fd.append('file', realFile);
 
                 await axios.post(policyData.host, fd);
                 itemObj.ossUrl = `${policyData.host}/${finalKey}`;
@@ -387,34 +378,28 @@
                 if (!form.spu) return ElementPlus.ElMessage.warning('SPU 款号不能为空！');
                 if (activeTaskCount.value === 0) return ElementPlus.ElMessage.warning('当前没有选中的有效搭配任务！');
 
-                // 1. 确认弹窗
                 try {
                     await ElementPlus.ElMessageBox.confirm(
                         `系统将为您生成 ${activeTaskCount.value} 个换色任务，是否立即开始？`,
-                        '提交确认',
-                        { confirmButtonText: '确定提交', cancelButtonText: '我再想想', type: 'info' }
+                        '提交确认', {confirmButtonText: '确定提交', cancelButtonText: '我再想想', type: 'info'}
                     );
                 } catch (e) { return; }
 
-                // 2. 正式提交流程 (合并为一个 try-catch-finally)
                 loading.value = true;
                 try {
-                    // 第一步：获取 OSS 策略
                     const policyRes = await axios.get('/api/oss/policy');
                     const policyData = policyRes.data.data;
 
-                    // 第二步：上传图片
                     const neededInputs = new Set(), neededColors = new Set();
                     inputPool.value.forEach(inp => colorPool.value.forEach(col => {
-                        if (pairingState[`${inp.id}_${col.id}`]) {
-                            neededInputs.add(inp); neededColors.add(col);
-                        }
+                        if (pairingState[`${inp.id}_${col.id}`]) { neededInputs.add(inp); neededColors.add(col); }
                     }));
+
+                    globalUploadCounter = 1;
 
                     uploadProgressMsg.value = `并发上传 ${neededInputs.size + neededColors.size} 张图...`;
                     await Promise.all([...neededInputs, ...neededColors].map(item => directUploadToOss(item, policyData)));
 
-                    // 第三步：派发任务
                     const pairsPayload = [];
                     inputPool.value.forEach(inp => colorPool.value.forEach(col => {
                         if (pairingState[`${inp.id}_${col.id}`]) pairsPayload.push({ inputUrl: inp.ossUrl, colorUrl: col.ossUrl });
@@ -429,35 +414,17 @@
                     uploadProgressMsg.value = '正在派发任务到 AI 队列...';
                     const res = await axios.post('/api/tasks/create', finalPayload);
 
-                    // 🔴 关键修复：增加安全性判断
                     if (res.data && res.data.success) {
-                        // 使用更健壮的方式获取长度，防止报错中断
                         const count = (res.data.data && Array.isArray(res.data.data)) ? res.data.data.length : pairsPayload.length;
-
-                        // 弹出强力提示
-                        ElementPlus.ElMessage({
-                            message: `🚀 提交成功！已派发 ${count} 个换色任务。`,
-                            type: 'success',
-                            duration: 5000, // 显示 5 秒
-                            showClose: true
-                        });
-
-                        // 清空矩阵
+                        ElementPlus.ElMessage({ message: `🚀 提交成功！已派发 ${count} 个换色任务。`, type: 'success', duration: 5000, showClose: true });
                         inputPool.value = []; colorPool.value = [];
                         for (let key in pairingState) delete pairingState[key];
                     } else {
                         ElementPlus.ElMessage.error(res.data.message || '后端返回失败');
                     }
                 } catch (e) {
-                    console.error("提交异常:", e);
-                    // 🔴 优化报错提示，如果是我们主动拦截的超大文件，就不报“系统崩溃”
-                    if (e.message === "FILE_TOO_LARGE") {
-                        // 提示框已经在上面弹过了，这里静默拦截即可
-                    } else {
-                        ElementPlus.ElMessage.error('处理失败：请检查网络或图片源是否正常');
-                    }
+                    if (e.message !== "FILE_TOO_LARGE") { ElementPlus.ElMessage.error('处理失败：请检查网络或图片源是否正常'); }
                 } finally {
-                    // 🔴 补全这部分被不小心删掉的代码
                     loading.value = false;
                     uploadProgressMsg.value = '正在处理...';
                 }
@@ -469,7 +436,7 @@
 
             return {
                 form, inputPool, colorPool, pairingState, loading, uploadProgressMsg, activeTaskCount, drag,
-                updatePrompt, handleUpload, handleDrop, removeImage, togglePair, submit,
+                handleUpload, handleDrop, removeImage, togglePair, submit, applyTemplate, clearPrompt,
                 goToScene, goToList, goToColorManage,
                 colorCardDrawer, dbColorCards, openColorCardDialog, addSingleToMatrix, addAll,
                 drawerFilter, filteredDbColorCards
