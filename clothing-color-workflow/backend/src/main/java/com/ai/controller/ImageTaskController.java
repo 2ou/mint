@@ -185,24 +185,18 @@ public class ImageTaskController {
         return ApiResponse.ok("ok", kieClientService.getRawResult(taskId));
     }
 
-    private final OssService ossService;
 
     /**
-     * 🧪 临时测试接口：测试 KIE 图片转存并压缩功能
-     * 请求示例：GET /api/tasks/test-upload?spu=TEST001&url=https://xxx.com/image.jpg
+     * 🔴 新增：获取任务消费统计数据
      */
-    @GetMapping("/test-upload")
-    public ApiResponse<String> testKieUpload(
-            @RequestParam("spu") String spu,
-            @RequestParam("url") String url,
-            @RequestParam("resolution") String resolution) {
-        try {
-            // 直接调用你刚才修复的 Service 方法
-            String result = ossService.uploadResultToOss(spu, url, resolution);
-            return ApiResponse.ok("测试成功", result);
-        } catch (Exception e) {
-            return ApiResponse.fail("测试失败：" + e.getMessage());
-        }
+    @GetMapping("/stats")
+    public ApiResponse<List<com.ai.dto.SpuStatDTO>> getTaskStats(
+            @RequestParam(value = "spu", required = false) String spu,
+            @RequestParam(value = "startTime", required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime startTime,
+            @RequestParam(value = "endTime", required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime endTime) {
+
+        List<com.ai.dto.SpuStatDTO> stats = imageTaskService.getTaskStats(spu, startTime, endTime);
+        return ApiResponse.ok("ok", stats);
     }
 
 }

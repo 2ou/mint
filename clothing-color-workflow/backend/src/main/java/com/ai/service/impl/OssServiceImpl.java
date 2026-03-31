@@ -183,21 +183,19 @@ public class OssServiceImpl implements OssService {
                     log.error("【OSS上传降级】本地已保存，但上传云端失败: {}", ossEx.getMessage());
                 }
 
-                if (appProperties.isDeleteLocalAfterUpload()) {
-                    if (!ossUrl.isEmpty()) {
-                        try {
-                            // 🔴 停顿 100 毫秒，确保 OSS 客户端彻底松开文件句柄
-                            Thread.sleep(100);
+                if (!ossUrl.isEmpty()) {
+                    try {
+                        // 🔴 停顿 100 毫秒，确保 OSS 客户端彻底松开文件句柄
+                        Thread.sleep(100);
 
-                            // 🔴 放弃愚蠢的 file.delete()，使用 NIO 强力删除！失败了会直接抛出明确的异常！
-                            java.nio.file.Files.deleteIfExists(permanentFile.toPath());
+                        // 🔴 放弃愚蠢的 file.delete()，使用 NIO 强力删除！失败了会直接抛出明确的异常！
+                        java.nio.file.Files.deleteIfExists(permanentFile.toPath());
 
-                            log.info("【正式环境】OSS 上传成功，已彻底清理本地图片: {}", finalLocalPath);
-                            finalLocalPath = "DELETED";
-                        } catch (Exception deleteEx) {
-                            // 如果删不掉，这里会明确打印是因为【权限不足】还是【文件被占用】！
-                            log.error("【正式环境】删除本地文件失败，元凶是: {}", deleteEx.getMessage(), deleteEx);
-                        }
+                        log.info("【正式环境】OSS 上传成功，已彻底清理本地图片: {}", finalLocalPath);
+                        finalLocalPath = "DELETED";
+                    } catch (Exception deleteEx) {
+                        // 如果删不掉，这里会明确打印是因为【权限不足】还是【文件被占用】！
+                        log.error("【正式环境】删除本地文件失败，元凶是: {}", deleteEx.getMessage(), deleteEx);
                     }
                 }
 

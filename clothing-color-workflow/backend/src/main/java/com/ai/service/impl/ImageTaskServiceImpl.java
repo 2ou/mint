@@ -337,4 +337,55 @@ public class ImageTaskServiceImpl implements ImageTaskService {
         }
     }
 
+    @Override
+    public List<com.ai.dto.SpuStatDTO> getTaskStats(String spu, LocalDateTime startTime, LocalDateTime endTime) {
+        // 1. 构建查询条件：只查 SUCCESS 的任务，并加上 SPU 和 时间筛选
+        Specification<ImageTask> spec = (root, query, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.equal(root.get("status"), "SUCCESS")); // 🔴 核心：失败的不计算
+
+            if (spu != null && !spu.trim().isEmpty()) {
+                predicates.add(cb.like(root.get("spu"), "%" + spu.trim() + "%"));
+            }
+            if (startTime != null) {
+                predicates.add(cb.greaterThanOrEqualTo(root.get("createdAt"), startTime));
+            }
+            if (endTime != null) {
+                predicates.add(cb.lessThanOrEqualTo(root.get("createdAt"), endTime));
+            }
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
+
+        // 2. 查出所有符合条件的成功任务
+        List<ImageTask> tasks = imageTaskRepository.findAll(spec);
+
+        // 3. 在 Java 内存中按 SPU 分组汇总
+        java.util.Map<String, com.ai.dto.SpuStatDTO> statMap = new java.util.HashMap<>();
+
+        for (ImageTask task : tasks) {
+            String targetSpu = task.getSpu() != null && !task.getSpu().trim().isEmpty() ? task.getSpu().trim() : "未知款号";
+
+            com.ai.dto.SpuStatDTO dto = statMap.computeIfAbsent(targetSpu, k -> {
+                com.ai.dto.SpuStatDTO newDto = new com.ai.dto.SpuStatDTO();
+                newDto.setSpu(k);
+                return newDto;
+            });
+
+            dto.setTaskCount(dto.getTaskCount() + 1);
+
+            // 🔴 核心算法：2K 算 0.22元，4K 算 0.44元
+            if ("4K".equalsIgnoreCase(task.getResolution())) {
+                dto.setCount4K(dto.getCount4K() + 1);
+                dto.setTotalCost(dto.getTotalCost() + 0.44);
+            } else {
+                dto.setCount2K(dto.getCount2K() + 1);
+                dto.setTotalCost(dto.getTotalCost() + 0.22);
+            }
+        }
+
+        // 4. 按总消费金额降序排列返回
+        return statMap.values().stream()
+                .sorted((a, b) -> Double.compare(b.getTotalCost(), a.getTotalCost()))
+                .collect(Collectors.toList());
+    }
 }

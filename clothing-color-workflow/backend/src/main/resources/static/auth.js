@@ -67,6 +67,18 @@ if (window.location.port === '8080' || window.location.hostname === '127.0.0.1')
                 box-shadow: 0 2px 10px rgba(0,0,0,0.15);
             `;
 
+            // 🔴 智能判断：当前系统缓存的 shop_name 或 login_username 是不是 PINKSIR
+            const loginUsername = localStorage.getItem("shop_name") || '';
+            const isAdmin = loginUsername.toUpperCase() === 'PINKSIR';
+
+            const adminButtonStr = isAdmin ? `
+                <button id="global-admin-btn" style="
+                    border: 1px solid #E6A23C; background: rgba(230,162,60,0.15); 
+                    color: #E6A23C; cursor: pointer; font-size: 13px; 
+                    padding: 5px 14px; border-radius: 4px; transition: 0.3s; font-weight: bold;
+                ">⚙️ 用户管理</button>
+            ` : '';
+
 // 左侧显示系统名称，右侧显示店铺名、修改资料按钮和退出按钮
             header.innerHTML = `
                 <div style="font-size: 16px; font-weight: bold; letter-spacing: 1px; display: flex; align-items: center; gap: 8px;">
@@ -78,6 +90,8 @@ if (window.location.port === '8080' || window.location.hostname === '127.0.0.1')
                         <span style="font-size: 14px;">🏪</span>
                         <span style="font-size: 14px; font-weight: bold; letter-spacing: 0.5px;">${shopName}</span>
                     </div>
+                    
+                    ${adminButtonStr}
                     
                     <button id="global-profile-btn" style="
                         border: 1px solid rgba(255,255,255,0.4); 
@@ -150,6 +164,18 @@ if (window.location.port === '8080' || window.location.hostname === '127.0.0.1')
             const cancelBtn = document.getElementById('profile-cancel-btn');
             const saveBtn = document.getElementById('profile-save-btn');
             const logoutBtn = document.getElementById('global-logout-btn');
+
+            // 🔴 为超级管理员按钮绑定跳转事件
+            if (isAdmin) {
+                const adminBtn = document.getElementById('global-admin-btn');
+                if (adminBtn) {
+                    adminBtn.onmouseenter = () => adminBtn.style.background = 'rgba(230,162,60,0.3)';
+                    adminBtn.onmouseleave = () => adminBtn.style.background = 'rgba(230,162,60,0.15)';
+                    adminBtn.addEventListener('click', () => {
+                        window.location.href = 'admin.html';
+                    });
+                }
+            }
 
             // 1. 修改按钮悬浮特效
             profileBtn.onmouseenter = () => profileBtn.style.background = 'rgba(255,255,255,0.15)';

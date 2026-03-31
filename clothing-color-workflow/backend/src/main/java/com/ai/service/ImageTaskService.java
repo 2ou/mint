@@ -46,4 +46,7 @@ public interface ImageTaskService {
     void batchDownloadZip(List<Long> ids, jakarta.servlet.http.HttpServletResponse response);
 
     Page<TaskCreateResponse> getTaskPage(int page, int size, String spu, String status, Integer taskType, LocalDateTime startTime, LocalDateTime endTime, String taskId);
+
+    // 🔴 统计接口
+    java.util.List<com.ai.dto.SpuStatDTO> getTaskStats(String spu, java.time.LocalDateTime startTime, java.time.LocalDateTime endTime);
 }

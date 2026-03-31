@@ -126,7 +126,9 @@
         <el-card class="dashboard-card">
             <template #header>
                 <span>📊 AI 任务管理大盘 (换色 & 场景生成)</span>
+
                 <div style="display: flex; gap: 10px; align-items: center;">
+                    <el-button @click="goToStats" color="#f56c6c" style="color: #fff; font-weight: bold;">💰 消费统计</el-button>
                     <el-button color="#8a2be2" :disabled="selectedRows.length === 0" @click="batchDownload">
                         📦 批量下载 ({{ selectedRows.length }})
                     </el-button>
@@ -377,6 +379,8 @@
     const {createApp, ref, reactive, onMounted} = Vue;
     createApp({
         setup() {
+            const goToStats = () => window.location.href = 'stats.html';
+
             // 🔴 新增：从 localStorage 读取登录信息
             const currentUserName = ref(localStorage.getItem("user_name") || '未知用户');
             const currentShopName = ref(localStorage.getItem("shop_name") || '未知店铺');
@@ -685,7 +689,7 @@
                 rawData, filters, loading, isBatchRefreshing, selectedRows,
                 currentPage, pageSize, total, copyText,
                 showViewer, viewerUrlList, openPreview,
-                exportLinks,
+                exportLinks, goToStats,
                 fetchData, handleSearch, handleSizeChange, handleCurrentChange, resetFilters,
                 getStatusType, formatTime, handleSelectionChange, refreshRow, syncAllProcessing,
                 formatTaskId, fetchKieRaw,
