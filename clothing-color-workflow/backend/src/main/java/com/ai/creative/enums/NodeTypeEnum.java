@@ -1,0 +1,5 @@
+package com.ai.creative.enums;
+
+public enum NodeTypeEnum {
+    TEXT_INPUT, IMAGE_INPUT, VIDEO_INPUT, TEXT_TO_IMAGE, IMAGE_TO_IMAGE, IMAGE_TO_VIDEO, VIDEO_TO_VIDEO, IMAGE_OUTPUT, VIDEO_OUTPUT
+}

@@ -30,3 +30,20 @@ app:
     base-url: https://<KIE_HOST>
     api-key: <KIE_API_KEY>
     model: nano-banana-2
+
+
+mybatis-plus:
+  mapper-locations: classpath*:mapper/**/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+
+creative:
+  oss:
+    endpoint: https://oss-cn-shenzhen.aliyuncs.com
+    bucket: your-creative-bucket
+    accessKeyId: <OSS_ACCESS_KEY_ID>
+    accessKeySecret: <OSS_ACCESS_KEY_SECRET>
+  kie:
+    base-url: https://api.kie.ai
+    api-key: <KIE_API_KEY>
+    kling-video-model: kling-3.0/video
