@@ -33,8 +33,6 @@ public class AdminUserController {
         if (isNotAdmin(request)) return ApiResponse.fail("🔴 非法越权：只有超级管理员 PINKSIR 可以访问！");
 
         List<SysUser> users = sysUserRepository.findAll();
-        // 安全起见，把真实密码擦除，用星号代替返回给前端
-        users.forEach(u -> u.setPassword("********"));
         return ApiResponse.ok("ok", users);
     }
 
