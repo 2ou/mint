@@ -1,10 +1,14 @@
 package com.ai.controller;
 
-import com.ai.dto.BatchTaskRequest;
-import com.ai.dto.TaskCreateResponse;
+import com.ai.dto.*;
+import com.ai.entity.ImageTask;
+import com.ai.entity.SysUser;
+import com.ai.enums.TaskStatus;
+import com.ai.repository.ImageTaskRepository;
+import com.ai.repository.SysUserRepository;
 import com.ai.service.ImageTaskService;
-import com.ai.dto.ApiResponse;
 import com.ai.service.OssService;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -23,6 +27,8 @@ import java.util.List;
 @Slf4j
 public class ImageTaskController {
 
+    private final ImageTaskRepository imageTaskRepository;
+    private final SysUserRepository sysUserRepository;
     private final ImageTaskService imageTaskService;
     // 🔴 新增：注入 KieClientService
     private final com.ai.service.KieClientService kieClientService;
@@ -197,6 +203,49 @@ public class ImageTaskController {
 
         List<com.ai.dto.SpuStatDTO> stats = imageTaskService.getTaskStats(spu, startTime, endTime);
         return ApiResponse.ok("ok", stats);
+
+    @PostMapping("/create-video")
+    public ApiResponse<ImageTask> createVideoTask(@RequestBody VideoTaskRequest req, HttpServletRequest request) {
+
+        // 🔴 修复 1: 直接从 Request Header 获取 Token 并查询用户实体
+        String token = request.getHeader("X-User-Token");
+        if (token == null || token.trim().isEmpty()) {
+            return ApiResponse.fail("未登录，缺少请求头 Token");
+        }
+        SysUser user = sysUserRepository.findByToken(token);
+        if (user == null) {
+            return ApiResponse.fail("未登录或 Token 已失效");
+        }
+
+        // 我们复用 ImageTask 表，用 taskType = 3 代表视频任务
+        ImageTask task = new ImageTask();
+        task.setSpu(req.getSpu());
+        task.setModel(req.getModel());
+
+        // 提取 prompt 用作大盘展示
+        if (req.getInput() != null && req.getInput().get("prompt") != null) {
+            task.setPrompt(req.getInput().get("prompt").toString());
+        }
+
+        task.setTaskType(3);
+        task.setStatus(String.valueOf(TaskStatus.PROCESSING));
+        task.setShopName(user.getShopName());
+        task.setOperator(user.getUsername());
+
+        // 🔴 修复 2: 此时 imageTaskRepository 已经正确注入，可以保存了
+        imageTaskRepository.save(task);
+
+        try {
+            KieTaskResult result = kieClientService.createVideoTask(req.getModel(), req.getInput());
+            task.setTaskId(result.getTaskId());
+            imageTaskRepository.save(task);
+            return ApiResponse.ok("视频生成任务已下发", task);
+        } catch (Exception e) {
+            task.setStatus(String.valueOf(TaskStatus.FAILED));
+            task.setErrorMessage(e.getMessage());
+            imageTaskRepository.save(task);
+            return ApiResponse.fail("视频任务失败: " + e.getMessage());
+        }
     }
 
 }

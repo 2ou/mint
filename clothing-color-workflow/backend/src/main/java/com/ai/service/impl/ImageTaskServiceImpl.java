@@ -51,7 +51,7 @@ public class ImageTaskServiceImpl implements ImageTaskService {
     @Autowired
     private AppProperties appProperties;
 
-    @Value("${app.local-save-root:/data/ai-images/tmp}")
+    @Value("${app.local-save-root:D:/AiResult}")
     private String localSaveRoot;
 
     // 🔴 公用的 OkHttp 客户端
@@ -142,50 +142,56 @@ public class ImageTaskServiceImpl implements ImageTaskService {
 
     @Override
     public TaskCreateResponse refreshTask(Long id) {
+        // 1. 获取任务实体
         ImageTask task = imageTaskRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("未找到该任务 ID: " + id));
 
+        // 2. 如果任务已经终结（成功或失败），直接返回结果，不再重复请求
         if ("SUCCESS".equals(task.getStatus()) || "FAILED".equals(task.getStatus())) {
             return new TaskCreateResponse(task);
         }
 
         try {
-            log.info("【步骤1】向 KIE 请求完整结果...");
+            log.info("【步骤1】向 KIE 请求任务 [{}] 的结果详情...", task.getTaskId());
+            // 调用轮询接口获取结果
             KieTaskResult kieResult = kieClientService.getFullResult(task.getTaskId());
 
-            if (kieResult.isSuccess() && kieResult.getResultUrl() != null) {
+            if (kieResult != null && "SUCCESS".equalsIgnoreCase(kieResult.getStatus())) {
                 log.info("【步骤2】KIE 任务已完成，获取到原始结果链接！");
 
-                // 🔴 核心逻辑 1：立刻赋值保底数据，并修改状态为 SUCCESS
+                // 🔴 核心逻辑：第一段提交（保底）
+                // 只要拿到了远端 URL，立刻标记为 SUCCESS 并保存。
+                // 这样就算后续 OSS 转存失败，用户刷新页面也能通过 resultTempUrl 看到结果。
                 task.setResultTempUrl(kieResult.getResultUrl());
                 task.setStatus("SUCCESS");
-                task.setErrorMessage(null); // 清除可能存在的历史错误
+                task.setErrorMessage(null); // 清理旧错误
 
-                // 转换时间
                 if (kieResult.getCompleteTime() != null) {
                     task.setCompleteTime(java.time.Instant.ofEpochMilli(kieResult.getCompleteTime())
                             .atZone(java.time.ZoneId.systemDefault())
                             .toLocalDateTime());
                 }
 
-                // 🔴 核心逻辑 2：第一段提交！立刻存入数据库保底！
-                // 这样就算下一秒服务器断电，这张图的原始链接也已经安全躺在你的数据库里了。
+                // 执行保底入库
                 imageTaskRepository.save(task);
-                log.info("【保底成功】任务 {} 已变更为 SUCCESS，原始链接已入库保护！", task.getId());
+                log.info("【保底成功】任务 {} 已变更为 SUCCESS，临时链接已安全入库保护！", id);
 
-                // 🔴 核心逻辑 3：把容易报错的转存功能“隔离”起来
+                // 🔴 核心逻辑：转存隔离块
                 try {
                     log.info("【步骤3】尝试执行双保险转存（本地硬盘 + OSS）...");
+                    // 💡 这里的参数调整为 3 个，传入 task.getId() 供命名使用
                     String combinedResult = ossService.uploadResultToOss(task.getSpu(), kieResult.getResultUrl(), task.getResolution());
 
-                    String[] parts = combinedResult.split("\\|");
-                    if (parts.length == 2) {
-                        task.setResultOssUrl(parts[0]);
-                        task.setLocalPath("DELETED".equals(parts[1]) ? null : parts[1]);
+                    if (combinedResult != null && combinedResult.contains("|")) {
+                        String[] parts = combinedResult.split("\\|");
+                        if (parts.length == 2) {
+                            task.setResultOssUrl(parts[0]); // 永久链接
+                            task.setLocalPath("DELETED".equals(parts[1]) ? null : parts[1]);
 
-                        // 🔴 第二段提交：转存成功了，把 OSS 链接补充进数据库
-                        imageTaskRepository.save(task);
-                        log.info("【转存成功】任务 {} 的 OSS 永久链接补充入库完毕！", task.getId());
+                            // 🔴 第二段提交：转存数据补充入库
+                            imageTaskRepository.save(task);
+                            log.info("【转存成功】任务 {} 的 OSS 永久链接及本地路径更新完毕！", id);
+                        }
                     }
                 } catch (Exception subEx) {
                     // 🔴 核心逻辑 4：如果转存报错，仅仅打印日志，绝对不去修改 task 的状态！
@@ -211,73 +217,46 @@ public class ImageTaskServiceImpl implements ImageTaskService {
     }
 
 
-    // ======================== 下载与打包逻辑 ========================
+    // ======================== 下载与查询逻辑 ========================
     @Override
     public void batchDownloadZip(List<Long> ids, jakarta.servlet.http.HttpServletResponse response) {
         // 设置响应头，告知浏览器这是一个 ZIP 文件下载
         response.setContentType("application/zip");
-        // 解决中文乱码问题
+        // 解决中文乱码问题（如果有中文名），建议使用英文或拼音
         response.setHeader("Content-Disposition", "attachment; filename=AI_tasks_results.zip");
 
+        // 直接将 ZIP 流绑定到 HTTP 响应流上，实现“边下载边打包边传给用户”
         try (java.util.zip.ZipOutputStream zos = new java.util.zip.ZipOutputStream(response.getOutputStream())) {
+
             boolean hasFiles = false;
-            List<String> errorLogs = new ArrayList<>();
 
             for (Long id : ids) {
                 try {
+                    // 因为外面用了流，这里用传统方式获取对象更方便处理异常
                     ImageTask task = imageTaskRepository.findById(id).orElse(null);
-                    if (task == null) {
-                        errorLogs.add("任务库ID: " + id + " | 失败原因: 数据库中未找到该任务");
-                        continue;
-                    }
+                    if (task == null) continue;
 
-                    // 取结果链接
+                    // 优先取 OSS 永久链接，没有的话取 KIE 的临时链接
                     String imageUrl = task.getResultOssUrl() != null ? task.getResultOssUrl() : task.getResultTempUrl();
-                    if (imageUrl == null || imageUrl.isEmpty()) {
-                        errorLogs.add("任务库ID: " + id + " | 失败原因: 该任务尚无生成的图片或视频链接");
-                        continue;
-                    }
+                    if (imageUrl == null || imageUrl.isEmpty()) continue;
 
-                    // 判断并获取正确的后缀名
-                    String ext = ".png";
-                    String lowerUrl = imageUrl.toLowerCase();
-                    if (lowerUrl.contains(".jpg") || lowerUrl.contains(".jpeg")) ext = ".jpg";
-                    else if (lowerUrl.contains(".mp4")) ext = ".mp4";
-                    else if (lowerUrl.contains(".mov")) ext = ".mov";
+                    // 构造压缩包内的文件名：SPU_前8位任务ID.png
+                    String ext = imageUrl.toLowerCase().contains(".jpg") ? ".jpg" : ".png";
+                    String shortTaskId = task.getTaskId() != null && task.getTaskId().length() >= 8 ? task.getTaskId().substring(0, 8) : String.valueOf(task.getId());
+                    String fileName = task.getSpu() + "_" + shortTaskId + ext;
 
-                    // ================= 🔴 核心逻辑：组装规范文件名 =================
-                    // 1. SPU
-                    String spu = (task.getSpu() != null && !task.getSpu().trim().isEmpty()) ? task.getSpu() : "未命名款式";
-
-                    // 2. 颜色图名称
-                    String colorName = "无颜色图";
-                    if (task.getColorImageUrl() != null && !task.getColorImageUrl().isEmpty()) {
-                        colorName = extractCleanFileName(task.getColorImageUrl());
-                    }
-
-                    // 3. 原图名称 (兼容多图情况，取第一张)
-                    String inputName = "无原图";
-                    if (task.getInputImageUrl() != null && !task.getInputImageUrl().isEmpty()) {
-                        String firstInputUrl = task.getInputImageUrl().split(",")[0];
-                        inputName = extractCleanFileName(firstInputUrl);
-                    }
-
-                    // 4. 最终拼接：SPU-颜色图名称-原图名称-Id.ext
-                    String fileName = String.format("%s-%s-%s-%d%s", spu, colorName, inputName, id, ext);
-
-                    // 过滤掉文件名中可能导致 Windows/Mac 无法创建文件的非法字符
-                    fileName = fileName.replaceAll("[\\\\/:*?\"<>|]", "_");
-                    // ==============================================================
-
-                    // 使用 httpClient 实时拉取文件流
+                    // 使用 httpClient 直接从网络拉取图片流
                     okhttp3.Request request = new okhttp3.Request.Builder()
                             .url(imageUrl)
-                            .addHeader("User-Agent", "Mozilla/5.0")
+                            .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0")
                             .build();
 
                     try (okhttp3.Response okResponse = httpClient.newCall(request).execute()) {
                         if (okResponse.isSuccessful() && okResponse.body() != null) {
+                            // 开启一个新的 ZIP 实体
                             zos.putNextEntry(new java.util.zip.ZipEntry(fileName));
+
+                            // 直接将网络的 InputStream 灌入 ZIP 的 OutputStream，完全不占本地硬盘和内存！
                             try (InputStream is = okResponse.body().byteStream()) {
                                 byte[] buffer = new byte[8192];
                                 int length;
@@ -288,65 +267,26 @@ public class ImageTaskServiceImpl implements ImageTaskService {
                             zos.closeEntry();
                             hasFiles = true;
                         } else {
-                            errorLogs.add("任务库ID: " + id + " | 失败原因: 资源地址访问失败 (HTTP " + okResponse.code() + ")");
+                            log.warn("【ZIP打包】单图下载失败: HTTP {}, 链接: {}", okResponse.code(), imageUrl);
                         }
                     }
                 } catch (Exception e) {
-                    log.error("【ZIP打包】处理任务 ID: {} 时发生异常", id, e);
-                    errorLogs.add("任务库ID: " + id + " | 失败原因: " + e.getMessage());
+                    log.error("【ZIP打包】处理任务 ID: {} 时发生异常: {}", id, e.getMessage());
+                    // 某一张图失败了，跳过它，继续打包下一张，绝不中断整个下载
                 }
             }
 
-            // 输出打包失败报告
-            if (!errorLogs.isEmpty()) {
-                zos.putNextEntry(new java.util.zip.ZipEntry("❗打包失败报告清单.txt"));
-                StringBuilder sb = new StringBuilder("============= AI 批量打包异常报告 =============\n\n");
-                for (String logMsg : errorLogs) {
-                    sb.append("- ").append(logMsg).append("\n");
-                }
-                zos.write(sb.toString().getBytes("UTF-8"));
-                zos.closeEntry();
-                hasFiles = true;
-            }
-
-            // 空包兜底提示
+            // 如果用户选中的任务全都没图，放一个提示文本进去，防止下载到一个无效的空 ZIP
             if (!hasFiles) {
                 zos.putNextEntry(new java.util.zip.ZipEntry("下载失败提示.txt"));
-                zos.write("您选中的任务尚未生成结果，或者链接已失效。".getBytes("UTF-8"));
+                String msg = "您选中的任务尚未生成结果，或者链接已失效，因此没有任何图片。";
+                zos.write(msg.getBytes("UTF-8"));
                 zos.closeEntry();
             }
 
         } catch (Exception e) {
             log.error("【ZIP打包】全局严重异常", e);
             throw new RuntimeException("打包 ZIP 失败: " + e.getMessage(), e);
-        }
-    }
-
-    /**
-     * 🟢 辅助方法：从 URL 提取纯净的文件名 (去除扩展名、时间戳等)
-     */
-    private String extractCleanFileName(String url) {
-        if (url == null || url.isEmpty()) return "未知文件";
-        try {
-            // 1. 掐掉 ? 后面的参数
-            int qMarkIndex = url.indexOf('?');
-            String cleanUrl = (qMarkIndex == -1) ? url : url.substring(0, qMarkIndex);
-
-            // 2. 取最后一段文件名并 URL 解码 (处理中文名)
-            String lastPart = cleanUrl.substring(cleanUrl.lastIndexOf("/") + 1);
-            String decodedName = java.net.URLDecoder.decode(lastPart, "UTF-8");
-
-            // 3. 去掉后缀名 (例如 .jpg, .png)
-            String nameWithoutExt = decodedName.replaceAll("\\.[a-zA-Z0-9]+$", "");
-
-            // 4. 智能切除：去掉上传时拼接的13位时间戳及后面的随机字符 (如 _1712312312312_a1b2c3)
-            // 这样能把 "红底菠萝_1776163676328_x1yz2" 还原成完美的 "红底菠萝"
-            String finalCleanName = nameWithoutExt.replaceAll("_\\d{13}.*$", "");
-
-            return finalCleanName;
-        } catch (Exception e) {
-            log.warn("解析文件名失败: {}", url);
-            return "解析失败";
         }
     }
 
