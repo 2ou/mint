@@ -169,24 +169,16 @@ public class KieClientServiceImpl implements KieClientService {
     /**
      * 内部私有方法：从 data 节点中提取图片 URL
      */
-    private String parseUrlFromData(JsonNode dataNode) throws IOException {
-        // 方案 A: 直接在 resultUrls 数组里
-        if (dataNode.has("resultUrls") && dataNode.get("resultUrls").isArray() && dataNode.get("resultUrls").size() > 0) {
-            return dataNode.get("resultUrls").get(0).asText();
-        }
+    private String parseUrlFromData(JsonNode data) {
+        if (data == null || data.isEmpty()) return null;
+        JsonNode resultObj = data.isObject() ? data : data.get(0);
+        if (resultObj == null) return null;
 
-        // 方案 B: 在 resultJson 字符串里
-        if (dataNode.has("resultJson") && !dataNode.get("resultJson").isNull()) {
-            String resultJsonStr = dataNode.get("resultJson").asText();
-            JsonNode resultObj = objectMapper.readTree(resultJsonStr);
-
-            if (resultObj.has("resultUrls") && resultObj.get("resultUrls").isArray() && resultObj.get("resultUrls").size() > 0) {
-                return resultObj.get("resultUrls").get(0).asText();
-            }
-            if (resultObj.has("imageUrl")) return resultObj.get("imageUrl").asText();
-            if (resultObj.has("image_url")) return resultObj.get("image_url").asText();
-            if (resultObj.has("url")) return resultObj.get("url").asText();
-        }
+        // 🔴 增加视频字段支持
+        if (resultObj.has("imageUrl")) return resultObj.get("imageUrl").asText();
+        if (resultObj.has("videoUrl")) return resultObj.get("videoUrl").asText(); // 新增
+        if (resultObj.has("video_url")) return resultObj.get("video_url").asText(); // 新增
+        if (resultObj.has("url")) return resultObj.get("url").asText();
         return null;
     }
 
