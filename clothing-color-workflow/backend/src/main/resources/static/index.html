@@ -40,17 +40,15 @@
         .db-img-container { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 5px; }
         .db-img-container .el-image { border: 1px solid #eee; transition: 0.3s; }
         .db-img-container .el-image:hover { border-color: #409EFF; transform: translateY(-2px); }
-        .el-message { z-index: 99999 !important; top: 80px !important; }
-        .el-overlay.is-message-box { z-index: 99999 !important; }
+        /* 🔴 强制修复 Element Plus 消息提示框被遮挡的问题 */
+        .el-message {
+            z-index: 99999 !important; /* 把层级提到最高，神挡杀神 */
+            top: 80px !important;      /* 强制往下挪 80px，避开顶部导航栏。如果不够可以改成 100px */
+        }
 
-        /* 提示词面板高亮样式 */
-        .prompt-panel {
-            background: #f8f9fa;
-            border: 1px solid #e4e7ed;
-            border-radius: 8px;
-            padding: 12px 15px;
-            width: 100%;
-            box-sizing: border-box;
+        /* 🔴 顺手修复：如果是居中的“确认删除”弹窗被遮挡，加这个 */
+        .el-overlay.is-message-box {
+            z-index: 99999 !important;
         }
     </style>
 </head>
@@ -75,7 +73,7 @@
         <div class="section-title">1. 基础信息</div>
         <el-form label-width="90px" style="padding: 0 10px;">
             <el-row :gutter="20">
-                <el-col :span="6"><el-form-item label="SPU 款号"><el-input v-model="form.spu" placeholder="请填写完整的款号"/></el-form-item></el-col>
+                <el-col :span="6"><el-form-item label="SPU 款号"><el-input v-model="form.spu" placeholder="请输入商品款号"/></el-form-item></el-col>
                 <el-col :span="6"><el-form-item label="AI 模型"><el-input v-model="form.model" placeholder="nano-banana-pro"/></el-form-item></el-col>
                 <el-col :span="6">
                     <el-form-item label="分辨率">
@@ -438,7 +436,7 @@
             return {
                 form, inputPool, colorPool, pairingState, loading, uploadProgressMsg, activeTaskCount, drag,
                 handleUpload, handleDrop, removeImage, togglePair, submit, applyTemplate, clearPrompt,
-                goToScene, goToList, goToColorManage,
+                goToScene, goToList, goToColorManage, goToVideo,
                 colorCardDrawer, dbColorCards, openColorCardDialog, addSingleToMatrix, addAll,
                 drawerFilter, filteredDbColorCards
             };
