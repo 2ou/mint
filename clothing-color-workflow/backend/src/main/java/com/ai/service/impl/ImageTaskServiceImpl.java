@@ -216,41 +216,51 @@ public class ImageTaskServiceImpl implements ImageTaskService {
     public void batchDownloadZip(List<Long> ids, jakarta.servlet.http.HttpServletResponse response) {
         // 设置响应头，告知浏览器这是一个 ZIP 文件下载
         response.setContentType("application/zip");
-        // 解决中文乱码问题（如果有中文名），建议使用英文或拼音
+        // 解决中文乱码问题
         response.setHeader("Content-Disposition", "attachment; filename=AI_tasks_results.zip");
 
-// 直接将 ZIP 流绑定到 HTTP 响应流上，实现“边下载边打包边传给用户”
+        // 直接将 ZIP 流绑定到 HTTP 响应流上，实现“边下载边打包边传给用户”
         try (java.util.zip.ZipOutputStream zos = new java.util.zip.ZipOutputStream(response.getOutputStream())) {
 
             boolean hasFiles = false;
-            int index = 1; // 🔴 新增：用于兜底的序号
+            // 记录所有下载失败的任务和原因
+            List<String> errorLogs = new ArrayList<>();
 
             for (Long id : ids) {
                 try {
-                    // 因为外面用了流，这里用传统方式获取对象更方便处理异常
                     ImageTask task = imageTaskRepository.findById(id).orElse(null);
-                    if (task == null) continue;
+                    if (task == null) {
+                        errorLogs.add("任务库ID: " + id + " | 失败原因: 数据库中未找到该任务");
+                        continue;
+                    }
 
                     // 优先取 OSS 永久链接，没有的话取 KIE 的临时链接
                     String imageUrl = task.getResultOssUrl() != null ? task.getResultOssUrl() : task.getResultTempUrl();
-                    if (imageUrl == null || imageUrl.isEmpty()) continue;
+                    if (imageUrl == null || imageUrl.isEmpty()) {
+                        errorLogs.add("任务库ID: " + id + " | 失败原因: 该任务尚无生成的图片链接");
+                        continue;
+                    }
 
                     String ext = imageUrl.toLowerCase().contains(".jpg") ? ".jpg" : ".png";
 
-                    // 🔴 极简提取：直接使用 OSS 链接末尾的原始文件名（包含颜色、序号、时间戳）
-                    String fileName = task.getSpu() + "_" + index + ext; // 默认 SPU 兜底
+                    // 默认前缀为 SPU
+                    String prefix = task.getSpu() != null ? task.getSpu() : "任务";
                     String colorUrl = task.getColorImageUrl();
 
                     if (colorUrl != null && colorUrl.contains("/")) {
                         try {
-                            // 直接截取最后一段，例如得到 "红色_1_1711263456789.jpg"
                             String lastPart = colorUrl.substring(colorUrl.lastIndexOf("/") + 1);
-                            fileName = java.net.URLDecoder.decode(lastPart, "UTF-8"); // 解码可能被 URL 编码的中文
+                            String decoded = java.net.URLDecoder.decode(lastPart, "UTF-8");
+                            // 🔴 核心切除魔法：把结尾的 "_数字_时间戳.jpg" 或 "_数字.png" 统统切掉，只保留纯净的名称
+                            // 比如把 "红底菠萝_2_1776163676328.jpg" 切成 "红底菠萝"
+                            prefix = decoded.replaceAll("_[\\d_]+\\.[a-zA-Z]+$", "");
                         } catch (Exception e) {
                             log.warn("解析文件名失败", e);
                         }
                     }
-                    index++; // 兜底序号自增
+
+                    // 🔴 最终文件名： 纯净名称_真实任务ID.后缀 (例如：红底菠萝_97.jpg)
+                    String fileName = prefix + "_" + id + ext;
 
                     // 使用 httpClient 直接从网络拉取图片流
                     okhttp3.Request request = new okhttp3.Request.Builder()
@@ -263,7 +273,7 @@ public class ImageTaskServiceImpl implements ImageTaskService {
                             // 开启一个新的 ZIP 实体
                             zos.putNextEntry(new java.util.zip.ZipEntry(fileName));
 
-                            // 直接将网络的 InputStream 灌入 ZIP 的 OutputStream，完全不占本地硬盘和内存！
+                            // 直接将网络的 InputStream 灌入 ZIP 的 OutputStream
                             try (InputStream is = okResponse.body().byteStream()) {
                                 byte[] buffer = new byte[8192];
                                 int length;
@@ -275,15 +285,32 @@ public class ImageTaskServiceImpl implements ImageTaskService {
                             hasFiles = true;
                         } else {
                             log.warn("【ZIP打包】单图下载失败: HTTP {}, 链接: {}", okResponse.code(), imageUrl);
+                            errorLogs.add("任务库ID: " + id + " | 失败原因: 图片源地址访问失败 (HTTP 状态码: " + okResponse.code() + ")");
                         }
                     }
                 } catch (Exception e) {
                     log.error("【ZIP打包】处理任务 ID: {} 时发生异常: {}", id, e.getMessage());
-                    // 某一张图失败了，跳过它，继续打包下一张，绝不中断整个下载
+                    errorLogs.add("任务库ID: " + id + " | 失败原因: " + e.getMessage());
                 }
             }
 
-            // 如果用户选中的任务全都没图，放一个提示文本进去，防止下载到一个无效的空 ZIP
+            // 如果打包过程中出现了失败的任务，将错误日志写进一个 TXT 文本并放进 ZIP 里
+            if (!errorLogs.isEmpty()) {
+                zos.putNextEntry(new java.util.zip.ZipEntry("❗打包失败报告清单.txt"));
+                StringBuilder sb = new StringBuilder();
+                sb.append("============= AI 批量打包异常报告 =============\n");
+                sb.append("以下任务在打包下载时发生异常，未能包含在压缩包中：\n\n");
+                for (String logMsg : errorLogs) {
+                    sb.append("- ").append(logMsg).append("\n");
+                }
+                sb.append("\n===============================================\n");
+                zos.write(sb.toString().getBytes("UTF-8"));
+                zos.closeEntry();
+
+                hasFiles = true;
+            }
+
+            // 如果用户选中的任务全都没图，且没有任何错误报告，放一个兜底提示文本
             if (!hasFiles) {
                 zos.putNextEntry(new java.util.zip.ZipEntry("下载失败提示.txt"));
                 String msg = "您选中的任务尚未生成结果，或者链接已失效，因此没有任何图片。";

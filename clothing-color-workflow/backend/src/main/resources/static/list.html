@@ -187,7 +187,9 @@
 
             <el-table :data="rawData" v-loading="loading" @selection-change="handleSelectionChange" border stripe
                       style="width: 100%" height="65vh">
-                <el-table-column type="selection" width="50" align="center"></el-table-column>
+
+                <el-table-column type="selection" :selectable="canSelectRow" width="50" align="center"></el-table-column>
+
                 <el-table-column prop="id" label="ID" width="70" align="center"></el-table-column>
                 <el-table-column prop="spu" label="SPU" width="100" align="center"></el-table-column>
                 <el-table-column prop="resolution" label="分辨率" width="80" align="center">
@@ -483,7 +485,7 @@
                 ElementPlus.ElMessage.success('同步完毕！');
             };
 
-// 🔴 全新升级：直接调用后端的 ZIP 打包下载接口
+            // 🔴 全新升级：直接调用后端的 ZIP 打包下载接口
             const batchDownload = async () => {
                 if (selectedRows.value.length === 0) return ElementPlus.ElMessage.warning('请先勾选需要下载的任务');
 
@@ -531,7 +533,7 @@
                 }
             };
 
-// 🔴 专属导出链接到 Excel 表格的方法
+            // 🔴 专属导出链接到 Excel 表格的方法
             const exportLinks = () => {
                 if (selectedRows.value.length === 0) return ElementPlus.ElMessage.warning('请先勾选需要导出的任务');
 
@@ -616,6 +618,7 @@
                         return 'info';
                 }
             };
+
             // 修改为这个更通用的格式化函数
             const formatTime = (t) => {
                 if (!t) return '-';
@@ -623,6 +626,12 @@
                 // 我们把 T 换成空格，并截掉小数点后的毫秒部分
                 return t.replace('T', ' ').split('.')[0];
             };
+
+            // 🔴 核心逻辑：判断当前行是否允许被勾选
+            const canSelectRow = (row) => {
+                return row.status === 'SUCCESS';
+            };
+
             const handleSelectionChange = (val) => {
                 selectedRows.value = val;
             };
@@ -683,7 +692,7 @@
             onMounted(fetchData);
 
             return {
-                // 🔴 新增暴漏的变量和方法
+                // 🔴 新增暴露的变量和方法
                 currentUserName, currentShopName, handleLogout,
 
                 rawData, filters, loading, isBatchRefreshing, selectedRows,
@@ -692,7 +701,7 @@
                 exportLinks, goToStats,
                 fetchData, handleSearch, handleSizeChange, handleCurrentChange, resetFilters,
                 getStatusType, formatTime, handleSelectionChange, refreshRow, syncAllProcessing,
-                formatTaskId, fetchKieRaw,
+                formatTaskId, fetchKieRaw, canSelectRow, // 👈 注意这里暴露了 canSelectRow
                 goToColor, goToScene, batchDownload
             };
         }
