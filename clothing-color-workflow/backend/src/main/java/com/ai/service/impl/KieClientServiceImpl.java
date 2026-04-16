@@ -1,24 +1,39 @@
 package com.ai.service.impl;
 
 import com.ai.config.AppProperties;
+import com.ai.dto.KieCreateTaskRequest;
 import com.ai.dto.KieTaskResult;
+import com.ai.exception.BusinessException;
 import com.ai.service.KieClientService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.google.gson.Gson;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.*;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 @Service
 @Slf4j
 public class KieClientServiceImpl implements KieClientService {
 
+    // 🔴 补充 4：初始化 Gson，用于 JSON 的序列化和反序列化
+    private final Gson gson = new Gson();
+
+    // 🔴 补充 5：初始化 OkHttpClient 用于发送 HTTP 请求（如果之前有写过就不用加）
+    private final OkHttpClient httpClient = new OkHttpClient.Builder()
+            .connectTimeout(60, TimeUnit.SECONDS)
+            .readTimeout(60, TimeUnit.SECONDS)
+            .writeTimeout(60, TimeUnit.SECONDS)
+            .build();
+
     private final AppProperties appProperties;
-    private final OkHttpClient httpClient = new OkHttpClient();
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public KieClientServiceImpl(AppProperties appProperties) {
@@ -190,6 +205,58 @@ public class KieClientServiceImpl implements KieClientService {
         } catch (Exception e) {
             log.error("直接获取 KIE 原生报文失败", e);
             return "{\"error\": \"获取失败: " + e.getMessage() + "\"}";
+        }
+    }
+
+    @Override
+    public KieTaskResult createVideoTask(String model, Map<String, Object> input) {
+        String apiUrl = appProperties.getKie().getBaseUrl();
+        String apiKey = appProperties.getKie().getApiKey();
+        // 1. 构造 KIE 任务请求体
+        KieCreateTaskRequest request = new KieCreateTaskRequest();
+        request.setModel(model);
+        // 🔴 关键点：将 callBackUrl 设为 null，明确告诉 KIE 我们将通过轮询来获取结果
+        request.setCallBackUrl(null);
+        request.setInput(input);
+
+        String jsonBody = gson.toJson(request);
+        log.info("🚀 [视频任务下发] 模型: {}, 请求内容: {}", model, jsonBody);
+
+        // 2. 构造 OkHttp 请求
+        okhttp3.Request okRequest = new okhttp3.Request.Builder()
+                .url(apiUrl + "/api/v1/jobs/createTask")
+                .post(okhttp3.RequestBody.create(jsonBody, okhttp3.MediaType.parse("application/json")))
+                .addHeader("Authorization", "Bearer " + apiKey)
+                .build();
+
+        // 3. 执行请求并解析响应
+        try (okhttp3.Response response = httpClient.newCall(okRequest).execute()) {
+            String resStr = response.body() != null ? response.body().string() : "";
+
+            if (!response.isSuccessful()) {
+                log.error("❌ KIE 接口响应异常: HTTP {}, 返回内容: {}", response.code(), resStr);
+                throw new BusinessException("KIE 接口请求失败，HTTP 状态码: " + response.code());
+            }
+
+            log.info("📥 [KIE 响应成功]: {}", resStr);
+            KieTaskResult result = gson.fromJson(resStr, KieTaskResult.class);
+
+            // 4. 业务逻辑校验
+            if (result == null || !"success".equals(result.getStatus())) {
+                String errorDetail = (result != null && result.getErrorMessage() != null) ? result.getErrorMessage() : "响应体解析为空";
+                log.warn("⚠️ KIE 任务受理失败: {}", errorDetail);
+                throw new BusinessException("AI 服务受理失败: " + errorDetail);
+            }
+
+            // 返回包含 taskId 的结果，供后续轮询使用
+            return result;
+
+        } catch (java.net.SocketTimeoutException e) {
+            log.error("⏳ KIE 接口调用超时: {}", e.getMessage());
+            throw new BusinessException("AI 服务响应超时，请稍后在大盘查看任务状态");
+        } catch (Exception e) {
+            log.error("💥 KIE 视频任务调用发生严重异常", e);
+            throw new BusinessException("任务下发异常: " + e.getMessage());
         }
     }
 }

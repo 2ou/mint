@@ -2,6 +2,8 @@ package com.ai.service;
 
 import com.ai.dto.KieTaskResult;
 
+import java.util.Map;
+
 public interface KieClientService {
 
     /**
@@ -21,4 +23,6 @@ public interface KieClientService {
 
     // 获取 KIE 原始 JSON 报文
     String getRawResult(String taskId);
+
+    KieTaskResult createVideoTask(String model, Map<String, Object> input);
 }

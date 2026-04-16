@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>AI 视频生成工作流</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css"/>
+    <script src="https://unpkg.com/element-plus"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <script src="auth.js"></script>
+    <style>
+        body { background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); min-height: 100vh; margin: 0; font-family: 'PingFang SC', sans-serif; padding-top: 3vh; padding-bottom: 5vh; }
+        .workflow-card { max-width: 900px; margin: 0 auto; border-radius: 16px !important; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08) !important; border: none !important; }
+        .workflow-card .el-card__header { background: #8a2be2; color: white; border-bottom: none; padding: 15px 20px;}
+        .section-title { font-size: 16px; font-weight: bold; color: #303133; margin: 20px 0 15px 0; border-left: 4px solid #8a2be2; padding-left: 10px; }
+        .upload-box { border: 2px dashed #dcdfe6; border-radius: 8px; display: flex; align-items: center; justify-content: center; cursor: pointer; background: #fafafa; transition: 0.3s; width: 100%; height: 120px; position: relative; overflow: hidden;}
+        .upload-box:hover { border-color: #8a2be2; background: #f9f2ff; }
+        .media-preview { width: 100%; height: 100%; object-fit: cover; }
+        .remove-btn { position: absolute; top: 5px; right: 5px; background: rgba(245, 108, 108, 0.9); color: white; border-radius: 50%; width: 22px; height: 22px; text-align: center; line-height: 20px; cursor: pointer; z-index: 10; font-size: 12px;}
+        .el-message { z-index: 99999 !important; top: 80px !important; }
+    </style>
+</head>
+<body>
+<div id="app">
+    <el-card class="workflow-card">
+        <template #header>
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <span style="margin-right: 15px; font-size: 18px; font-weight: bold;">🎬 AI 视频生成</span>
+                    <el-button @click="goToColor" plain>🎨 换色</el-button>
+                    <el-button @click="goToScene" plain>🖼️ 场景</el-button>
+                </div>
+                <el-button @click="goToList" color="#f5f7fa" style="color: #606266; font-weight: bold;">📊 任务大盘</el-button>
+            </div>
+        </template>
+
+        <div class="section-title">1. 选择引擎与基础配置</div>
+        <el-form label-width="120px">
+            <el-form-item label="任务款式 SPU">
+                <el-input v-model="form.spu" placeholder="输入款式编号..."></el-input>
+            </el-form-item>
+            <el-form-item label="视频生成引擎">
+                <el-radio-group v-model="form.model" size="large">
+                    <el-radio-button value="kling-3.0/motion-control">🌟 可灵 3.0 运镜控制</el-radio-button>
+                    <el-radio-button value="kling-3.0/video">🎥 可灵 3.0 视频生成</el-radio-button>
+                    <el-radio-button value="bytedance/seedance-2">💃 字节 Seedance 2</el-radio-button>
+                </el-radio-group>
+            </el-form-item>
+            <el-form-item label="核心提示词">
+                <el-input type="textarea" v-model="form.prompt" :rows="3" placeholder="描述视频画面、人物动作或环境光影..."></el-input>
+            </el-form-item>
+        </el-form>
+
+        <div v-if="form.model === 'kling-3.0/motion-control'">
+            <div class="section-title">2. 可灵 3.0 运镜控制 参数</div>
+            <el-row :gutter="20">
+                <el-col :span="12">
+                    <div style="font-weight:bold; margin-bottom:10px;">人物参考图 (必传)</div>
+                    <div class="upload-box" @click="triggerUpload('motionImage', 'image/*')">
+                        <img v-if="form.motionImage" :src="form.motionImage" class="media-preview">
+                        <div v-else>➕ 点击上传图片</div>
+                        <div v-if="form.motionImage" class="remove-btn" @click.stop="form.motionImage=''">X</div>
+                    </div>
+                </el-col>
+                <el-col :span="12">
+                    <div style="font-weight:bold; margin-bottom:10px;">动作参考视频 (必传)</div>
+                    <div class="upload-box" @click="triggerUpload('motionVideo', 'video/*')">
+                        <video v-if="form.motionVideo" :src="form.motionVideo" class="media-preview" autoplay muted loop></video>
+                        <div v-else>➕ 点击上传视频</div>
+                        <div v-if="form.motionVideo" class="remove-btn" @click.stop="form.motionVideo=''">X</div>
+                    </div>
+                </el-col>
+            </el-row>
+            <el-row :gutter="20" style="margin-top: 20px;">
+                <el-col :span="8">
+                    <el-form-item label="背景源">
+                        <el-select v-model="form.motionBgSrc">
+                            <el-option label="视频背景" value="input_video"></el-option>
+                            <el-option label="图片背景" value="input_image"></el-option>
+                        </el-select>
+                    </el-form-item>
+                </el-col>
+                <el-col :span="8">
+                    <el-form-item label="人物朝向">
+                        <el-select v-model="form.motionCharOrient">
+                            <el-option label="以视频为准" value="video"></el-option>
+                            <el-option label="以图片为准" value="image"></el-option>
+                        </el-select>
+                    </el-form-item>
+                </el-col>
+                <el-col :span="8">
+                    <el-form-item label="画质">
+                        <el-select v-model="form.motionMode">
+                            <el-option label="720P (标准)" value="720p"></el-option>
+                            <el-option label="1080P (专业)" value="1080p"></el-option>
+                        </el-select>
+                    </el-form-item>
+                </el-col>
+            </el-row>
+        </div>
+
+        <div v-if="form.model === 'kling-3.0/video'">
+            <div class="section-title">2. 可灵 3.0 图/文生视频 参数</div>
+            <el-row :gutter="20">
+                <el-col :span="8">
+                    <div style="font-weight:bold; margin-bottom:10px;">起始帧参考图 (可选)</div>
+                    <div class="upload-box" @click="triggerUpload('klingImage', 'image/*')">
+                        <img v-if="form.klingImage" :src="form.klingImage" class="media-preview">
+                        <div v-else>➕ 点击上传图片</div>
+                        <div v-if="form.klingImage" class="remove-btn" @click.stop="form.klingImage=''">X</div>
+                    </div>
+                </el-col>
+                <el-col :span="16">
+                    <el-form label-width="100px">
+                        <el-form-item label="画面比例">
+                            <el-select v-model="form.klingAspectRatio">
+                                <el-option label="16:9 (横屏)" value="16:9"></el-option>
+                                <el-option label="9:16 (竖屏)" value="9:16"></el-option>
+                                <el-option label="1:1 (方屏)" value="1:1"></el-option>
+                            </el-select>
+                        </el-form-item>
+                        <el-form-item label="生成时长">
+                            <el-radio-group v-model="form.klingDuration">
+                                <el-radio-button :value="5">5 秒</el-radio-button>
+                                <el-radio-button :value="10">10 秒</el-radio-button>
+                            </el-radio-group>
+                        </el-form-item>
+                        <el-form-item label="画质模式">
+                            <el-radio-group v-model="form.klingMode">
+                                <el-radio-button value="std">标准 (Std)</el-radio-button>
+                                <el-radio-button value="pro">专业 (Pro)</el-radio-button>
+                            </el-radio-group>
+                        </el-form-item>
+                    </el-form>
+                </el-col>
+            </el-row>
+        </div>
+
+        <div v-if="form.model === 'bytedance/seedance-2'">
+            <div class="section-title">2. 字节跳动 Seedance-2 参数</div>
+            <el-row :gutter="20">
+                <el-col :span="8">
+                    <div style="font-weight:bold; margin-bottom:10px;">首帧参考图 (可选)</div>
+                    <div class="upload-box" @click="triggerUpload('seeFirstFrame', 'image/*')">
+                        <img v-if="form.seeFirstFrame" :src="form.seeFirstFrame" class="media-preview">
+                        <div v-else>➕ 首帧图</div>
+                        <div v-if="form.seeFirstFrame" class="remove-btn" @click.stop="form.seeFirstFrame=''">X</div>
+                    </div>
+                </el-col>
+                <el-col :span="8">
+                    <div style="font-weight:bold; margin-bottom:10px;">尾帧参考图 (可选)</div>
+                    <div class="upload-box" @click="triggerUpload('seeLastFrame', 'image/*')">
+                        <img v-if="form.seeLastFrame" :src="form.seeLastFrame" class="media-preview">
+                        <div v-else>➕ 尾帧图</div>
+                        <div v-if="form.seeLastFrame" class="remove-btn" @click.stop="form.seeLastFrame=''">X</div>
+                    </div>
+                </el-col>
+                <el-col :span="8">
+                    <div style="font-weight:bold; margin-bottom:10px;">参考视频 (可选)</div>
+                    <div class="upload-box" @click="triggerUpload('seeRefVideo', 'video/*')">
+                        <video v-if="form.seeRefVideo" :src="form.seeRefVideo" class="media-preview" autoplay muted loop></video>
+                        <div v-else>➕ 动作视频</div>
+                        <div v-if="form.seeRefVideo" class="remove-btn" @click.stop="form.seeRefVideo=''">X</div>
+                    </div>
+                </el-col>
+            </el-row>
+            <el-row :gutter="20" style="margin-top: 20px;">
+                <el-col :span="8">
+                    <el-form-item label="画质分辨率">
+                        <el-select v-model="form.seeResolution">
+                            <el-option label="720P (默认)" value="720p"></el-option>
+                            <el-option label="480P (低清快速)" value="480p"></el-option>
+                        </el-select>
+                    </el-form-item>
+                </el-col>
+                <el-col :span="8">
+                    <el-form-item label="画面比例">
+                        <el-select v-model="form.seeAspectRatio">
+                            <el-option label="16:9" value="16:9"></el-option>
+                            <el-option label="9:16" value="9:16"></el-option>
+                            <el-option label="1:1" value="1:1"></el-option>
+                        </el-select>
+                    </el-form-item>
+                </el-col>
+                <el-col :span="8">
+                    <el-form-item label="时长(3-15秒)">
+                        <el-input-number v-model="form.seeDuration" :min="3" :max="15"></el-input-number>
+                    </el-form-item>
+                </el-col>
+            </el-row>
+        </div>
+
+        <el-button type="primary" style="width: 100%; height: 50px; font-size: 18px; border-radius: 12px; margin-top: 30px; background-color: #8a2be2; border: none;" @click="submit" :loading="loading">
+            {{ loading ? uploadProgressMsg : '🚀 派发视频生成任务' }}
+        </el-button>
+
+        <input type="file" id="hiddenUploader" style="display: none;" @change="handleFileSelected">
+    </el-card>
+</div>
+
+<script>
+    const { createApp, ref, reactive } = Vue;
+    createApp({
+        setup() {
+            const form = reactive({
+                spu: '',
+                model: 'kling-3.0/motion-control',
+                prompt: '',
+
+                motionImage: '', motionVideo: '', motionMode: '720p', motionCharOrient: 'video', motionBgSrc: 'input_video',
+                klingImage: '', klingAspectRatio: '16:9', klingDuration: 5, klingMode: 'std',
+                seeFirstFrame: '', seeLastFrame: '', seeRefVideo: '', seeAspectRatio: '16:9', seeResolution: '720p', seeDuration: 5
+            });
+
+            const loading = ref(false);
+            const uploadProgressMsg = ref('正在上传资源...');
+            let currentUploadField = '';
+
+            const triggerUpload = (field, accept) => {
+                currentUploadField = field;
+                const uploader = document.getElementById('hiddenUploader');
+                uploader.accept = accept;
+                uploader.click();
+            };
+
+            const handleFileSelected = async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+
+                // 限制大小
+                if (file.type.startsWith('video/') && file.size > 50 * 1024 * 1024) return ElementPlus.ElMessage.error('视频不得超过50MB');
+                if (file.type.startsWith('image/') && file.size > 10 * 1024 * 1024) return ElementPlus.ElMessage.error('图片不得超过10MB');
+
+                loading.value = true;
+                try {
+                    // OSS 上传
+                    const policyRes = await axios.get('/api/oss/policy');
+                    const pd = policyRes.data.data;
+                    const suffix = file.name.substring(file.name.lastIndexOf('.'));
+                    const finalKey = `${pd.dir}${Date.now()}_${Math.random().toString(36).substr(2, 6)}${suffix}`;
+
+                    const fd = new FormData();
+                    fd.append('key', finalKey); fd.append('policy', pd.policy); fd.append('OSSAccessKeyId', pd.accessid);
+                    fd.append('success_action_status', '200'); fd.append('signature', pd.signature); fd.append('file', file);
+
+                    await axios.post(pd.host, fd, {
+                        onUploadProgress: p => {
+                            uploadProgressMsg.value = `上传中: ${Math.round(p.loaded/p.total*100)}%`;
+                        }
+                    });
+
+                    form[currentUploadField] = `${pd.host}/${finalKey}`;
+                    ElementPlus.ElMessage.success('上传成功');
+                } catch (err) {
+                    ElementPlus.ElMessage.error('OSS上传失败');
+                } finally {
+                    loading.value = false;
+                    e.target.value = '';
+                }
+            };
+
+            const submit = async () => {
+                if (!form.spu) return ElementPlus.ElMessage.warning('请输入 SPU 款号');
+                if (!form.prompt) return ElementPlus.ElMessage.warning('请输入视频提示词');
+
+                let inputPayload = {};
+
+                if (form.model === 'kling-3.0/motion-control') {
+                    if (!form.motionImage || !form.motionVideo) return ElementPlus.ElMessage.warning('可灵运镜模型必须上传图片和参考视频！');
+                    inputPayload = {
+                        prompt: form.prompt,
+                        input_urls: [form.motionImage],
+                        video_urls: [form.motionVideo],
+                        mode: form.motionMode,
+                        character_orientation: form.motionCharOrient,
+                        background_source: form.motionBgSrc
+                    };
+                } else if (form.model === 'kling-3.0/video') {
+                    inputPayload = {
+                        prompt: form.prompt,
+                        aspect_ratio: form.klingAspectRatio,
+                        duration: form.klingDuration,
+                        mode: form.klingMode
+                    };
+                    if (form.klingImage) inputPayload.image_urls = [form.klingImage];
+                } else if (form.model === 'bytedance/seedance-2') {
+                    inputPayload = {
+                        prompt: form.prompt,
+                        resolution: form.seeResolution,
+                        aspect_ratio: form.seeAspectRatio,
+                        duration: form.seeDuration
+                    };
+                    if (form.seeFirstFrame) inputPayload.first_frame_url = form.seeFirstFrame;
+                    if (form.seeLastFrame) inputPayload.last_frame_url = form.seeLastFrame;
+                    if (form.seeRefVideo) inputPayload.reference_video_urls = [form.seeRefVideo];
+                }
+
+                loading.value = true;
+                uploadProgressMsg.value = '正在向 AI 引擎派发任务...';
+
+                try {
+                    const res = await axios.post('/api/tasks/create-video', {
+                        spu: form.spu,
+                        model: form.model,
+                        input: inputPayload
+                    });
+
+                    if (res.data.success) {
+                        ElementPlus.ElMessage.success('🎉 视频生成任务下发成功！');
+                        setTimeout(() => goToList(), 1000);
+                    } else {
+                        ElementPlus.ElMessage.error(res.data.message);
+                    }
+                } catch (e) {
+                    ElementPlus.ElMessage.error('网络请求失败');
+                } finally {
+                    loading.value = false;
+                }
+            };
+
+            const goToColor = () => window.location.href = 'index.html';
+            const goToScene = () => window.location.href = 'scene.html';
+            const goToList = () => window.location.href = 'list.html';
+
+            return {
+                form, loading, uploadProgressMsg, triggerUpload, handleFileSelected, submit,
+                goToColor, goToScene, goToList
+            };
+        }
+    }).use(ElementPlus).mount('#app');
+</script>
+</body>
+</html>

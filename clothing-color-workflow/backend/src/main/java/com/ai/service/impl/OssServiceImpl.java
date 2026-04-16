@@ -75,50 +75,65 @@ public class OssServiceImpl implements OssService {
     }
 
     @Override
-    public String uploadResultToOss(String spu, String resultUrl) {
+    public String uploadResultToOss(String spu, String resultUrl, Long taskId) {
         Future<String> future = null;
 
         try {
-            log.info("【双保险转存】开始处理，目标链接: {}", resultUrl);
+            log.info("【双保险转存】开始处理，任务ID: {}, 目标链接: {}", taskId, resultUrl);
             AppProperties.Oss oss = appProperties.getOss();
 
-            String localRoot = appProperties.getLocalSaveRoot();
-            if (localRoot == null) {
-                // 自动判断系统：如果是 Windows 就用 D 盘，否则（Linux/Mac）用用户目录下的文件夹
+            // 1. 确定本地根目录
+            String localRootPath = appProperties.getLocalSaveRoot();
+            if (localRootPath == null) {
                 String os = System.getProperty("os.name").toLowerCase();
-                if (os.contains("win")) {
-                    localRoot = "D:/AiResult";
-                } else {
-                    localRoot = "/tmp/ai-result"; // 或者其他 Linux 路径
+                localRootPath = os.contains("win") ? "D:/AiResult" : "/tmp/ai-result";
+            }
+            final String localRoot = localRootPath; // 确保是 final
+
+            // 2. 智能判断后缀名
+            String ext = ".png";
+            String lowerUrl = resultUrl.toLowerCase();
+            if (lowerUrl.contains(".jpg") || lowerUrl.contains(".jpeg")) ext = ".jpg";
+            else if (lowerUrl.contains(".mp4")) ext = ".mp4";
+            else if (lowerUrl.contains(".mov")) ext = ".mov";
+            final String extension = ext;
+
+            // 3. 处理前缀并构造最终文件名 (原名_ID.后缀)
+            String pref = (spu != null) ? spu : "task";
+            if (resultUrl.contains("/")) {
+                try {
+                    String lastPart = resultUrl.substring(resultUrl.lastIndexOf("/") + 1);
+                    // 尝试解码并切掉原有的时间戳/数字尾巴
+                    String decoded = java.net.URLDecoder.decode(lastPart, "UTF-8");
+                    pref = decoded.replaceAll("_[\\d_]+\\.[a-zA-Z]+$", "");
+                } catch (Exception e) {
+                    log.warn("文件名解析失败，回退至SPU前缀");
                 }
             }
+            final String fileName = pref + "_" + taskId + extension;
 
-            String extension = resultUrl.toLowerCase().contains(".jpg") ? ".jpg" : ".png";
-            // 加入一段 8 位的随机 UUID，确保并发时绝对不会重名
-            String fileName = System.currentTimeMillis() + "_" + java.util.UUID.randomUUID().toString().substring(0, 8) + extension;
-
+            // 4. 准备本地文件对象
             File targetDir = new File(localRoot + "/" + spu);
             if (!targetDir.exists()) {
-                targetDir.mkdirs(); // 自动创建多级目录
+                targetDir.mkdirs();
             }
+            final File permanentFile = new File(targetDir, fileName);
 
-            File permanentFile = new File(targetDir, fileName);
-
+            // 5. 定义隔离任务 (使用 final 变量)
             Callable<String> isolationTask = () -> {
                 log.info("【双保险】正在下载到本地: {}", permanentFile.getAbsolutePath());
 
                 okhttp3.Request request = new okhttp3.Request.Builder()
                         .url(resultUrl)
-                        .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0")
+                        .addHeader("User-Agent", "Mozilla/5.0")
                         .build();
 
                 try (okhttp3.Response response = httpClient.newCall(request).execute()) {
                     if (!response.isSuccessful() || response.body() == null) {
-                        throw new RuntimeException("KIE图片下载失败: HTTP " + response.code());
+                        throw new RuntimeException("KIE文件下载失败: HTTP " + response.code());
                     }
 
-                    // 🔴 修复核心：绝对不要让图片压缩器直接读取脆弱的网络流！
-                    // 第一步：用最基础的缓冲流，把网络字节原封不动、100%安全地写到本地硬盘
+                    // 第一步：网络字节流直接落地本地硬盘
                     try (InputStream in = response.body().byteStream();
                          FileOutputStream fos = new FileOutputStream(permanentFile)) {
                         byte[] buffer = new byte[8192];
@@ -127,83 +142,55 @@ public class OssServiceImpl implements OssService {
                             fos.write(buffer, 0, bytesRead);
                         }
                     } catch (Exception streamEx) {
-                        if (permanentFile.exists()) {
-                            permanentFile.delete();
-                            log.error("【残次品拦截】物理网络中断，已销毁不完整文件: {}", permanentFile.getName());
-                        }
-                        throw new RuntimeException("底层网络流中断，下载失败", streamEx);
-                    }
-
-                    // 第二步：文件已经完整落地，现在读取本地硬盘的文件进行安全压缩
-                    try {
-                        File tempCompressedFile = new File(permanentFile.getAbsolutePath() + ".tmp");
-                        net.coobird.thumbnailator.Thumbnails.of(permanentFile)
-                                .scale(1.0)
-                                .outputQuality(0.9) // 画质压缩为 90%
-                                .toFile(tempCompressedFile);
-
-                        // 压缩成功，用变小后的临时文件替换掉刚下载的原文件
-                        permanentFile.delete();
-                        tempCompressedFile.renameTo(permanentFile);
-                        log.info("【图片压缩成功】已完成 90% 画质压缩");
-                    } catch (Exception compressEx) {
-                        // 兜底防御：万一这是张损坏或特殊格式的图，导致压缩失败
-                        log.warn("【画质压缩失败】将跳过压缩，直接使用未压缩的原图继续上传: {}", compressEx.getMessage());
-                        // 故意不抛出异常！因为第一步已经把完整的图下好了，就算不压缩也不影响后续上传 OSS！
+                        if (permanentFile.exists()) permanentFile.delete();
+                        throw new RuntimeException("网络流中断，下载不完整已清理", streamEx);
                     }
                 }
 
                 if (!permanentFile.exists() || permanentFile.length() == 0) {
-                    throw new RuntimeException("本地保存文件失败，文件未生成或大小为0");
+                    throw new RuntimeException("本地保存失败，文件为空");
                 }
 
-                log.info("【本地保存成功】图片已稳妥躺在硬盘，准备尝试上传 OSS...");
+                log.info("【本地保存成功】准备上传 OSS...");
 
-                String finalLocalPath = permanentFile.getAbsolutePath();
                 String ossUrl = "";
-
                 try {
-                    File fileToUpload = permanentFile.getAbsoluteFile();
                     String objectName = spu + "/result/" + fileName;
 
-                    ossClient.putObject(oss.getResultBucket(), objectName, fileToUpload);
-                    ossUrl = oss.getResultPublicHost() + "/" + objectName;
+                    // 🔴 关键优化：根据后缀设置 Metadata，确保视频可在线播放
+                    com.aliyun.oss.model.ObjectMetadata metadata = new com.aliyun.oss.model.ObjectMetadata();
+                    if (extension.equals(".jpg")) metadata.setContentType("image/jpeg");
+                    else if (extension.equals(".png")) metadata.setContentType("image/png");
+                    else if (extension.equals(".mp4")) metadata.setContentType("video/mp4");
+                    else if (extension.equals(".mov")) metadata.setContentType("video/quicktime");
 
+                    ossClient.putObject(oss.getResultBucket(), objectName, permanentFile, metadata);
+                    ossUrl = oss.getResultPublicHost() + "/" + objectName;
                     log.info("【OSS上传成功】链接: {}", ossUrl);
                 } catch (Exception ossEx) {
-                    log.error("【OSS上传降级】本地已保存，但上传云端失败: {}", ossEx.getMessage());
+                    log.error("【OSS上传失败】本地已保留原图: {}", ossEx.getMessage());
                 }
 
-                if (appProperties.isDeleteLocalAfterUpload()) {
-                    if (!ossUrl.isEmpty()) {
-                        boolean deleted = permanentFile.delete();
-                        log.info("【正式环境】OSS 上传成功，已自动清理本地图片: {}，删除状态: {}", finalLocalPath, deleted);
-                        finalLocalPath = "DELETED";
-                    } else {
-                        log.warn("【正式环境】因 OSS 上传失败，强制保留本地图片不予删除: {}", finalLocalPath);
-                    }
-                } else {
-                    log.info("【开发环境】本地图片已保留: {}", finalLocalPath);
+                // 6. 环境清理逻辑
+                String finalPathStatus = permanentFile.getAbsolutePath();
+                if (appProperties.isDeleteLocalAfterUpload() && !ossUrl.isEmpty()) {
+                    permanentFile.delete();
+                    finalPathStatus = "DELETED";
                 }
 
-                return ossUrl + "|" + finalLocalPath;
+                return ossUrl + "|" + finalPathStatus;
             };
 
+            // 7. 提交并设置总超时
             future = isolationPool.submit(isolationTask);
-            // 🔴 配合上面的 1.5 小时 (5400秒) 总超时，这里护士的等待时间给到 5410 秒
             return future.get(5410, TimeUnit.SECONDS);
 
         } catch (TimeoutException e) {
             if (future != null) future.cancel(true);
-            log.error("【转存严重超时】下载动作耗时超过 1.5 小时，已强制终止该线程！");
-            throw new RuntimeException("图片下载严重超时 (超1.5小时)");
-        } catch (ExecutionException e) {
-            Throwable cause = e.getCause();
-            log.error("【本地保存失败】: {}", cause != null ? cause.getMessage() : e.getMessage());
-            throw new RuntimeException("本地保存任务失败: " + (cause != null ? cause.getMessage() : "未知"));
+            throw new RuntimeException("任务超时1.5小时被强制终止");
         } catch (Exception e) {
-            log.error("【转存系统异常】: {}", e.getMessage());
-            throw new RuntimeException("发生系统异常", e);
+            log.error("【转存异常】: {}", e.getMessage());
+            throw new RuntimeException("系统转存失败", e);
         }
     }
 

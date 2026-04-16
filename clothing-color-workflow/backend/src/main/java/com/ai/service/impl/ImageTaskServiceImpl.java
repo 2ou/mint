@@ -142,69 +142,80 @@ public class ImageTaskServiceImpl implements ImageTaskService {
 
     @Override
     public TaskCreateResponse refreshTask(Long id) {
+        // 1. 获取任务实体
         ImageTask task = imageTaskRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("未找到该任务 ID: " + id));
 
+        // 2. 如果任务已经终结（成功或失败），直接返回结果，不再重复请求
         if ("SUCCESS".equals(task.getStatus()) || "FAILED".equals(task.getStatus())) {
             return new TaskCreateResponse(task);
         }
 
         try {
-            log.info("【步骤1】向 KIE 请求完整结果...");
+            log.info("【步骤1】向 KIE 请求任务 [{}] 的结果详情...", task.getTaskId());
+            // 调用轮询接口获取结果
             KieTaskResult kieResult = kieClientService.getFullResult(task.getTaskId());
 
-            if (kieResult.isSuccess() && kieResult.getResultUrl() != null) {
+            if (kieResult != null && "SUCCESS".equalsIgnoreCase(kieResult.getStatus())) {
                 log.info("【步骤2】KIE 任务已完成，获取到原始结果链接！");
 
-                // 🔴 核心逻辑 1：立刻赋值保底数据，并修改状态为 SUCCESS
+                // 🔴 核心逻辑：第一段提交（保底）
+                // 只要拿到了远端 URL，立刻标记为 SUCCESS 并保存。
+                // 这样就算后续 OSS 转存失败，用户刷新页面也能通过 resultTempUrl 看到结果。
                 task.setResultTempUrl(kieResult.getResultUrl());
                 task.setStatus("SUCCESS");
-                task.setErrorMessage(null); // 清除可能存在的历史错误
+                task.setErrorMessage(null); // 清理旧错误
 
-                // 转换时间
                 if (kieResult.getCompleteTime() != null) {
                     task.setCompleteTime(java.time.Instant.ofEpochMilli(kieResult.getCompleteTime())
                             .atZone(java.time.ZoneId.systemDefault())
                             .toLocalDateTime());
                 }
 
-                // 🔴 核心逻辑 2：第一段提交！立刻存入数据库保底！
-                // 这样就算下一秒服务器断电，这张图的原始链接也已经安全躺在你的数据库里了。
+                // 执行保底入库
                 imageTaskRepository.save(task);
-                log.info("【保底成功】任务 {} 已变更为 SUCCESS，原始链接已入库保护！", task.getId());
+                log.info("【保底成功】任务 {} 已变更为 SUCCESS，临时链接已安全入库保护！", id);
 
-                // 🔴 核心逻辑 3：把容易报错的转存功能“隔离”起来
+                // 🔴 核心逻辑：转存隔离块
                 try {
                     log.info("【步骤3】尝试执行双保险转存（本地硬盘 + OSS）...");
-                    String combinedResult = ossService.uploadResultToOss(task.getSpu(), kieResult.getResultUrl());
+                    // 💡 这里的参数调整为 3 个，传入 task.getId() 供命名使用
+                    String combinedResult = ossService.uploadResultToOss(task.getSpu(), kieResult.getResultUrl(), task.getId());
 
-                    String[] parts = combinedResult.split("\\|");
-                    if (parts.length == 2) {
-                        task.setResultOssUrl(parts[0]);
-                        task.setLocalPath("DELETED".equals(parts[1]) ? null : parts[1]);
+                    if (combinedResult != null && combinedResult.contains("|")) {
+                        String[] parts = combinedResult.split("\\|");
+                        if (parts.length == 2) {
+                            task.setResultOssUrl(parts[0]); // 永久链接
+                            task.setLocalPath("DELETED".equals(parts[1]) ? null : parts[1]);
 
-                        // 🔴 第二段提交：转存成功了，把 OSS 链接补充进数据库
-                        imageTaskRepository.save(task);
-                        log.info("【转存成功】任务 {} 的 OSS 永久链接补充入库完毕！", task.getId());
+                            // 🔴 第二段提交：转存数据补充入库
+                            imageTaskRepository.save(task);
+                            log.info("【转存成功】任务 {} 的 OSS 永久链接及本地路径更新完毕！", id);
+                        }
                     }
                 } catch (Exception subEx) {
-                    // 🔴 核心逻辑 4：如果转存报错，仅仅打印日志，绝对不去修改 task 的状态！
-                    // 这样前端看到的状态依然是“成功”，并且能通过临时链接看图。
-                    log.error("【转存降级】本地保存或 OSS 上传失败，但不影响任务成功状态: {}", subEx.getMessage());
+                    // 仅记录转存异常，不修改 task 状态，不让 refresh 操作报错
+                    log.error("【转存降级】任务 {} 原始图已拿到，但本地保存或 OSS 上传失败: {}", id, subEx.getMessage());
                 }
 
-            } else if ("fail".equals(kieResult.getStatus()) || "failed".equals(kieResult.getStatus())) {
+            } else if (kieResult != null && "FAILED".equalsIgnoreCase(kieResult.getStatus())) {
+                // KIE 侧明确返回失败
                 task.setStatus("FAILED");
+                // 💡 使用 getErrorMsg() 匹配 DTO 字段
                 task.setErrorMessage(kieResult.getErrorMessage());
                 imageTaskRepository.save(task);
+                log.warn("【任务标记失败】单号: {}, 失败原因: {}", task.getTaskId(), kieResult.getErrorMessage());
             }
+
         } catch (Throwable e) {
-            log.error("刷新任务发生系统崩溃: {}", e.getMessage());
-            // 注意：这里捕获的是 KIE 接口查询本身的崩溃。
-            // 转存的崩溃已经被上面拦截了，不会走到这里。
-            task.setStatus("FAILED");
-            task.setErrorMessage("查询远端结果异常: " + e.getMessage());
-            imageTaskRepository.save(task);
+            log.error("【系统级刷新异常】任务 ID: {}, 错误: {}", id, e.getMessage());
+            // 捕获网络异常或查询接口异常
+            // 我们不在这里重置 SUCCESS 状态的任务，仅处理还在 PROCESSING 的
+            if (!"SUCCESS".equals(task.getStatus())) {
+                task.setStatus("FAILED");
+                task.setErrorMessage("刷新任务时系统异常: " + e.getMessage());
+                imageTaskRepository.save(task);
+            }
         }
 
         return new TaskCreateResponse(task);
