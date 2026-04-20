@@ -211,7 +211,7 @@ public class ImageTaskServiceImpl implements ImageTaskService {
     }
 
 
-    // ======================== 下载与查询逻辑 ========================
+    // ======================== 下载与打包逻辑 ========================
     @Override
     public void batchDownloadZip(List<Long> ids, jakarta.servlet.http.HttpServletResponse response) {
         // 设置响应头，告知浏览器这是一个 ZIP 文件下载
@@ -219,11 +219,8 @@ public class ImageTaskServiceImpl implements ImageTaskService {
         // 解决中文乱码问题
         response.setHeader("Content-Disposition", "attachment; filename=AI_tasks_results.zip");
 
-        // 直接将 ZIP 流绑定到 HTTP 响应流上，实现“边下载边打包边传给用户”
         try (java.util.zip.ZipOutputStream zos = new java.util.zip.ZipOutputStream(response.getOutputStream())) {
-
             boolean hasFiles = false;
-            // 记录所有下载失败的任务和原因
             List<String> errorLogs = new ArrayList<>();
 
             for (Long id : ids) {
@@ -234,46 +231,53 @@ public class ImageTaskServiceImpl implements ImageTaskService {
                         continue;
                     }
 
-                    // 优先取 OSS 永久链接，没有的话取 KIE 的临时链接
+                    // 取结果链接
                     String imageUrl = task.getResultOssUrl() != null ? task.getResultOssUrl() : task.getResultTempUrl();
                     if (imageUrl == null || imageUrl.isEmpty()) {
-                        errorLogs.add("任务库ID: " + id + " | 失败原因: 该任务尚无生成的图片链接");
+                        errorLogs.add("任务库ID: " + id + " | 失败原因: 该任务尚无生成的图片或视频链接");
                         continue;
                     }
 
-                    String ext = imageUrl.toLowerCase().contains(".jpg") ? ".jpg" : ".png";
+                    // 判断并获取正确的后缀名
+                    String ext = ".png";
+                    String lowerUrl = imageUrl.toLowerCase();
+                    if (lowerUrl.contains(".jpg") || lowerUrl.contains(".jpeg")) ext = ".jpg";
+                    else if (lowerUrl.contains(".mp4")) ext = ".mp4";
+                    else if (lowerUrl.contains(".mov")) ext = ".mov";
 
-                    // 默认前缀为 SPU
-                    String prefix = task.getSpu() != null ? task.getSpu() : "任务";
-                    String colorUrl = task.getColorImageUrl();
+                    // ================= 🔴 核心逻辑：组装规范文件名 =================
+                    // 1. SPU
+                    String spu = (task.getSpu() != null && !task.getSpu().trim().isEmpty()) ? task.getSpu() : "未命名款式";
 
-                    if (colorUrl != null && colorUrl.contains("/")) {
-                        try {
-                            String lastPart = colorUrl.substring(colorUrl.lastIndexOf("/") + 1);
-                            String decoded = java.net.URLDecoder.decode(lastPart, "UTF-8");
-                            // 🔴 核心切除魔法：把结尾的 "_数字_时间戳.jpg" 或 "_数字.png" 统统切掉，只保留纯净的名称
-                            // 比如把 "红底菠萝_2_1776163676328.jpg" 切成 "红底菠萝"
-                            prefix = decoded.replaceAll("_[\\d_]+\\.[a-zA-Z]+$", "");
-                        } catch (Exception e) {
-                            log.warn("解析文件名失败", e);
-                        }
+                    // 2. 颜色图名称
+                    String colorName = "无颜色图";
+                    if (task.getColorImageUrl() != null && !task.getColorImageUrl().isEmpty()) {
+                        colorName = extractCleanFileName(task.getColorImageUrl());
                     }
 
-                    // 🔴 最终文件名： 纯净名称_真实任务ID.后缀 (例如：红底菠萝_97.jpg)
-                    String fileName = prefix + "_" + id + ext;
+                    // 3. 原图名称 (兼容多图情况，取第一张)
+                    String inputName = "无原图";
+                    if (task.getInputImageUrl() != null && !task.getInputImageUrl().isEmpty()) {
+                        String firstInputUrl = task.getInputImageUrl().split(",")[0];
+                        inputName = extractCleanFileName(firstInputUrl);
+                    }
 
-                    // 使用 httpClient 直接从网络拉取图片流
+                    // 4. 最终拼接：SPU-颜色图名称-原图名称-Id.ext
+                    String fileName = String.format("%s-%s-%s-%d%s", spu, colorName, inputName, id, ext);
+
+                    // 过滤掉文件名中可能导致 Windows/Mac 无法创建文件的非法字符
+                    fileName = fileName.replaceAll("[\\\\/:*?\"<>|]", "_");
+                    // ==============================================================
+
+                    // 使用 httpClient 实时拉取文件流
                     okhttp3.Request request = new okhttp3.Request.Builder()
                             .url(imageUrl)
-                            .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0")
+                            .addHeader("User-Agent", "Mozilla/5.0")
                             .build();
 
                     try (okhttp3.Response okResponse = httpClient.newCall(request).execute()) {
                         if (okResponse.isSuccessful() && okResponse.body() != null) {
-                            // 开启一个新的 ZIP 实体
                             zos.putNextEntry(new java.util.zip.ZipEntry(fileName));
-
-                            // 直接将网络的 InputStream 灌入 ZIP 的 OutputStream
                             try (InputStream is = okResponse.body().byteStream()) {
                                 byte[] buffer = new byte[8192];
                                 int length;
@@ -284,43 +288,65 @@ public class ImageTaskServiceImpl implements ImageTaskService {
                             zos.closeEntry();
                             hasFiles = true;
                         } else {
-                            log.warn("【ZIP打包】单图下载失败: HTTP {}, 链接: {}", okResponse.code(), imageUrl);
-                            errorLogs.add("任务库ID: " + id + " | 失败原因: 图片源地址访问失败 (HTTP 状态码: " + okResponse.code() + ")");
+                            errorLogs.add("任务库ID: " + id + " | 失败原因: 资源地址访问失败 (HTTP " + okResponse.code() + ")");
                         }
                     }
                 } catch (Exception e) {
-                    log.error("【ZIP打包】处理任务 ID: {} 时发生异常: {}", id, e.getMessage());
+                    log.error("【ZIP打包】处理任务 ID: {} 时发生异常", id, e);
                     errorLogs.add("任务库ID: " + id + " | 失败原因: " + e.getMessage());
                 }
             }
 
-            // 如果打包过程中出现了失败的任务，将错误日志写进一个 TXT 文本并放进 ZIP 里
+            // 输出打包失败报告
             if (!errorLogs.isEmpty()) {
                 zos.putNextEntry(new java.util.zip.ZipEntry("❗打包失败报告清单.txt"));
-                StringBuilder sb = new StringBuilder();
-                sb.append("============= AI 批量打包异常报告 =============\n");
-                sb.append("以下任务在打包下载时发生异常，未能包含在压缩包中：\n\n");
+                StringBuilder sb = new StringBuilder("============= AI 批量打包异常报告 =============\n\n");
                 for (String logMsg : errorLogs) {
                     sb.append("- ").append(logMsg).append("\n");
                 }
-                sb.append("\n===============================================\n");
                 zos.write(sb.toString().getBytes("UTF-8"));
                 zos.closeEntry();
-
                 hasFiles = true;
             }
 
-            // 如果用户选中的任务全都没图，且没有任何错误报告，放一个兜底提示文本
+            // 空包兜底提示
             if (!hasFiles) {
                 zos.putNextEntry(new java.util.zip.ZipEntry("下载失败提示.txt"));
-                String msg = "您选中的任务尚未生成结果，或者链接已失效，因此没有任何图片。";
-                zos.write(msg.getBytes("UTF-8"));
+                zos.write("您选中的任务尚未生成结果，或者链接已失效。".getBytes("UTF-8"));
                 zos.closeEntry();
             }
 
         } catch (Exception e) {
             log.error("【ZIP打包】全局严重异常", e);
             throw new RuntimeException("打包 ZIP 失败: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 🟢 辅助方法：从 URL 提取纯净的文件名 (去除扩展名、时间戳等)
+     */
+    private String extractCleanFileName(String url) {
+        if (url == null || url.isEmpty()) return "未知文件";
+        try {
+            // 1. 掐掉 ? 后面的参数
+            int qMarkIndex = url.indexOf('?');
+            String cleanUrl = (qMarkIndex == -1) ? url : url.substring(0, qMarkIndex);
+
+            // 2. 取最后一段文件名并 URL 解码 (处理中文名)
+            String lastPart = cleanUrl.substring(cleanUrl.lastIndexOf("/") + 1);
+            String decodedName = java.net.URLDecoder.decode(lastPart, "UTF-8");
+
+            // 3. 去掉后缀名 (例如 .jpg, .png)
+            String nameWithoutExt = decodedName.replaceAll("\\.[a-zA-Z0-9]+$", "");
+
+            // 4. 智能切除：去掉上传时拼接的13位时间戳及后面的随机字符 (如 _1712312312312_a1b2c3)
+            // 这样能把 "红底菠萝_1776163676328_x1yz2" 还原成完美的 "红底菠萝"
+            String finalCleanName = nameWithoutExt.replaceAll("_\\d{13}.*$", "");
+
+            return finalCleanName;
+        } catch (Exception e) {
+            log.warn("解析文件名失败: {}", url);
+            return "解析失败";
         }
     }
 
