@@ -3,121 +3,28 @@
 <head>
     <meta charset="UTF-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-    <title>AI 换色/场景任务管理大盘</title>
+    <title>AI 换色/场景/视频任务管理大盘</title>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css"/>
     <script src="https://unpkg.com/element-plus"></script>
     <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
-
     <script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js"></script>
-
     <script src="auth.js"></script>
 
     <style>
-        body {
-            margin: 0;
-            min-height: 100vh;
-            padding: 20px;
-            font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
-            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-        }
-
-        .page-wrap {
-            max-width: 1600px;
-            margin: 0 auto;
-        }
-
-        .dashboard-card {
-            border-radius: 12px !important;
-            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1) !important;
-            border: none !important;
-        }
-
-        .el-card__header {
-            background: #67c23a;
-            color: white;
-            font-weight: bold;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .filter-bar {
-            background: #fff;
-            padding: 15px;
-            border-radius: 8px;
-            margin-bottom: 15px;
-            display: flex;
-            flex-wrap: wrap;
-            gap: 15px;
-            align-items: center;
-            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
-        }
-
-        .thumbnail {
-            width: 55px;
-            height: 55px;
-            border-radius: 6px;
-            border: 1px solid #ddd;
-            cursor: pointer;
-            object-fit: cover;
-        }
-
-        .empty-img {
-            width: 55px;
-            height: 55px;
-            background: #eee;
-            color: #999;
-            font-size: 10px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border-radius: 6px;
-            border: 1px dashed #ccc;
-        }
-
-        .prompt-text {
-            font-size: 12px;
-            color: #666;
-            display: -webkit-box;
-            -webkit-line-clamp: 2;
-            -webkit-box-orient: vertical;
-            overflow: hidden;
-            line-height: 1.4;
-        }
-
-        /* 微调缩略图容器 */
-        .image-grid {
-            display: grid;
-            grid-template-columns: repeat(2, 40px); /* 每行 2 张，每张 40px */
-            grid-gap: 4px; /* 图片间距 */
-            justify-content: center;
-            padding: 5px 0;
-        }
-
-        /* 微调单张图片样式 */
-        .grid-thumb {
-            width: 40px;
-            height: 40px;
-            border-radius: 4px;
-            border: 1px solid #ebeef5;
-            transition: transform 0.2s;
-        }
-
-        .grid-thumb:hover {
-            transform: scale(1.1); /* 鼠标悬停轻微放大，增加交互感 */
-            z-index: 10;
-        }
-        /* 🔴 强制修复 Element Plus 消息提示框被遮挡的问题 */
-        .el-message {
-            z-index: 99999 !important; /* 把层级提到最高，神挡杀神 */
-            top: 80px !important;      /* 强制往下挪 80px，避开顶部导航栏。如果不够可以改成 100px */
-        }
-
-        /* 🔴 顺手修复：如果是居中的“确认删除”弹窗被遮挡，加这个 */
-        .el-overlay.is-message-box {
-            z-index: 99999 !important;
-        }
+        body { margin: 0; min-height: 100vh; padding: 20px; font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif; background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); }
+        .page-wrap { max-width: 1600px; margin: 0 auto; }
+        .dashboard-card { border-radius: 12px !important; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1) !important; border: none !important; }
+        .el-card__header { background: #67c23a; color: white; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
+        .filter-bar { background: #fff; padding: 15px; border-radius: 8px; margin-bottom: 15px; display: flex; flex-wrap: wrap; gap: 15px; align-items: center; box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05); }
+        .thumbnail { width: 55px; height: 55px; border-radius: 6px; border: 1px solid #ddd; cursor: pointer; object-fit: cover; }
+        .empty-img { width: 55px; height: 55px; background: #eee; color: #999; font-size: 10px; display: flex; align-items: center; justify-content: center; border-radius: 6px; border: 1px dashed #ccc; }
+        .prompt-text { font-size: 12px; color: #666; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.4; }
+        .image-grid { display: grid; grid-template-columns: repeat(2, 40px); grid-gap: 4px; justify-content: center; padding: 5px 0; }
+        .grid-thumb { width: 40px; height: 40px; border-radius: 4px; border: 1px solid #ebeef5; transition: transform 0.2s; }
+        .grid-thumb:hover { transform: scale(1.1); z-index: 10; }
+        .el-message { z-index: 99999 !important; top: 80px !important; }
+        .el-overlay.is-message-box { z-index: 99999 !important; }
     </style>
 </head>
 <body>
@@ -125,24 +32,16 @@
     <div class="page-wrap">
         <el-card class="dashboard-card">
             <template #header>
-                <span>📊 AI 任务管理大盘 (换色 & 场景生成)</span>
+                <span>📊 AI 任务管理大盘 (换色 / 场景 / 视频)</span>
                 <div style="display: flex; gap: 10px; align-items: center;">
                     <el-button color="#8a2be2" :disabled="selectedRows.length === 0" @click="batchDownload">
                         📦 批量下载 ({{ selectedRows.length }})
                     </el-button>
-                    <el-button
-                            type="primary"
-                            @click="exportLinks"
-                            :disabled="selectedRows.length === 0"
-                            style="font-weight: bold; border: 2px solid white;"
-                    >
+                    <el-button type="primary" @click="exportLinks" :disabled="selectedRows.length === 0" style="font-weight: bold; border: 2px solid white;">
                         📄 导出链接 (备用)
                     </el-button>
-
                     <el-tooltip content="系统已开启后台自动同步（3分钟/次）" placement="bottom" effect="light">
-                        <el-button type="warning" disabled style="cursor: not-allowed;">
-                            ⚡ 自动同步运行中...
-                        </el-button>
+                        <el-button type="warning" disabled style="cursor: not-allowed;">⚡ 自动同步运行中...</el-button>
                     </el-tooltip>
                     <el-button @click="goToColor" plain>🎨 换色提交</el-button>
                     <el-button @click="goToScene" plain>🖼️ 场景提交</el-button>
@@ -152,40 +51,29 @@
             </template>
 
             <div class="filter-bar">
-                <el-input v-model="filters.spu" placeholder="输入款号 (SPU) 搜索" clearable style="width: 160px"
-                          @keyup.enter="handleSearch"></el-input>
+                <el-input v-model="filters.spu" placeholder="输入款号 (SPU) 搜索" clearable style="width: 160px" @keyup.enter="handleSearch"></el-input>
 
-                <el-select v-model="filters.taskType" placeholder="任务类型" clearable style="width: 140px"
-                           @change="handleSearch">
+                <el-select v-model="filters.taskType" placeholder="任务类型" clearable style="width: 140px" @change="handleSearch">
                     <el-option label="🎨 换色任务" :value="1"></el-option>
                     <el-option label="🖼️ 场景生成" :value="2"></el-option>
+                    <el-option label="🎬 视频生成" :value="3"></el-option>
                 </el-select>
 
-                <el-select v-model="filters.status" placeholder="状态" clearable style="width: 120px"
-                           @change="handleSearch">
+                <el-select v-model="filters.status" placeholder="状态" clearable style="width: 120px" @change="handleSearch">
                     <el-option label="SUCCESS" value="SUCCESS"></el-option>
                     <el-option label="PROCESSING" value="PROCESSING"></el-option>
                     <el-option label="FAILED" value="FAILED"></el-option>
                 </el-select>
 
-                <el-input
-                        v-model="filters.taskId"
-                        placeholder="搜索任务 ID"
-                        clearable
-                        style="width: 180px"
-                        @keyup.enter="handleSearch">
-                </el-input>
+                <el-input v-model="filters.taskId" placeholder="搜索任务 ID" clearable style="width: 180px" @keyup.enter="handleSearch"></el-input>
 
-                <el-date-picker v-model="filters.timeRange" type="datetimerange" range-separator="至"
-                                start-placeholder="开始" end-placeholder="结束" value-format="YYYY-MM-DD HH:mm:ss"
-                                style="width: 320px"></el-date-picker>
+                <el-date-picker v-model="filters.timeRange" type="datetimerange" range-separator="至" start-placeholder="开始" end-placeholder="结束" value-format="YYYY-MM-DD HH:mm:ss" style="width: 320px"></el-date-picker>
 
                 <el-button type="primary" @click="handleSearch">搜索</el-button>
                 <el-button @click="resetFilters">重置</el-button>
             </div>
 
-            <el-table :data="rawData" v-loading="loading" @selection-change="handleSelectionChange" border stripe
-                      style="width: 100%" height="65vh">
+            <el-table :data="rawData" v-loading="loading" @selection-change="handleSelectionChange" border stripe style="width: 100%" height="65vh">
                 <el-table-column type="selection" width="50" align="center"></el-table-column>
                 <el-table-column prop="id" label="ID" width="70" align="center"></el-table-column>
                 <el-table-column prop="spu" label="SPU" width="100" align="center"></el-table-column>
@@ -194,35 +82,26 @@
                         <el-tag size="small" type="info" effect="plain">{{ scope.row.resolution || '默认' }}</el-tag>
                     </template>
                 </el-table-column>
+
                 <el-table-column label="任务类型" width="110" align="center">
                     <template #default="scope">
-                        <el-tag :type="scope.row.taskType === 2 ? 'success' : 'primary'" effect="plain">
-                            {{ scope.row.taskType === 2 ? '🖼️ 场景' : '🎨 换色' }}
-                        </el-tag>
+                        <el-tag v-if="scope.row.taskType === 1" type="primary" effect="plain">🎨 换色</el-tag>
+                        <el-tag v-else-if="scope.row.taskType === 2" type="success" effect="plain">🖼️ 场景</el-tag>
+                        <el-tag v-else-if="scope.row.taskType === 3" color="#673AB7" style="color: white; border: none;">🎬 视频</el-tag>
                     </template>
                 </el-table-column>
 
                 <el-table-column label="任务状态" width="100" align="center">
                     <template #default="scope">
-                        <el-tooltip
-                                v-if="scope.row.status === 'FAILED' && scope.row.errorMessage"
-                                placement="top"
-                                effect="dark"
-                        >
+                        <el-tooltip v-if="scope.row.status === 'FAILED' && scope.row.errorMessage" placement="top" effect="dark">
                             <template #content>
                                 <div style="max-width: 300px; line-height: 1.5; word-wrap: break-word;">
-                                    ⚠️ 失败原因：<br/>
-                                    {{ scope.row.errorMessage }}
+                                    ⚠️ 失败原因：<br/>{{ scope.row.errorMessage }}
                                 </div>
                             </template>
-                            <el-tag :type="getStatusType(scope.row.status)" effect="dark" style="cursor: pointer;">
-                                {{ scope.row.status }}
-                            </el-tag>
+                            <el-tag :type="getStatusType(scope.row.status)" effect="dark" style="cursor: pointer;">{{ scope.row.status }}</el-tag>
                         </el-tooltip>
-
-                        <el-tag v-else :type="getStatusType(scope.row.status)" effect="dark">
-                            {{ scope.row.status }}
-                        </el-tag>
+                        <el-tag v-else :type="getStatusType(scope.row.status)" effect="dark">{{ scope.row.status }}</el-tag>
                     </template>
                 </el-table-column>
 
@@ -230,57 +109,46 @@
                     <template #default="scope">
                         <div v-if="scope.row.inputImageUrl">
                             <div class="image-grid">
-                                <el-image
-                                        v-for="(url, idx) in scope.row.inputImageUrl.split(',')"
-                                        :key="idx"
-                                        class="grid-thumb"
-                                        :src="url + '?x-oss-process=image/resize,w_100'"
-                                        :preview-src-list="scope.row.inputImageUrl.split(',')"
-                                        :initial-index="idx"
-                                        preview-teleported
-                                        fit="cover"
-                                >
-                                </el-image>
+                                <template v-for="(url, idx) in scope.row.inputImageUrl.split(',')" :key="idx">
+                                    <video v-if="isVideo(url)" :src="url" class="grid-thumb" controls style="background: #000; object-fit: cover;"></video>
+                                    <el-image v-else class="grid-thumb" :src="url + '?x-oss-process=image/resize,w_100'" :preview-src-list="scope.row.inputImageUrl.split(',')" :initial-index="idx" preview-teleported fit="cover"></el-image>
+                                </template>
                             </div>
                         </div>
-                        <div v-else class="empty-img">无图</div>
+                        <div v-else class="empty-img">无素材</div>
                     </template>
                 </el-table-column>
 
-                <el-table-column label="参考图" width="85" align="center">
+                <el-table-column label="参考素材" width="95" align="center">
                     <template #default="scope">
-                        <el-tooltip :content="scope.row.taskType === 2 ? '场景参考图' : '颜色参考图'" placement="top">
-                            <el-image v-if="scope.row.colorImageUrl" class="thumbnail" :src="scope.row.colorImageUrl"
-                                      :preview-src-list="[scope.row.colorImageUrl]" preview-teleported
-                                      fit="cover"></el-image>
-                            <div v-else class="empty-img">无图</div>
+                        <el-tooltip :content="scope.row.taskType === 3 ? '动作参考/场景视频' : (scope.row.taskType === 2 ? '场景参考图' : '颜色参考图')" placement="top">
+                            <div v-if="scope.row.colorImageUrl">
+                                <video v-if="isVideo(scope.row.colorImageUrl)" :src="scope.row.colorImageUrl" class="thumbnail" controls style="background: #000; object-fit: cover;"></video>
+                                <el-image v-else class="thumbnail" :src="scope.row.colorImageUrl" :preview-src-list="[scope.row.colorImageUrl]" preview-teleported fit="cover"></el-image>
+                            </div>
+                            <div v-else class="empty-img">无素材</div>
                         </el-tooltip>
                     </template>
                 </el-table-column>
 
                 <el-table-column label="生成结果" width="130" align="center">
                     <template #default="scope">
-                        <el-button
-                                v-if="scope.row.resultOssUrl || scope.row.resultTempUrl"
-                                type="success"
-                                size="small"
-                                plain
-                                @click="openPreview(scope.row.resultOssUrl || scope.row.resultTempUrl)"
-                        >
-                            🔍 点击预览
-                        </el-button>
-
+                        <template v-if="scope.row.status === 'SUCCESS' && (scope.row.resultOssUrl || scope.row.resultTempUrl)">
+                            <el-button v-if="scope.row.taskType === 3 || isVideo(scope.row.resultOssUrl || scope.row.resultTempUrl)"
+                                       type="primary" color="#673AB7" size="small" plain
+                                       @click.stop="openVideoPreview(scope.row.resultOssUrl || scope.row.resultTempUrl)">
+                                🎬 预览视频
+                            </el-button>
+                            <el-button v-else
+                                       type="success" size="small" plain
+                                       @click.stop="openImagePreview(scope.row.resultOssUrl || scope.row.resultTempUrl)">
+                                🖼️ 预览图片
+                            </el-button>
+                        </template>
                         <div v-else>
-                            <el-tag v-if="scope.row.status === 'PROCESSING' || scope.row.status === 'GENERATING'"
-                                    type="warning" effect="plain" size="small">
-                                ⏳ 正在画图
-                            </el-tag>
-                            <el-tag v-else-if="scope.row.status === 'FAILED'" type="danger" effect="plain" size="small">
-                                ❌ 生成失败
-                            </el-tag>
-                            <el-tag v-else type="info" effect="plain" size="small">
-                                暂无结果
-                            </el-tag>
+                            <el-tag v-if="scope.row.status === 'PROCESSING' || scope.row.status === 'GENERATING'" type="warning" effect="plain" size="small">⏳ 正在生成</el-tag>
+                            <el-tag v-else-if="scope.row.status === 'FAILED'" type="danger" effect="plain" size="small">❌ 生成失败</el-tag>
+                            <el-tag v-else type="info" effect="plain" size="small">暂无结果</el-tag>
                         </div>
                     </template>
                 </el-table-column>
@@ -288,30 +156,11 @@
                 <el-table-column label="提示词" min-width="220">
                     <template #default="scope">
                         <div style="display: flex; align-items: center; gap: 8px;">
-                            <el-popover
-                                    placement="top-start"
-                                    title="完整提示词"
-                                    :width="400"
-                                    trigger="hover"
-                            >
-                                <div style="word-break: break-all; max-height: 300px; overflow-y: auto; line-height: 1.5; color: #606266;">
-                                    {{ scope.row.prompt }}
-                                </div>
-                                <template #reference>
-                                    <div class="prompt-text" style="flex: 1; cursor: pointer;">
-                                        {{ scope.row.prompt || '-' }}
-                                    </div>
-                                </template>
+                            <el-popover placement="top-start" title="完整提示词" :width="400" trigger="hover">
+                                <div style="word-break: break-all; max-height: 300px; overflow-y: auto; line-height: 1.5; color: #606266;">{{ scope.row.prompt }}</div>
+                                <template #reference><div class="prompt-text" style="flex: 1; cursor: pointer;">{{ scope.row.prompt || '-' }}</div></template>
                             </el-popover>
-
-                            <el-button
-                                    v-if="scope.row.prompt"
-                                    size="small"
-                                    plain
-                                    @click="copyText(scope.row.prompt)"
-                                    title="一键复制到剪贴板">
-                                📄 复制
-                            </el-button>
+                            <el-button v-if="scope.row.prompt" size="small" plain @click="copyText(scope.row.prompt)" title="一键复制到剪贴板">📄 复制</el-button>
                         </div>
                     </template>
                 </el-table-column>
@@ -320,26 +169,16 @@
                     <template #default="scope">
                         <div style="display: flex; flex-direction: column; align-items: center; gap: 8px;">
                             <el-tooltip v-if="scope.row.taskId" :content="`点击复制完整ID: ${scope.row.taskId}`" placement="top">
-                                <span
-                                        style="font-size: 13px; color: #303133; cursor: pointer; font-family: monospace;"
-                                        @click="copyText(scope.row.taskId)"
-                                >
-                                    {{ formatTaskId(scope.row.taskId) }}
-                                </span>
+                                <span style="font-size: 13px; color: #303133; cursor: pointer; font-family: monospace;" @click="copyText(scope.row.taskId)">{{ formatTaskId(scope.row.taskId) }}</span>
                             </el-tooltip>
                             <span v-else style="color: #909399; font-size: 12px;">-</span>
-
-                            <el-button v-if="scope.row.taskId" size="small" type="primary" plain @click="fetchKieRaw(scope.row.taskId)">
-                                🔍 KIE 详情
-                            </el-button>
+                            <el-button v-if="scope.row.taskId" size="small" type="primary" plain @click="fetchKieRaw(scope.row.taskId)">🔍 KIE 详情</el-button>
                         </div>
                     </template>
                 </el-table-column>
 
                 <el-table-column label="完成时间" width="160" align="center">
-                    <template #default="scope">
-                        {{ formatTime(scope.row.completeTime) }}
-                    </template>
+                    <template #default="scope">{{ formatTime(scope.row.completeTime) }}</template>
                 </el-table-column>
 
                 <el-table-column label="创建时间" width="160" align="center">
@@ -349,48 +188,34 @@
             </el-table>
 
             <div style="margin-top: 20px; display: flex; justify-content: flex-end;">
-                <el-pagination
-                        v-model:current-page="currentPage"
-                        v-model:page-size="pageSize"
-                        :page-sizes="[10, 20, 50, 100]"
-                        background
-                        layout="total, sizes, prev, pager, next, jumper"
-                        :total="total"
-                        @size-change="handleSizeChange"
-                        @current-change="handleCurrentChange"
-                />
+                <el-pagination v-model:current-page="currentPage" v-model:page-size="pageSize" :page-sizes="[10, 20, 50, 100]" background layout="total, sizes, prev, pager, next, jumper" :total="total" @size-change="handleSizeChange" @current-change="handleCurrentChange" />
             </div>
         </el-card>
 
-        <el-image-viewer
-                v-if="showViewer"
-                :url-list="viewerUrlList"
-                @close="showViewer = false"
-                hide-on-click-modal
-        />
+        <el-image-viewer v-if="showImageViewer" :url-list="previewImageUrlList" @close="showImageViewer = false" hide-on-click-modal />
 
+        <el-dialog v-model="showVideoDialog" title="🎬 视频预览" width="60%" center destroy-on-close append-to-body>
+            <div v-if="showVideoDialog" style="display: flex; justify-content: center; align-items: center; background: #000; border-radius: 8px; padding: 20px;">
+                <video :src="previewVideoUrl" controls autoplay style="max-width: 100%; max-height: 65vh; outline: none; border-radius: 4px;"></video>
+            </div>
+        </el-dialog>
     </div>
 </div>
-
-
 
 <script>
     const {createApp, ref, reactive, onMounted} = Vue;
     createApp({
         setup() {
-            // 🔴 新增：从 localStorage 读取登录信息
             const currentUserName = ref(localStorage.getItem("user_name") || '未知用户');
             const currentShopName = ref(localStorage.getItem("shop_name") || '未知店铺');
 
-            // 🔴 新增：退出登录的方法
             const handleLogout = () => {
                 ElementPlus.ElMessageBox.confirm('确定要退出登录吗？', '提示', {type: 'warning'}).then(() => {
                     localStorage.removeItem("user_token");
                     localStorage.removeItem("user_name");
                     localStorage.removeItem("shop_name");
                     window.location.href = 'login.html';
-                }).catch(() => {
-                });
+                }).catch(() => {});
             };
 
             const rawData = ref([]);
@@ -398,43 +223,53 @@
             const loading = ref(false);
             const isBatchRefreshing = ref(false);
 
-            // 🔴 1. 新增：控制大图预览器的变量
-            const showViewer = ref(false);
-            const viewerUrlList = ref([]);
+            // 🔴 采用最稳定的独立 ref 定义状态
+            const showImageViewer = ref(false);
+            const previewImageUrlList = ref([]);
+            const showVideoDialog = ref(false);
+            const previewVideoUrl = ref('');
 
-            // 🔴 2. 新增：打开预览器的方法
-            const openPreview = (url) => {
-                viewerUrlList.value = [url]; // 把要看的图塞进数组
-                showViewer.value = true;     // 弹窗展示
+            const isVideo = (url) => {
+                if (!url) return false;
+                const lower = url.toLowerCase();
+                return lower.includes('.mp4') || lower.includes('.mov');
             };
 
-            // 分页参数
+            // 🔴 图片预览
+            const openImagePreview = (url) => {
+                if (!url) return ElementPlus.ElMessage.warning('暂无图片链接');
+                previewImageUrlList.value = [url];
+                showImageViewer.value = true;
+            };
+
+            // 🔴 视频预览：去除了干扰的 setTimeout
+            const openVideoPreview = (url) => {
+                if (!url) return ElementPlus.ElMessage.warning('暂无视频链接');
+                previewVideoUrl.value = url;
+                showVideoDialog.value = true;
+            };
+
             const currentPage = ref(1);
             const pageSize = ref(20);
             const total = ref(0);
 
             const filters = reactive({spu: '', status: '', taskType: null, timeRange: null, taskId: ''});
 
-            // 🔴 核心：调用后端的 /page 接口进行服务端分页和筛选
             const fetchData = async () => {
                 loading.value = true;
                 try {
                     const params = {
-                        page: currentPage.value,
-                        size: pageSize.value,
-                        spu: filters.spu || null,
-                        status: filters.status || null,
-                        taskType: filters.taskType || null,
-                        taskId: filters.taskId || null
+                        page: currentPage.value, size: pageSize.value,
+                        spu: filters.spu || null, status: filters.status || null,
+                        taskType: filters.taskType || null, taskId: filters.taskId || null
                     };
                     if (filters.timeRange && filters.timeRange.length === 2) {
-                        params.startTime = filters.timeRange[0];
-                        params.endTime = filters.timeRange[1];
+                        params.startTime = filters.timeRange[0]; params.endTime = filters.timeRange[1];
                     }
                     const res = await axios.get('/api/tasks/page', {params});
                     if (res.data.success) {
-                        rawData.value = res.data.data.content; // 分页内容列表
-                        total.value = res.data.data.totalElements; // 库中总条数
+                        rawData.value = res.data.data.content;
+                        total.value = res.data.data.totalElements;
                     }
                 } catch (e) {
                     ElementPlus.ElMessage.error('获取列表失败');
@@ -443,20 +278,9 @@
                 }
             };
 
-            const handleSearch = () => {
-                currentPage.value = 1; // 搜索时重置为第一页
-                fetchData();
-            };
-
-            const handleSizeChange = (val) => {
-                pageSize.value = val;
-                fetchData();
-            };
-
-            const handleCurrentChange = (val) => {
-                currentPage.value = val;
-                fetchData();
-            };
+            const handleSearch = () => { currentPage.value = 1; fetchData(); };
+            const handleSizeChange = (val) => { pageSize.value = val; fetchData(); };
+            const handleCurrentChange = (val) => { currentPage.value = val; fetchData(); };
 
             const refreshRow = async (row) => {
                 if (!row.id) return;
@@ -464,11 +288,7 @@
                 try {
                     const res = await axios.post(`/api/tasks/${row.id}/refresh`);
                     if (res.data.success) Object.assign(row, res.data.data);
-                } catch (e) {
-                    console.error('单行刷新失败', e);
-                } finally {
-                    row.isRefreshing = false;
-                }
+                } catch (e) { console.error('单行刷新失败', e); } finally { row.isRefreshing = false; }
             };
 
             const syncAllProcessing = async () => {
@@ -480,217 +300,85 @@
                 ElementPlus.ElMessage.success('同步完毕！');
             };
 
-// 🔴 全新升级：直接调用后端的 ZIP 打包下载接口
             const batchDownload = async () => {
                 if (selectedRows.value.length === 0) return ElementPlus.ElMessage.warning('请先勾选需要下载的任务');
-
-                // 过滤出真正有结果图的任务
                 const validTasks = selectedRows.value.filter(row => row.resultOssUrl || row.resultTempUrl);
-                if (validTasks.length === 0) return ElementPlus.ElMessage.warning('选中的任务尚未生成图片');
-
-                // 提取需要下载的 ID 数组
+                if (validTasks.length === 0) return ElementPlus.ElMessage.warning('选中的任务尚未生成结果');
                 const ids = validTasks.map(row => row.id);
 
-                const notify = ElementPlus.ElNotification({
-                    title: '📦 正在打包下载',
-                    message: `服务器正在为您将 ${ids.length} 张图片打包成 ZIP，请耐心等待...`,
-                    duration: 0,
-                    type: 'info',
-                    offset: 100
-                });
+                const notify = ElementPlus.ElNotification({ title: '📦 正在打包下载', message: `服务器正在为您将 ${ids.length} 个结果打包成 ZIP，请耐心等待...`, duration: 0, type: 'info', offset: 100 });
 
                 try {
-                    // 发送 POST 请求给后端，携带 ids 数组。非常重要：responseType 必须设为 blob
-                    const res = await axios.post('/api/tasks/download-zip', { ids: ids }, {
-                        responseType: 'blob',
-                        timeout: 600000 // 给后端留足 10 分钟的打包时间，防止大批量下载超时
-                    });
-
-                    // 拿到二进制流，在前端生成文件并触发下载
+                    const res = await axios.post('/api/tasks/download-zip', { ids: ids }, { responseType: 'blob', timeout: 600000 });
                     const blob = new Blob([res.data], { type: 'application/zip' });
                     const url = window.URL.createObjectURL(blob);
-
                     const a = document.createElement('a');
-                    a.href = url;
-                    a.download = `AI图片打包_${validTasks.length}张_${Date.now()}.zip`;
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                    window.URL.revokeObjectURL(url);
-
-                    notify.close();
-                    ElementPlus.ElMessage.success('🎉 打包下载完成！');
-
+                    a.href = url; a.download = `AI任务打包_${validTasks.length}个_${Date.now()}.zip`;
+                    document.body.appendChild(a); a.click(); document.body.removeChild(a); window.URL.revokeObjectURL(url);
+                    notify.close(); ElementPlus.ElMessage.success('🎉 打包下载完成！');
                 } catch (error) {
-                    notify.close();
-                    console.error('打包下载失败:', error);
-                    ElementPlus.ElMessage.error('打包下载失败，请检查网络或稍后重试');
+                    notify.close(); ElementPlus.ElMessage.error('打包下载失败，请检查网络或稍后重试');
                 }
             };
 
-// 🔴 专属导出链接到 Excel 表格的方法
             const exportLinks = () => {
                 if (selectedRows.value.length === 0) return ElementPlus.ElMessage.warning('请先勾选需要导出的任务');
-
-                // 1. 将选中的行数据映射为 Excel 的列名和值
-                const excelData = selectedRows.value.map(row => {
-                    return {
-                        '任务ID': row.taskId || '-',
-                        '临时KIE结果URL': row.resultTempUrl || '-',
-                        'OSS URL': row.resultOssUrl || '-'
-                    };
-                });
-
+                const excelData = selectedRows.value.map(row => ({ '任务ID': row.taskId || '-', '临时KIE结果URL': row.resultTempUrl || '-', 'OSS URL': row.resultOssUrl || '-' }));
                 try {
-                    // 2. 将 JSON 数据转换为 Excel 工作表
                     const worksheet = XLSX.utils.json_to_sheet(excelData);
-
-                    // 💡 贴心优化：设置 Excel 每列的默认宽度，防止很长的链接挤成一堆
-                    worksheet['!cols'] = [
-                        { wpx: 250 }, // 任务ID 列宽
-                        { wpx: 400 }, // KIE 临时链接 列宽
-                        { wpx: 400 }  // OSS 链接 列宽
-                    ];
-
-                    // 3. 创建工作簿并把表塞进去
+                    worksheet['!cols'] = [{ wpx: 250 }, { wpx: 400 }, { wpx: 400 }];
                     const workbook = XLSX.utils.book_new();
                     XLSX.utils.book_append_sheet(workbook, worksheet, "任务链接数据");
-
-                    // 4. 生成 .xlsx 文件并触发浏览器下载
-                    const fileName = `AI任务链接导出_${excelData.length}条_${new Date().getTime()}.xlsx`;
-                    XLSX.writeFile(workbook, fileName);
-
+                    XLSX.writeFile(workbook, `AI任务链接导出_${excelData.length}条_${new Date().getTime()}.xlsx`);
                     ElementPlus.ElMessage.success(`🎉 成功导出 ${excelData.length} 条数据到 Excel！`);
-                } catch (error) {
-                    console.error('导出 Excel 失败:', error);
-                    ElementPlus.ElMessage.error('导出失败，请检查浏览器是否拦截了下载');
-                }
+                } catch (error) { ElementPlus.ElMessage.error('导出失败，请检查浏览器是否拦截了下载'); }
             };
 
-            const resetFilters = () => {
-                filters.spu = '';
-                filters.status = '';
-                filters.taskType = null;
-                filters.timeRange = null;
-                handleSearch();
-            };
-
-            const formatTaskId = (taskId) => {
-                if (!taskId) return '';
-                // 如果 ID 很长，只取前 6 位和后 6 位，中间用省略号
-                if (taskId.length <= 12) return taskId;
-                return taskId.substring(0, 6) + '...' + taskId.substring(taskId.length - 6);
-            };
-
-            // 🔴 新增：一键复制文本功能（兼容各种浏览器）
+            const resetFilters = () => { filters.spu = ''; filters.status = ''; filters.taskType = null; filters.timeRange = null; handleSearch(); };
+            const formatTaskId = (taskId) => { if (!taskId) return ''; return taskId.length <= 12 ? taskId : taskId.substring(0, 6) + '...' + taskId.substring(taskId.length - 6); };
             const copyText = async (text) => {
                 if (!text) return;
-                try {
-                    await navigator.clipboard.writeText(text);
-                    ElementPlus.ElMessage.success('🎉 提示词已成功复制到剪贴板！');
-                } catch (err) {
-                    // 如果部分老旧浏览器不支持 navigator.clipboard 的降级方案
-                    const textarea = document.createElement('textarea');
-                    textarea.value = text;
-                    document.body.appendChild(textarea);
-                    textarea.select();
-                    document.execCommand('copy');
-                    document.body.removeChild(textarea);
-                    ElementPlus.ElMessage.success('🎉 提示词已成功复制到剪贴板！');
-                }
+                try { await navigator.clipboard.writeText(text); ElementPlus.ElMessage.success('🎉 已成功复制到剪贴板！'); }
+                catch (err) { const t = document.createElement('textarea'); t.value = text; document.body.appendChild(t); t.select(); document.execCommand('copy'); document.body.removeChild(t); ElementPlus.ElMessage.success('🎉 已成功复制到剪贴板！'); }
             };
 
-            const getStatusType = (status) => {
-                switch (status) {
-                    case 'SUCCESS':
-                        return 'success';
-                    case 'PROCESSING':
-                    case 'GENERATING':
-                        return 'warning';
-                    case 'FAILED':
-                        return 'danger';
-                    default:
-                        return 'info';
-                }
-            };
-            // 修改为这个更通用的格式化函数
-            const formatTime = (t) => {
-                if (!t) return '-';
-                // LocalDateTime 在 JSON 中通常是 "2026-03-18T23:08:49"
-                // 我们把 T 换成空格，并截掉小数点后的毫秒部分
-                return t.replace('T', ' ').split('.')[0];
-            };
-            const handleSelectionChange = (val) => {
-                selectedRows.value = val;
-            };
+            const getStatusType = (status) => { switch (status) { case 'SUCCESS': return 'success'; case 'PROCESSING': case 'GENERATING': return 'warning'; case 'FAILED': return 'danger'; default: return 'info'; } };
+            const formatTime = (t) => { if (!t) return '-'; return t.replace('T', ' ').split('.')[0]; };
+            const handleSelectionChange = (val) => { selectedRows.value = val; };
 
-            const goToColor = () => {
-                window.location.href = 'index.html';
-            };
-            const goToScene = () => {
-                window.location.href = 'scene.html';
-            };
+            const goToColor = () => { window.location.href = 'index.html'; };
+            const goToScene = () => { window.location.href = 'scene.html'; };
+            const goToVideo = () => { window.location.href = 'video.html'; };
 
-            // --- KIE 原生报文相关变量与方法 ---
-            const rawDialogVisible = ref(false);
-            const rawJsonData = ref('');
-            const rawLoading = ref(false);
-
-            // 🔴 简单高效：直接使用 ElMessageBox 强行弹窗，无视任何图层 Bug！
             const fetchKieRaw = async (taskId) => {
-                // 开启全屏遮罩 Loading
                 const loadingInstance = ElementPlus.ElLoading.service({ fullscreen: true, text: '正在拉取 KIE 数据...' });
-
                 try {
                     const res = await axios.get(`/api/tasks/kie-raw/${taskId}`);
                     let jsonStr = '';
-
                     if (res.data && res.data.success) {
                         let data = res.data.data;
-                        try {
-                            if (typeof data === 'string') data = JSON.parse(data);
-                            jsonStr = JSON.stringify(data, null, 4);
-                        } catch (e) {
-                            jsonStr = String(data);
-                        }
-                    } else {
-                        jsonStr = '❌ 获取失败：\n' + (res.data ? res.data.message : '未知接口错误');
-                    }
-
-                    // 💡 核心：直接用 JS 调用全局提示框，注入黑底代码样式
+                        try { if (typeof data === 'string') data = JSON.parse(data); jsonStr = JSON.stringify(data, null, 4); } catch (e) { jsonStr = String(data); }
+                    } else { jsonStr = '❌ 获取失败：\n' + (res.data ? res.data.message : '未知接口错误'); }
                     ElementPlus.ElMessageBox.alert(
                         `<pre style="background: #282c34; color: #abb2bf; padding: 15px; border-radius: 8px; overflow: auto; max-height: 400px; font-size: 13px; white-space: pre-wrap; word-break: break-all; text-align: left; margin: 0;">${jsonStr}</pre>`,
-                        '📡 KIE 厂商原生返回报文',
-                        {
-                            dangerouslyUseHTMLString: true, // 允许解析 HTML
-                            customStyle: { width: '600px', maxWidth: '90vw' }, // 设定弹窗宽度
-                            confirmButtonText: '关闭'
-                        }
+                        '📡 KIE 厂商原生返回报文', { dangerouslyUseHTMLString: true, customStyle: { width: '600px', maxWidth: '90vw' }, confirmButtonText: '关闭' }
                     );
-
-                } catch (e) {
-                    console.error("KIE 详情请求崩溃:", e);
-                    ElementPlus.ElMessage.error('获取 KIE 详情失败，请检查网络');
-                } finally {
-                    // 关闭 Loading
-                    loadingInstance.close();
-                }
+                } catch (e) { ElementPlus.ElMessage.error('获取 KIE 详情失败，请检查网络'); } finally { loadingInstance.close(); }
             };
 
             onMounted(fetchData);
 
             return {
-                // 🔴 新增暴漏的变量和方法
                 currentUserName, currentShopName, handleLogout,
-
                 rawData, filters, loading, isBatchRefreshing, selectedRows,
                 currentPage, pageSize, total, copyText,
-                showViewer, viewerUrlList, openPreview,
-                exportLinks,
-                fetchData, handleSearch, handleSizeChange, handleCurrentChange, resetFilters,
+                showImageViewer, previewImageUrlList,
+                showVideoDialog, previewVideoUrl,
+                exportLinks, fetchData, handleSearch, handleSizeChange, handleCurrentChange, resetFilters,
                 getStatusType, formatTime, handleSelectionChange, refreshRow, syncAllProcessing,
-                formatTaskId, fetchKieRaw,
-                goToColor, goToScene, batchDownload
+                formatTaskId, fetchKieRaw, batchDownload,
+                goToColor, goToScene, goToVideo, isVideo,
+                openImagePreview, openVideoPreview
             };
         }
     }).use(ElementPlus).mount('#app');

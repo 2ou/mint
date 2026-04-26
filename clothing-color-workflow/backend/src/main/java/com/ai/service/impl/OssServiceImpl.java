@@ -76,6 +76,12 @@ public class OssServiceImpl implements OssService {
 
     @Override
     public String uploadResultToOss(String spu, String resultUrl, Long taskId) {
+        // 🔴 关键修复：防御空指针
+        if (resultUrl == null || resultUrl.trim().isEmpty()) {
+            log.error("【转存异常】传入的 resultUrl 为空！任务ID: {}", taskId);
+            return null; // 直接返回，中止转存，防止引发系统崩溃
+        }
+
         Future<String> future = null;
 
         try {
