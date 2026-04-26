@@ -19,6 +19,7 @@ import java.net.URLEncoder;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/tasks")
@@ -207,7 +208,6 @@ public class ImageTaskController {
     @PostMapping("/create-video")
     public ApiResponse<ImageTask> createVideoTask(@RequestBody VideoTaskRequest req, HttpServletRequest request) {
 
-        // 🔴 修复 1: 直接从 Request Header 获取 Token 并查询用户实体
         String token = request.getHeader("X-User-Token");
         if (token == null || token.trim().isEmpty()) {
             return ApiResponse.fail("未登录，缺少请求头 Token");
@@ -217,14 +217,43 @@ public class ImageTaskController {
             return ApiResponse.fail("未登录或 Token 已失效");
         }
 
-        // 我们复用 ImageTask 表，用 taskType = 3 代表视频任务
         ImageTask task = new ImageTask();
         task.setSpu(req.getSpu());
         task.setModel(req.getModel());
 
-        // 提取 prompt 用作大盘展示
-        if (req.getInput() != null && req.getInput().get("prompt") != null) {
-            task.setPrompt(req.getInput().get("prompt").toString());
+        // 🔴 增强提取逻辑：把 prompt、图片、视频全挖出来存库
+        if (req.getInput() != null) {
+            Map<String, Object> input = req.getInput();
+
+            // 提取 Prompt
+            if (input.get("prompt") != null) {
+                task.setPrompt(input.get("prompt").toString());
+            }
+
+            try {
+                // 提取参考图 (兼容 Seedance 和 Kling 的不同字段)
+                if (input.containsKey("reference_image_urls")) {
+                    List<String> images = (List<String>) input.get("reference_image_urls");
+                    if (images != null && !images.isEmpty()) task.setInputImageUrl(String.join(",", images));
+                } else if (input.containsKey("input_urls")) {
+                    List<String> images = (List<String>) input.get("input_urls");
+                    if (images != null && !images.isEmpty()) task.setInputImageUrl(String.join(",", images));
+                } else if (input.containsKey("image_urls")) {
+                    List<String> images = (List<String>) input.get("image_urls");
+                    if (images != null && !images.isEmpty()) task.setInputImageUrl(String.join(",", images));
+                }
+
+                // 提取参考视频 (复用 ColorImageUrl 字段来存放视频链接，方便大盘展示和打包下载)
+                if (input.containsKey("reference_video_urls")) {
+                    List<String> videos = (List<String>) input.get("reference_video_urls");
+                    if (videos != null && !videos.isEmpty()) task.setColorImageUrl(String.join(",", videos));
+                } else if (input.containsKey("video_urls")) {
+                    List<String> videos = (List<String>) input.get("video_urls");
+                    if (videos != null && !videos.isEmpty()) task.setColorImageUrl(String.join(",", videos));
+                }
+            } catch (Exception e) {
+                log.warn("提取视频任务参考素材失败", e);
+            }
         }
 
         task.setTaskType(3);
@@ -232,7 +261,6 @@ public class ImageTaskController {
         task.setShopName(user.getShopName());
         task.setOperator(user.getUsername());
 
-        // 🔴 修复 2: 此时 imageTaskRepository 已经正确注入，可以保存了
         imageTaskRepository.save(task);
 
         try {

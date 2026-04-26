@@ -168,18 +168,40 @@ public class KieClientServiceImpl implements KieClientService {
 
 
     /**
-     * 内部私有方法：从 data 节点中提取图片 URL
+     * 按照 KIE 官方最新文档规范提取结果链接
      */
-    private String parseUrlFromData(JsonNode data) {
+    private String parseUrlFromData(com.fasterxml.jackson.databind.JsonNode data) {
         if (data == null || data.isEmpty()) return null;
-        JsonNode resultObj = data.isObject() ? data : data.get(0);
+
+        // 兼容 data 是对象或数组的情况
+        com.fasterxml.jackson.databind.JsonNode resultObj = data.isObject() ? data : data.get(0);
         if (resultObj == null) return null;
 
-        // 🔴 增加视频字段支持
-        if (resultObj.has("imageUrl")) return resultObj.get("imageUrl").asText();
-        if (resultObj.has("videoUrl")) return resultObj.get("videoUrl").asText(); // 新增
-        if (resultObj.has("video_url")) return resultObj.get("video_url").asText(); // 新增
-        if (resultObj.has("url")) return resultObj.get("url").asText();
+        // 🔴 严格按照官方标准：解析 resultJson 字段
+        if (resultObj.has("resultJson") && !resultObj.get("resultJson").isNull()) {
+            try {
+                // 1. 获取套娃的 JSON 字符串
+                String innerJsonStr = resultObj.get("resultJson").asText();
+
+                // 2. 将字符串反序列化为 JSON 树
+                com.fasterxml.jackson.databind.JsonNode innerNode = new com.fasterxml.jackson.databind.ObjectMapper().readTree(innerJsonStr);
+
+                // 3. 严格提取 resultUrls 数组中的第一个链接（无论是图片还是视频）
+                if (innerNode.has("resultUrls") && innerNode.get("resultUrls").isArray() && innerNode.get("resultUrls").size() > 0) {
+                    return innerNode.get("resultUrls").get(0).asText();
+                }
+            } catch (Exception e) {
+                log.warn("❌ 解析 KIE 标准 resultJson 格式失败: {}", e.getMessage());
+            }
+        }
+
+        // ================= 兜底防御区 =================
+        // 虽然官方说统一了，但以防万一某些老模型没迁移完，保留几个最基础的兜底
+        if (resultObj.has("video_url") && !resultObj.get("video_url").isNull()) return resultObj.get("video_url").asText();
+        if (resultObj.has("imageUrl") && !resultObj.get("imageUrl").isNull()) return resultObj.get("imageUrl").asText();
+        if (resultObj.has("url") && !resultObj.get("url").isNull()) return resultObj.get("url").asText();
+        // ==============================================
+
         return null;
     }
 
@@ -203,21 +225,22 @@ public class KieClientServiceImpl implements KieClientService {
 
     @Override
     public KieTaskResult createVideoTask(String model, Map<String, Object> input) {
+        // 🔴 核心修改：从统一配置中实时动态获取
         String apiUrl = appProperties.getKie().getBaseUrl();
         String apiKey = appProperties.getKie().getApiKey();
+
         // 1. 构造 KIE 任务请求体
         KieCreateTaskRequest request = new KieCreateTaskRequest();
         request.setModel(model);
-        // 🔴 关键点：将 callBackUrl 设为 null，明确告诉 KIE 我们将通过轮询来获取结果
-        request.setCallBackUrl(null);
+        request.setCallBackUrl(null); // 纯轮询模式
         request.setInput(input);
 
         String jsonBody = gson.toJson(request);
         log.info("🚀 [视频任务下发] 模型: {}, 请求内容: {}", model, jsonBody);
 
-        // 2. 构造 OkHttp 请求
+        // 2. 构造 OkHttp 请求 (使用动态获取的 apiUrl 和 apiKey)
         okhttp3.Request okRequest = new okhttp3.Request.Builder()
-                .url(apiUrl + "/api/v1/jobs/createTask")
+                .url(apiUrl + "/jobs/createTask") // 完美拼接，不会再报 404
                 .post(okhttp3.RequestBody.create(jsonBody, okhttp3.MediaType.parse("application/json")))
                 .addHeader("Authorization", "Bearer " + apiKey)
                 .build();
@@ -232,16 +255,33 @@ public class KieClientServiceImpl implements KieClientService {
             }
 
             log.info("📥 [KIE 响应成功]: {}", resStr);
-            KieTaskResult result = gson.fromJson(resStr, KieTaskResult.class);
 
-            // 4. 业务逻辑校验
-            if (result == null || !"success".equals(result.getStatus())) {
-                String errorDetail = (result != null && result.getErrorMessage() != null) ? result.getErrorMessage() : "响应体解析为空";
-                log.warn("⚠️ KIE 任务受理失败: {}", errorDetail);
-                throw new BusinessException("AI 服务受理失败: " + errorDetail);
+            // 智能拆包解析 KIE 的嵌套 JSON 结构
+            com.google.gson.JsonObject rootObj = com.google.gson.JsonParser.parseString(resStr).getAsJsonObject();
+
+            int code = rootObj.has("code") ? rootObj.get("code").getAsInt() : 200;
+            String msg = rootObj.has("msg") ? rootObj.get("msg").getAsString() : "";
+            String status = rootObj.has("status") ? rootObj.get("status").getAsString() : msg;
+
+            if (code != 200 && !"success".equalsIgnoreCase(status) && !"success".equalsIgnoreCase(msg)) {
+                log.warn("⚠️ KIE 任务受理失败: {}", resStr);
+                throw new BusinessException("AI 服务受理失败: " + msg);
             }
 
-            // 返回包含 taskId 的结果，供后续轮询使用
+            com.google.gson.JsonObject dataObj = rootObj.has("data") && !rootObj.get("data").isJsonNull()
+                    ? rootObj.getAsJsonObject("data") : rootObj;
+
+            if (!dataObj.has("taskId") || dataObj.get("taskId").isJsonNull()) {
+                log.warn("⚠️ KIE 任务受理异常，找不到 taskId: {}", resStr);
+                throw new BusinessException("AI 服务未返回 taskId");
+            }
+
+            String taskId = dataObj.get("taskId").getAsString();
+
+            KieTaskResult result = new KieTaskResult();
+            result.setTaskId(taskId);
+            result.setStatus("SUCCESS");
+
             return result;
 
         } catch (java.net.SocketTimeoutException e) {
