@@ -225,13 +225,22 @@ public class ImageTaskController {
         if (req.getInput() != null) {
             Map<String, Object> input = req.getInput();
 
-            // 提取 Prompt
+            // 提取 Prompt (完美兼容 HappyHorse、Seedance、Kling单/多镜头)
             if (input.get("prompt") != null) {
                 task.setPrompt(input.get("prompt").toString());
+            } else if (input.containsKey("multi_prompt")) {
+                try {
+                    List<Map<String, Object>> multiPrompts = (List<Map<String, Object>>) input.get("multi_prompt");
+                    if (multiPrompts != null && !multiPrompts.isEmpty() && multiPrompts.get(0).containsKey("prompt")) {
+                        task.setPrompt(multiPrompts.get(0).get("prompt").toString() + " (+多镜头分镜)");
+                    }
+                } catch (Exception e) {
+                    log.warn("提取多镜头 prompt 失败", e);
+                }
             }
 
             try {
-                // 提取参考图 (兼容 Seedance 和 Kling 的不同字段)
+                // 提取参考图 (兼容 Seedance 和 Kling、HappyHorse 的不同字段)
                 if (input.containsKey("reference_image_urls")) {
                     List<String> images = (List<String>) input.get("reference_image_urls");
                     if (images != null && !images.isEmpty()) task.setInputImageUrl(String.join(",", images));
