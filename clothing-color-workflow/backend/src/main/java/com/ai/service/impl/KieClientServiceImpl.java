@@ -72,9 +72,20 @@ public class KieClientServiceImpl implements KieClientService {
             }
 
             inputNode.set("image_input", imageArray);
-            // 🔴 关键修复：不再写死 "auto"，使用传进来的 aspectRatio，如果前端没传则默认 auto
-            inputNode.put("aspect_ratio", aspectRatio != null && !aspectRatio.trim().isEmpty() ? aspectRatio : "auto");
-            inputNode.put("resolution", resolution);
+            // 🔴 修复：使用动态传入的画面比例，如果为空则兜底使用 "auto"
+            if (aspectRatio != null && !aspectRatio.trim().isEmpty()) {
+                inputNode.put("aspect_ratio", aspectRatio.trim());
+            } else {
+                inputNode.put("aspect_ratio", "auto");
+            }
+
+            // 🔴 修复：防空兜底，确保 resolution 也有值
+            if (resolution != null && !resolution.trim().isEmpty()) {
+                inputNode.put("resolution", resolution.trim());
+            } else {
+                inputNode.put("resolution", "2K");
+            }
+
             inputNode.put("output_format", "png");
 
             rootNode.set("input", inputNode);

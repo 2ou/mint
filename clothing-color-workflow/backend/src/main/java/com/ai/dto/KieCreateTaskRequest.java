@@ -15,4 +15,8 @@ public class KieCreateTaskRequest {
     // 🔴 使用 Map 接收前端传来的任何动态参数，完美兼容各种模型
     private Map<String, Object> input;
 
+    // 🔴 新增：传递给 KIE 接口的分辨率和比例
+    private String resolution;
+    private String aspect_ratio;
+
 }

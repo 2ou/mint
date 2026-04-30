@@ -102,13 +102,17 @@ public class ImageTaskServiceImpl implements ImageTaskService {
     @Override
     public TaskCreateResponse createWithUrl(String spu, String prompt, String resolution, String aspectRatio, String model, String inputUrl, String colorUrl, Integer taskType, String operator, String shopName) {
         ImageTask task = new ImageTask();
-        task.setSpu(spu); task.setPrompt(prompt); task.setResolution(resolution); task.setModel(model);
+        task.setSpu(spu); task.setPrompt(prompt);
+        task.setResolution(resolution);
+        // task.setAspectRatio(aspectRatio); // 如果 ImageTask 实体有这个字段就存起来
+        task.setModel(model);
         task.setInputImageUrl(inputUrl); task.setColorImageUrl(colorUrl); task.setStatus("CREATED");
         task.setTaskType(taskType != null ? taskType : 1);
         task.setOperator(operator);
         task.setShopName(shopName);
 
         try {
+            // 🔴 假设 kieClientService.createTask 方法签名也修改为接收 aspectRatio
             String taskId = kieClientService.createTask(spu, prompt, resolution, aspectRatio, model, inputUrl, colorUrl);
             task.setTaskId(taskId); task.setStatus("PROCESSING");
         } catch (Exception e) {
@@ -116,7 +120,7 @@ public class ImageTaskServiceImpl implements ImageTaskService {
             task.setStatus("FAILED");
             String finalErrorMsg = e.getMessage() != null ? e.getMessage() : "未知异常";
 
-            // 🔴 智能截取：只找 '{' 后面的纯 JSON 部分进行解析
+            // 智能截取：只找 '{' 后面的纯 JSON 部分进行解析
             try {
                 int jsonStartIndex = finalErrorMsg.indexOf("{");
                 if (jsonStartIndex != -1) {
@@ -180,7 +184,7 @@ public class ImageTaskServiceImpl implements ImageTaskService {
                 try {
                     log.info("【步骤3】尝试执行双保险转存（本地硬盘 + OSS）...");
                     // 💡 这里的参数调整为 3 个，传入 task.getId() 供命名使用
-                    String combinedResult = ossService.uploadResultToOss(task.getSpu(), kieResult.getResultUrl(), task.getResolution());
+                    String combinedResult = ossService.uploadResultToOss(task.getSpu(), kieResult.getResultUrl(), task.getId());
 
                     if (combinedResult != null && combinedResult.contains("|")) {
                         String[] parts = combinedResult.split("\\|");
@@ -194,23 +198,28 @@ public class ImageTaskServiceImpl implements ImageTaskService {
                         }
                     }
                 } catch (Exception subEx) {
-                    // 🔴 核心逻辑 4：如果转存报错，仅仅打印日志，绝对不去修改 task 的状态！
-                    // 这样前端看到的状态依然是“成功”，并且能通过临时链接看图。
-                    log.error("【转存降级】本地保存或 OSS 上传失败，但不影响任务成功状态: {}", subEx.getMessage());
+                    // 仅记录转存异常，不修改 task 状态，不让 refresh 操作报错
+                    log.error("【转存降级】任务 {} 原始图已拿到，但本地保存或 OSS 上传失败: {}", id, subEx.getMessage());
                 }
 
-            } else if ("fail".equals(kieResult.getStatus()) || "failed".equals(kieResult.getStatus())) {
+            } else if (kieResult != null && "FAILED".equalsIgnoreCase(kieResult.getStatus())) {
+                // KIE 侧明确返回失败
                 task.setStatus("FAILED");
+                // 💡 使用 getErrorMsg() 匹配 DTO 字段
                 task.setErrorMessage(kieResult.getErrorMessage());
                 imageTaskRepository.save(task);
+                log.warn("【任务标记失败】单号: {}, 失败原因: {}", task.getTaskId(), kieResult.getErrorMessage());
             }
+
         } catch (Throwable e) {
-            log.error("刷新任务发生系统崩溃: {}", e.getMessage());
-            // 注意：这里捕获的是 KIE 接口查询本身的崩溃。
-            // 转存的崩溃已经被上面拦截了，不会走到这里。
-            task.setStatus("FAILED");
-            task.setErrorMessage("查询远端结果异常: " + e.getMessage());
-            imageTaskRepository.save(task);
+            log.error("【系统级刷新异常】任务 ID: {}, 错误: {}", id, e.getMessage());
+            // 捕获网络异常或查询接口异常
+            // 我们不在这里重置 SUCCESS 状态的任务，仅处理还在 PROCESSING 的
+            if (!"SUCCESS".equals(task.getStatus())) {
+                task.setStatus("FAILED");
+                task.setErrorMessage("刷新任务时系统异常: " + e.getMessage());
+                imageTaskRepository.save(task);
+            }
         }
 
         return new TaskCreateResponse(task);
@@ -330,55 +339,4 @@ public class ImageTaskServiceImpl implements ImageTaskService {
         }
     }
 
-    @Override
-    public List<com.ai.dto.SpuStatDTO> getTaskStats(String spu, LocalDateTime startTime, LocalDateTime endTime) {
-        // 1. 构建查询条件：只查 SUCCESS 的任务，并加上 SPU 和 时间筛选
-        Specification<ImageTask> spec = (root, query, cb) -> {
-            List<Predicate> predicates = new ArrayList<>();
-            predicates.add(cb.equal(root.get("status"), "SUCCESS")); // 🔴 核心：失败的不计算
-
-            if (spu != null && !spu.trim().isEmpty()) {
-                predicates.add(cb.like(root.get("spu"), "%" + spu.trim() + "%"));
-            }
-            if (startTime != null) {
-                predicates.add(cb.greaterThanOrEqualTo(root.get("createdAt"), startTime));
-            }
-            if (endTime != null) {
-                predicates.add(cb.lessThanOrEqualTo(root.get("createdAt"), endTime));
-            }
-            return cb.and(predicates.toArray(new Predicate[0]));
-        };
-
-        // 2. 查出所有符合条件的成功任务
-        List<ImageTask> tasks = imageTaskRepository.findAll(spec);
-
-        // 3. 在 Java 内存中按 SPU 分组汇总
-        java.util.Map<String, com.ai.dto.SpuStatDTO> statMap = new java.util.HashMap<>();
-
-        for (ImageTask task : tasks) {
-            String targetSpu = task.getSpu() != null && !task.getSpu().trim().isEmpty() ? task.getSpu().trim() : "未知款号";
-
-            com.ai.dto.SpuStatDTO dto = statMap.computeIfAbsent(targetSpu, k -> {
-                com.ai.dto.SpuStatDTO newDto = new com.ai.dto.SpuStatDTO();
-                newDto.setSpu(k);
-                return newDto;
-            });
-
-            dto.setTaskCount(dto.getTaskCount() + 1);
-
-            // 🔴 核心算法：2K 算 0.22元，4K 算 0.44元
-            if ("4K".equalsIgnoreCase(task.getResolution())) {
-                dto.setCount4K(dto.getCount4K() + 1);
-                dto.setTotalCost(dto.getTotalCost() + 0.44);
-            } else {
-                dto.setCount2K(dto.getCount2K() + 1);
-                dto.setTotalCost(dto.getTotalCost() + 0.22);
-            }
-        }
-
-        // 4. 按总消费金额降序排列返回
-        return statMap.values().stream()
-                .sorted((a, b) -> Double.compare(b.getTotalCost(), a.getTotalCost()))
-                .collect(Collectors.toList());
-    }
 }
