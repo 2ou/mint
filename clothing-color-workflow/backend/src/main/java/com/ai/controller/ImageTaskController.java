@@ -250,6 +250,9 @@ public class ImageTaskController {
                 } else if (input.containsKey("image_urls")) {
                     List<String> images = (List<String>) input.get("image_urls");
                     if (images != null && !images.isEmpty()) task.setInputImageUrl(String.join(",", images));
+                } else if (input.containsKey("first_frame_url")) {
+                    Object firstFrame = input.get("first_frame_url");
+                    if (firstFrame != null) task.setInputImageUrl(firstFrame.toString());
                 }
 
                 // 提取参考视频 (复用 ColorImageUrl 字段来存放视频链接，方便大盘展示和打包下载)

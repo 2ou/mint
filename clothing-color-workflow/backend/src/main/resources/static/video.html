@@ -76,7 +76,7 @@
                     <el-radio-button value="kling-3.0/motion-control">🌟 可灵 3.0 (运镜)</el-radio-button>
                     <el-radio-button value="kling-3.0/video">🎥 可灵 3.0 (标准)</el-radio-button>
                     <el-radio-button value="happyhorse/image-to-video">🐴 HappyHorse</el-radio-button>
-                    <el-radio-button value="bytedance/seedance-2">💃 字节 Seedance</el-radio-button>
+                    <el-radio-button value="bytedance/seedance">💃 字节 Seedance</el-radio-button>
                 </el-radio-group>
             </el-form-item>
 
@@ -321,16 +321,50 @@
             </el-row>
         </div>
 
-        <div v-if="form.model === 'bytedance/seedance-2'">
+        <div v-if="form.model === 'bytedance/seedance'">
             <div class="section-title">2. 字节 Seedance 强控参数</div>
+
+            <el-form label-width="120px" style="margin-bottom: 20px;">
+                <el-form-item label="引擎版本">
+                    <el-radio-group v-model="form.seedanceVersion" size="small">
+                        <el-radio-button value="bytedance/seedance-2">标准版 (Seedance 2.0)</el-radio-button>
+                        <el-radio-button value="bytedance/seedance-2-fast">⚡ 极速版 (Fast)</el-radio-button>
+                    </el-radio-group>
+                </el-form-item>
+            </el-form>
+
+            <el-row :gutter="20" style="margin-bottom: 20px;">
+                <el-col :span="6">
+                    <div style="font-weight:bold; margin-bottom:10px; color:#606266; font-size: 13px;">首帧参考图 (可选)</div>
+                    <div class="upload-box" :class="{'is-dragover': drag.seeFirstImg}"
+                         @click="triggerUpload('seeFirstImg', 'image/*')"
+                         @dragover.prevent="drag.seeFirstImg = true" @dragleave.prevent="drag.seeFirstImg = false"
+                         @drop.prevent="e => handleDrop(e, 'seeFirstImg', 'image/*')">
+                        <img v-if="form.seeFirstImg" :src="form.seeFirstImg" class="media-preview">
+                        <div v-else>➕ 拖拽上传首帧</div>
+                        <div v-if="form.seeFirstImg" class="remove-btn" @click.stop="form.seeFirstImg=''; filesToUpload.seeFirstImg=null">X</div>
+                    </div>
+                </el-col>
+                <el-col :span="6">
+                    <div style="font-weight:bold; margin-bottom:10px; color:#606266; font-size: 13px;">尾帧参考图 (可选)</div>
+                    <div class="upload-box" :class="{'is-dragover': drag.seeLastImg}"
+                         @click="triggerUpload('seeLastImg', 'image/*')"
+                         @dragover.prevent="drag.seeLastImg = true" @dragleave.prevent="drag.seeLastImg = false"
+                         @drop.prevent="e => handleDrop(e, 'seeLastImg', 'image/*')">
+                        <img v-if="form.seeLastImg" :src="form.seeLastImg" class="media-preview">
+                        <div v-else>➕ 拖拽上传尾帧</div>
+                        <div v-if="form.seeLastImg" class="remove-btn" @click.stop="form.seeLastImg=''; filesToUpload.seeLastImg=null">X</div>
+                    </div>
+                </el-col>
+            </el-row>
+
             <div style="font-weight:bold; margin-bottom:10px;">多参考图 (支持框选多图 / 直接拖拽到框内)</div>
             <div class="seedance-drop-zone" :class="{'is-dragover': drag.seeImages}"
                  @dragover.prevent="drag.seeImages = true" @dragleave.prevent="drag.seeImages = false"
                  @drop.prevent="e => handleDrop(e, 'seeImages', 'image/*', true)">
                 <div v-for="(imgUrl, index) in form.seeImages" :key="index" class="ref-img-card">
-                    <img :src="imgUrl" />
+                    <img :src="imgUrl" style="height: 100%; border-radius: 8px;" />
                     <div class="remove-btn" @click="removeSeeImage(index)">X</div>
-                    <el-button class="insert-btn" type="primary" plain @click="insertImageToken(index)">+ 插入 @Image{{index + 1}}</el-button>
                 </div>
                 <div class="upload-box" style="width: 110px; height: 140px; border-color: #dcdfe6; background: #fff;" @click="triggerUpload('seeImages', 'image/*', true)">
                     <div style="font-size: 24px; margin-bottom: 5px;">➕</div>
@@ -393,21 +427,26 @@
                 klingMultiPrompts: [{ prompt: '', duration: 5 }], klingRatio: '16:9', klingDuration: 5, klingMode: 'pro',
                 klingElements: [],
                 happyhorseImg: '', happyhorseRes: '1080p', happyhorseDuration: 5, happyhorseSeed: null,
-                seeImages: [], seeVid: '', seeRatio: '16:9', seeRes: '1080p', seeDuration: 15, seeAudio: true
+
+                seedanceVersion: 'bytedance/seedance-2',
+                seeImages: [], seeVid: '', seeRatio: '16:9', seeRes: '1080p', seeDuration: 15, seeAudio: true,
+                seeFirstImg: '', seeLastImg: ''
             });
 
             const filesToUpload = reactive({
                 motionImg: null, motionVid: null,
                 klingFirstImg: null, klingLastImg: null, klingMultiImage: null,
                 happyhorseImg: null,
-                seeImages: [], seeVid: null
+                seeImages: [], seeVid: null,
+                seeFirstImg: null, seeLastImg: null
             });
 
             const drag = reactive({
                 motionImg: false, motionVid: false,
                 klingFirstImg: false, klingLastImg: false, klingMultiImage: false,
                 happyhorseImg: false,
-                seeImages: false, seeVid: false
+                seeImages: false, seeVid: false,
+                seeFirstImg: false, seeLastImg: false
             });
 
             const loading = ref(false);
@@ -424,7 +463,7 @@
             const mentionItems = computed(() => {
                 if (form.model === 'kling-3.0/video') {
                     return form.klingElements.map(e => ({ value: e.name, label: e.name || '未命名 Element' }));
-                } else if (form.model === 'bytedance/seedance-2') {
+                } else if (form.model === 'bytedance/seedance') {
                     return form.seeImages.map((_, i) => ({ value: `Image${i + 1}`, label: `Image${i + 1}` }));
                 }
                 return [];
@@ -432,13 +471,13 @@
 
             const mentionEmptyText = computed(() => {
                 if (form.model === 'kling-3.0/video') return '请先在下方添加 Element 组';
-                if (form.model === 'bytedance/seedance-2') return '请先上传参考图，系统将自动生成 @Image 标签';
+                if (form.model === 'bytedance/seedance') return '请先上传参考图，系统将自动生成 @Image 标签';
                 return '暂无可用元素';
             });
 
             const mentionTitle = computed(() => {
                 if (form.model === 'kling-3.0/video') return '选择插入 Element';
-                if (form.model === 'bytedance/seedance-2') return '选择插入参考图 (@Image)';
+                if (form.model === 'bytedance/seedance') return '选择插入参考图 (@Image)';
                 return '选择元素';
             });
 
@@ -451,7 +490,7 @@
             const mention = reactive({ visible: false, targetObj: null, targetField: '', startPos: 0, endPos: 0, x: 0, y: 0, limitWarned: false });
 
             const handlePromptInput = (e, obj, field) => {
-                if (form.model !== 'kling-3.0/video' && form.model !== 'bytedance/seedance-2') {
+                if (form.model !== 'kling-3.0/video' && form.model !== 'bytedance/seedance') {
                     mention.visible = false;
                     return;
                 }
@@ -522,7 +561,6 @@
             };
 
             const removeSeeImage = (index) => { form.seeImages.splice(index, 1); filesToUpload.seeImages.splice(index, 1); };
-            const insertImageToken = (index) => { const token = `@Image${index + 1}`; form.prompt = (form.prompt ? (form.prompt.endsWith(' ') ? form.prompt + token : form.prompt + ' ' + token) : token); ElementPlus.ElMessage.success(`已插入: ${token}`); };
 
             const uploadSingleToOss = async (file, pd) => {
                 if (!file) return null;
@@ -571,15 +609,22 @@
                         inputPayload = { prompt: form.prompt, image_urls: [imgUrl], duration: form.happyhorseDuration, resolution: form.happyhorseRes };
                         if (form.happyhorseSeed !== null) inputPayload.seed = form.happyhorseSeed;
                     }
-                    else if (form.model === 'bytedance/seedance-2') {
+                    else if (form.model === 'bytedance/seedance') {
                         inputPayload = { prompt: form.prompt, resolution: form.seeRes, aspect_ratio: form.seeRatio, duration: form.seeDuration, generate_audio: form.seeAudio };
                         uploadProgressMsg.value = '上传素材...';
+
                         if (filesToUpload.seeImages.length > 0) inputPayload.reference_image_urls = await Promise.all(filesToUpload.seeImages.map(f => uploadSingleToOss(f, pd)));
                         if (filesToUpload.seeVid) inputPayload.reference_video_urls = [await uploadSingleToOss(filesToUpload.seeVid, pd)];
+
+                        // 🔴 均提取首尾帧，供标准版和极速版共同使用
+                        if (filesToUpload.seeFirstImg) inputPayload.first_frame_url = await uploadSingleToOss(filesToUpload.seeFirstImg, pd);
+                        if (filesToUpload.seeLastImg) inputPayload.last_frame_url = await uploadSingleToOss(filesToUpload.seeLastImg, pd);
                     }
 
                     uploadProgressMsg.value = '任务派发中...';
-                    const res = await axios.post('/api/tasks/create-video', { spu: form.spu, model: form.model, input: inputPayload });
+                    const targetModel = form.model === 'bytedance/seedance' ? form.seedanceVersion : form.model;
+
+                    const res = await axios.post('/api/tasks/create-video', { spu: form.spu, model: targetModel, input: inputPayload });
                     if (res.data.success) { ElementPlus.ElMessage.success('🎉 视频任务已下发！'); setTimeout(() => goToList(), 1500); } else { ElementPlus.ElMessage.error(res.data.message); }
                 } catch (e) { ElementPlus.ElMessage.error(e.message || '操作失败'); } finally { loading.value = false; }
             };
@@ -591,7 +636,7 @@
             return {
                 form, filesToUpload, drag, isMultipleUpload, loading, uploadProgressMsg,
                 mention, mentionItems, mentionEmptyText, mentionTitle, handlePromptInput, insertMention,
-                totalMultiShotDuration, getMaxDurationForShot, triggerUpload, handleFileSelected, handleDrop, insertImageToken, removeSeeImage, submit,
+                totalMultiShotDuration, getMaxDurationForShot, triggerUpload, handleFileSelected, handleDrop, removeSeeImage, submit,
                 addKlingShot, removeKlingShot, addKlingElement, removeKlingElement, removeKlingElementImage,
                 goToColor, goToScene, goToList
             };
