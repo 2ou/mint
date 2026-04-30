@@ -100,23 +100,27 @@ public class ImageTaskServiceImpl implements ImageTaskService {
     }
 
     @Override
-    public TaskCreateResponse createWithUrl(String spu, String prompt, String resolution, String model, String inputUrl, String colorUrl, Integer taskType, String operator, String shopName) {
+    public TaskCreateResponse createWithUrl(String spu, String prompt, String resolution, String aspectRatio, String model, String inputUrl, String colorUrl, Integer taskType, String operator, String shopName) {
         ImageTask task = new ImageTask();
-        task.setSpu(spu); task.setPrompt(prompt); task.setResolution(resolution); task.setModel(model);
+        task.setSpu(spu); task.setPrompt(prompt);
+        task.setResolution(resolution);
+        // task.setAspectRatio(aspectRatio); // 如果 ImageTask 实体有这个字段就存起来
+        task.setModel(model);
         task.setInputImageUrl(inputUrl); task.setColorImageUrl(colorUrl); task.setStatus("CREATED");
         task.setTaskType(taskType != null ? taskType : 1);
         task.setOperator(operator);
         task.setShopName(shopName);
 
         try {
-            String taskId = kieClientService.createTask(spu, prompt, resolution, model, inputUrl, colorUrl);
+            // 🔴 假设 kieClientService.createTask 方法签名也修改为接收 aspectRatio
+            String taskId = kieClientService.createTask(spu, prompt, resolution, aspectRatio, model, inputUrl, colorUrl);
             task.setTaskId(taskId); task.setStatus("PROCESSING");
         } catch (Exception e) {
             log.error("创建 KIE 任务失败", e);
             task.setStatus("FAILED");
             String finalErrorMsg = e.getMessage() != null ? e.getMessage() : "未知异常";
 
-            // 🔴 智能截取：只找 '{' 后面的纯 JSON 部分进行解析
+            // 智能截取：只找 '{' 后面的纯 JSON 部分进行解析
             try {
                 int jsonStartIndex = finalErrorMsg.indexOf("{");
                 if (jsonStartIndex != -1) {

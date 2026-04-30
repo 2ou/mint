@@ -117,14 +117,14 @@
         <div class="drop-zones-container">
             <div class="drop-zone" :class="{ 'is-dragover': drag.input }" @click="$refs.inputRef.click()" @dragover.prevent="drag.input = true" @dragleave.prevent="drag.input = false" @drop.prevent="e => handleDrop(e, 'input')">
                 <span class="icon">👕</span><div>点击/拖拽上传 <b>原图</b></div>
-                <div style="font-size: 12px; color: #A8ABB2; margin-top: 8px;">(单张图片大小不超过 5MB)</div>
+                <div style="font-size: 12px; color: #A8ABB2; margin-top: 8px;">(单张图片大小不超过 10MB)</div>
                 <input type="file" multiple ref="inputRef" @change="e => handleUpload(e, 'input')" accept="image/*" class="hidden-input"/>
             </div>
 
             <div style="flex: 1; display: flex; flex-direction: column; gap: 10px;">
                 <div class="drop-zone" :class="{ 'is-dragover': drag.color }" @click="$refs.colorRef.click()" @dragover.prevent="drag.color = true" @dragleave.prevent="drag.color = false" @drop.prevent="e => handleDrop(e, 'color')" style="height: 100%;">
                     <span class="icon">🎨</span><div>点击/拖拽上传 <b>本地颜色图</b></div>
-                    <div style="font-size: 12px; color: #A8ABB2; margin-top: 8px;">(单张图片大小不超过 5MB)</div>
+                    <div style="font-size: 12px; color: #A8ABB2; margin-top: 8px;">(单张图片大小不超过 10MB)</div>
                     <input type="file" multiple ref="colorRef" @change="e => handleUpload(e, 'color')" accept="image/*" class="hidden-input"/>
                 </div>
                 <el-button type="success" plain @click="openColorCardDialog" style="width: 100%; height: 40px;">
@@ -231,8 +231,8 @@
             const updatePrompt = () => { form.prompt = basePromptTemplate.replace(/【衣服类型】/g, form.type && form.type.trim() ? form.type : '【衣服类型】'); };
             const processFiles = (files, type) => {
                 files.forEach(file => {
-                    if (file.size > 5 * 1024 * 1024) {
-                        ElementPlus.ElMessage.error(`【${file.name}】超过 5MB，已被拦截！`);
+                    if (file.size > 10 * 1024 * 1024) {
+                        ElementPlus.ElMessage.error(`【${file.name}】超过 10MB，已被拦截！`);
                         return;
                     }
                     const newItem = { id: type + '_' + Date.now() + '_' + Math.floor(Math.random() * 1000), file: file, url: URL.createObjectURL(file), ossUrl: null };
@@ -325,8 +325,8 @@
                 if (itemObj.ossUrl) return itemObj.ossUrl;
                 const realFile = itemObj.raw || itemObj.file || itemObj;
 
-                if (realFile.size > 5 * 1024 * 1024) {
-                    ElementPlus.ElMessage.error(`【${realFile.name}】 图片大小超过 5MB，请压缩后重试！`);
+                if (realFile.size > 10 * 1024 * 1024) {
+                    ElementPlus.ElMessage.error(`【${realFile.name}】 图片大小超过 10MB，请压缩后重试！`);
                     throw new Error("FILE_TOO_LARGE");
                 }
 

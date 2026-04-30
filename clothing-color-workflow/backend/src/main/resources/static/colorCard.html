@@ -203,9 +203,9 @@
             const uploadToOss = async (event, fieldName) => {
                 const file = event.target.files[0]; if (!file) return;
 
-                // 🔴 新增：限制单张图片大小不能超过 5MB
-                if (file.size > 5 * 1024 * 1024) {
-                    ElementPlus.ElMessage.error(`【${file.name}】 图片大小超过 5MB，请压缩后重试！`);
+                // 🔴 新增：限制单张图片大小不能超过 10MB
+                if (file.size > 10 * 1024 * 1024) {
+                    ElementPlus.ElMessage.error(`【${file.name}】 图片大小超过 10MB，请压缩后重试！`);
                     event.target.value = ''; // 清空选中状态，允许用户重新选择同一文件
                     return; // 拦截，终止上传
                 }
@@ -265,14 +265,14 @@
                 const excelFile = files.find(f => f.name.endsWith('.xlsx') || f.name.endsWith('.xls') || f.name.endsWith('.csv'));
                 let imageFiles = files.filter(f => f.type.startsWith('image/')); // 🔴 注意这里改成了 let
 
-                // 🔴 核心优化：批量检查图片大小，踢出大于 5MB 的，保留合规的继续走
+                // 🔴 核心优化：批量检查图片大小，踢出大于 10MB 的，保留合规的继续走
                 if (imageFiles.length > 0) {
                     const oversizedFiles = [];
                     const validFiles = [];
 
                     // 分拣合格与不合格的图片
                     imageFiles.forEach(f => {
-                        if (f.size > 5 * 1024 * 1024) {
+                        if (f.size > 10 * 1024 * 1024) {
                             oversizedFiles.push(f);
                         } else {
                             validFiles.push(f);
@@ -285,7 +285,7 @@
                         const moreTxt = oversizedFiles.length > 3 ? '等...' : '';
 
                         ElementPlus.ElMessage.warning({
-                            message: `已自动剔除 ${oversizedFiles.length} 张超过 5MB 的图片 (${badNames}${moreTxt})，将继续为您导入剩余合规文件！`,
+                            message: `已自动剔除 ${oversizedFiles.length} 张超过 10MB 的图片 (${badNames}${moreTxt})，将继续为您导入剩余合规文件！`,
                             duration: 6000
                         });
                     }
