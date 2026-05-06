@@ -53,9 +53,12 @@
                     <span style="margin-right: 15px; font-size: 18px; font-weight: bold;">✨ AI 矩阵工作流</span>
                     <el-button type="primary" color="#1e88e5">🎨 批量换色(当前)</el-button>
                     <el-button @click="goToScene" plain>🖼️ 场景生成</el-button>
-                    <el-button @click="goToVideo" plain>🎬 视频生成</el-button>
+                    <el-button v-if="currentUserName === 'PINKSIR'" @click="goToVideo" plain>🎬 视频生成</el-button>
                 </div>
-                <el-button @click="goToList" color="#f5f7fa" style="color: #606266; font-weight: bold;">📊 任务大盘</el-button>
+                <div style="display: flex; gap: 10px;">
+                    <el-button @click="goToColorManage" color="#67c23a" style="color: #fff;">📚 色卡库维护</el-button>
+                    <el-button @click="goToList" color="#f5f7fa" style="color: #606266; font-weight: bold;">📊 任务大盘</el-button>
+                </div>
             </div>
         </template>
 
@@ -221,6 +224,9 @@
     const {createApp, ref, reactive, computed} = Vue;
     createApp({
         setup() {
+            // 1. 从本地缓存取名字（去除可能携带的双引号、空格，并统一转为大写保证绝对匹配）
+            const currentUserName = ref((localStorage.getItem("shop_name") || '').replace(/['"]/g, '').trim().toUpperCase());
+
             const goToVideo = () => { window.location.href = 'video.html'; };
 
             const basePromptTemplate = "Please replace the color of the 【衣服类型】 in the image with the average color from the solid color block in the reference image. Ensure that only the color of the 【衣服类型】 is modified, keeping all other details and the background unchanged.";
@@ -416,7 +422,8 @@
                 updatePrompt, handleUpload, handleDrop, removeImage, togglePair, submit,
                 goToScene, goToList, goToColorManage, goToVideo,
                 colorCardDrawer, dbColorCards, openColorCardDialog, addSingleToMatrix, addAll,
-                drawerFilter, filteredDbColorCards
+                drawerFilter, filteredDbColorCards,
+                currentUserName,
             };
         }
     }).use(ElementPlus).mount('#app');
