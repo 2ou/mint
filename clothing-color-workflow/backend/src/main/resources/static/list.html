@@ -13,7 +13,10 @@
 
     <style>
         body { margin: 0; min-height: 100vh; padding: 20px; font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif; background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); }
-        .page-wrap { max-width: 1600px; margin: 0 auto; }
+
+        /* 🔴 唯一修改点：取消 1600px 宽度限制，让容器水平铺满 */
+        .page-wrap { width: 100%; margin: 0 auto; }
+
         .dashboard-card { border-radius: 12px !important; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1) !important; border: none !important; }
         .el-card__header { background: #67c23a; color: white; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
         .filter-bar { background: #fff; padding: 15px; border-radius: 8px; margin-bottom: 15px; display: flex; flex-wrap: wrap; gap: 15px; align-items: center; box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05); }
@@ -45,7 +48,7 @@
                     </el-tooltip>
                     <el-button @click="goToColor" plain>🎨 换色提交</el-button>
                     <el-button @click="goToScene" plain>🖼️ 场景提交</el-button>
-                    <el-button @click="goToVideo" plain>🎬 视频生成</el-button>
+                    <el-button v-if="currentUserName === 'PINKSIR'" @click="goToVideo" plain>🎬 视频生成</el-button>
                     <el-button type="primary" @click="handleSearch" :loading="loading">刷新大盘</el-button>
                 </div>
             </template>
@@ -56,7 +59,7 @@
                 <el-select v-model="filters.taskType" placeholder="任务类型" clearable style="width: 140px" @change="handleSearch">
                     <el-option label="🎨 换色任务" :value="1"></el-option>
                     <el-option label="🖼️ 场景生成" :value="2"></el-option>
-                    <el-option label="🎬 视频生成" :value="3"></el-option>
+                    <el-button v-if="currentUserName === 'PINKSIR'" @click="goToVideo" plain>🎬 视频生成</el-button>
                 </el-select>
 
                 <el-select v-model="filters.status" placeholder="状态" clearable style="width: 120px" @change="handleSearch">
@@ -161,14 +164,22 @@
                     </template>
                 </el-table-column>
 
-                <el-table-column label="提示词" min-width="220">
+                <el-table-column label="提示词" min-width="260">
                     <template #default="scope">
-                        <div style="display: flex; align-items: center; gap: 8px;">
+                        <div style="display: flex; flex-direction: column; gap: 5px;">
                             <el-popover placement="top-start" title="完整提示词" :width="400" trigger="hover">
                                 <div style="word-break: break-all; max-height: 300px; overflow-y: auto; line-height: 1.5; color: #606266;">{{ scope.row.prompt }}</div>
                                 <template #reference><div class="prompt-text" style="flex: 1; cursor: pointer;">{{ scope.row.prompt || '-' }}</div></template>
                             </el-popover>
-                            <el-button v-if="scope.row.prompt" size="small" plain @click="copyText(scope.row.prompt)" title="一键复制到剪贴板">📄 复制</el-button>
+                            <div style="display: flex; gap: 8px;">
+                                <el-button v-if="scope.row.prompt" size="small" plain @click="copyText(scope.row.prompt)" title="一键复制到剪贴板">📄 复制</el-button>
+
+                                <el-button v-if="scope.row.taskType === 2 && scope.row.status === 'SUCCESS' && scope.row.prompt"
+                                           size="small" type="success" plain
+                                           @click="saveToTemplateLibrary(scope.row)">
+                                    💡 存入动作库
+                                </el-button>
+                            </div>
                         </div>
                     </template>
                 </el-table-column>
@@ -200,11 +211,7 @@
             </div>
         </el-card>
 
-        <el-dialog v-model="showImageViewer" v-if="showImageViewer" title="🖼️ 图片预览" width="50%" center append-to-body>
-            <div style="display: flex; justify-content: center; align-items: center; padding: 10px;">
-                <el-image :src="previewImageUrlList[0]" style="max-width: 100%; max-height: 70vh; border-radius: 8px;" fit="contain" :preview-src-list="previewImageUrlList" :initial-index="0" preview-teleported></el-image>
-            </div>
-        </el-dialog>
+        <el-image-viewer v-if="showImageViewer" :url-list="previewImageUrlList" @close="showImageViewer = false" hide-on-click-modal />
 
         <el-dialog v-model="showVideoDialog" v-if="showVideoDialog" title="🎬 视频预览" width="60%" center append-to-body>
             <div style="display: flex; justify-content: center; align-items: center; background: #000; border-radius: 8px; padding: 20px;">
@@ -246,7 +253,6 @@
                 return lower.includes('.mp4') || lower.includes('.mov');
             };
 
-            // 🔴 修复 3: 强制 HTTPS 升级，防止浏览器跨域或 Mixed Content 拦截死机
             const openImagePreview = (url) => {
                 if (!url) return ElementPlus.ElMessage.warning('暂无图片链接');
                 let finalUrl = url;
@@ -388,6 +394,42 @@
                 } catch (e) { ElementPlus.ElMessage.error('获取 KIE 详情失败，请检查网络'); } finally { loadingInstance.close(); }
             };
 
+            // 🔴 核心新增：一键保存为模板
+            const saveToTemplateLibrary = async (row) => {
+                try {
+                    await ElementPlus.ElMessageBox.confirm(
+                        '确定要将此场景的提示词和结果图存入公共动作库吗？',
+                        '💡 存入动作库',
+                        { confirmButtonText: '确定存入', cancelButtonText: '取消', type: 'info' }
+                    );
+
+                    const targetImageUrl = row.resultOssUrl || row.resultTempUrl;
+                    if (!targetImageUrl) {
+                        return ElementPlus.ElMessage.warning('该任务尚未生成成功的结果图，无法作为参考图存入！');
+                    }
+
+                    // 构造满足后端的 Template 实体对象
+                    const templateData = {
+                        title: "大盘快捷入库",        // 根据您的要求，标题给个默认值
+                        category: "通用动作库",       // 强制设定为通用动作库
+                        basePrompt: row.prompt,       // 直接存入完整提示词
+                        exampleImageUrl: targetImageUrl, // 保存最后生成的那张好看的图作为演示
+                        isActive: true
+                    };
+
+                    const res = await axios.post('/api/templates/save', templateData);
+                    if (res.data && res.data.success) {
+                        ElementPlus.ElMessage.success('🎉 已成功沉淀至【通用动作库】！您可在场景生成页面随时套用。');
+                    } else {
+                        ElementPlus.ElMessage.error(res.data.message || '保存失败');
+                    }
+                } catch (e) {
+                    if (e !== 'cancel') {
+                        ElementPlus.ElMessage.error('保存过程中发生异常，请检查网络');
+                    }
+                }
+            };
+
             onMounted(fetchData);
 
             return {
@@ -400,7 +442,7 @@
                 getStatusType, formatTime, handleSelectionChange, refreshRow, syncAllProcessing,
                 formatTaskId, fetchKieRaw, batchDownload, handleVideoError,
                 goToColor, goToScene, goToVideo, isVideo,
-                openImagePreview, openVideoPreview
+                openImagePreview, openVideoPreview, saveToTemplateLibrary // 导出新方法
             };
         }
     }).use(ElementPlus).mount('#app');

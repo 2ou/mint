@@ -2,8 +2,8 @@
 
 // --- 动态设置 API 基础路径 ---
 // 如果是本地开发（假设前端用 Live Server 5500 端口），则指向 8080
-// 如果是部署到服务器（前端由 Spring Boot 8080 端口直接托管），则使用相对路径
-if (window.location.port === '8080') {
+// 使用 hostname 判断，只要是本地访问，不管端口是 8080 还是 63342，都请求本地后端
+if (window.location.hostname === 'localhost') {
     axios.defaults.baseURL = 'http://localhost:8080';
 } else {
 // 部署后，前端和后端同源，直接设为空字符串，使用相对路径
