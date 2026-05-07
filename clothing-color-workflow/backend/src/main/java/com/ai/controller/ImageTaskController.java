@@ -60,7 +60,8 @@ public class ImageTaskController {
                         pair.getColorUrl(),
                         request.getTaskType(),
                         operator,
-                        shopName
+                        shopName,
+                        request.getCost()
                 );
                 responses.add(response);
             }
@@ -211,15 +212,21 @@ public class ImageTaskController {
         task.setSpu(req.getSpu());
         task.setModel(req.getModel());
 
-        // 🔴 增强提取逻辑：把 prompt、图片、视频全挖出来存库
+        // 🔴 1. 保存预估费用
+        task.setCost(req.getCost());
+
+        // 🔴 2. 直接使用前端拆分好的标准链接，无需再到 input 里面去复杂判断捞取
+        task.setInputImageUrl(req.getInputImageUrl());
+        task.setColorImageUrl(req.getColorImageUrl());
+
+        // 🔴 3. 提取 Prompt (完美兼容 HappyHorse、Seedance、Kling单/多镜头)
         if (req.getInput() != null) {
             Map<String, Object> input = req.getInput();
-
-            // 提取 Prompt (完美兼容 HappyHorse、Seedance、Kling单/多镜头)
             if (input.get("prompt") != null) {
                 task.setPrompt(input.get("prompt").toString());
             } else if (input.containsKey("multi_prompt")) {
                 try {
+                    @SuppressWarnings("unchecked")
                     List<Map<String, Object>> multiPrompts = (List<Map<String, Object>>) input.get("multi_prompt");
                     if (multiPrompts != null && !multiPrompts.isEmpty() && multiPrompts.get(0).containsKey("prompt")) {
                         task.setPrompt(multiPrompts.get(0).get("prompt").toString() + " (+多镜头分镜)");
@@ -227,34 +234,6 @@ public class ImageTaskController {
                 } catch (Exception e) {
                     log.warn("提取多镜头 prompt 失败", e);
                 }
-            }
-
-            try {
-                // 提取参考图 (兼容 Seedance 和 Kling、HappyHorse 的不同字段)
-                if (input.containsKey("reference_image_urls")) {
-                    List<String> images = (List<String>) input.get("reference_image_urls");
-                    if (images != null && !images.isEmpty()) task.setInputImageUrl(String.join(",", images));
-                } else if (input.containsKey("input_urls")) {
-                    List<String> images = (List<String>) input.get("input_urls");
-                    if (images != null && !images.isEmpty()) task.setInputImageUrl(String.join(",", images));
-                } else if (input.containsKey("image_urls")) {
-                    List<String> images = (List<String>) input.get("image_urls");
-                    if (images != null && !images.isEmpty()) task.setInputImageUrl(String.join(",", images));
-                } else if (input.containsKey("first_frame_url")) {
-                    Object firstFrame = input.get("first_frame_url");
-                    if (firstFrame != null) task.setInputImageUrl(firstFrame.toString());
-                }
-
-                // 提取参考视频 (复用 ColorImageUrl 字段来存放视频链接，方便大盘展示和打包下载)
-                if (input.containsKey("reference_video_urls")) {
-                    List<String> videos = (List<String>) input.get("reference_video_urls");
-                    if (videos != null && !videos.isEmpty()) task.setColorImageUrl(String.join(",", videos));
-                } else if (input.containsKey("video_urls")) {
-                    List<String> videos = (List<String>) input.get("video_urls");
-                    if (videos != null && !videos.isEmpty()) task.setColorImageUrl(String.join(",", videos));
-                }
-            } catch (Exception e) {
-                log.warn("提取视频任务参考素材失败", e);
             }
         }
 
@@ -266,6 +245,7 @@ public class ImageTaskController {
         imageTaskRepository.save(task);
 
         try {
+            // 底层 API 依然只接收 input Payload，不影响 KIE 执行
             KieTaskResult result = kieClientService.createVideoTask(req.getModel(), req.getInput());
             task.setTaskId(result.getTaskId());
             imageTaskRepository.save(task);
