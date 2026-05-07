@@ -330,9 +330,9 @@
                     <template #default="scope">{{ formatTime(scope.row.createdAt) }}</template>
                 </el-table-column>
 
-                <el-table-column label="预估费用" width="90" align="center">
+                <el-table-column label="预估费用" width="100" align="center">
                     <template #default="scope">
-                        <span v-if="scope.row.cost != null" style="color: #f56c6c; font-weight: bold;">
+                        <span v-if="scope.row.cost !== undefined && scope.row.cost !== null" style="color: #f56c6c; font-weight: bold;">
                             ￥{{ Number(scope.row.cost).toFixed(2) }}
                         </span>
                         <span v-else style="color: #909399;">-</span>
@@ -352,9 +352,8 @@
         <el-image-viewer v-if="showImageViewer" :url-list="previewImageUrlList" @close="showImageViewer = false"
                          hide-on-click-modal/>
 
-        <el-dialog v-model="showVideoDialog" v-if="showVideoDialog" title="🎬 视频预览" width="60%" center
-                   append-to-body>
-            <div style="display: flex; justify-content: center; align-items: center; background: #000; border-radius: 8px; padding: 20px;">
+        <el-dialog v-model="showVideoDialog" title="🎬 视频预览" width="60%" center append-to-body>
+            <div v-if="showVideoDialog" style="display: flex; justify-content: center; align-items: center; background: #000; border-radius: 8px; padding: 20px;">
                 <video :src="previewVideoUrl" controls autoplay
                        style="max-width: 100%; max-height: 65vh; outline: none; border-radius: 4px;"
                        @error="handleVideoError"></video>
@@ -364,7 +363,7 @@
 </div>
 
 <script>
-    const {createApp, ref, reactive, onMounted} = Vue;
+    const {createApp, ref, reactive, onMounted, nextTick} = Vue;
     createApp({
         setup() {
             const currentUserName = ref(localStorage.getItem("user_name") || '未知用户');
@@ -397,23 +396,35 @@
             };
 
             const openImagePreview = (url) => {
-                if (!url) return ElementPlus.ElMessage.warning('暂无图片链接');
-                let finalUrl = url;
-                if (finalUrl.startsWith('http://')) {
-                    finalUrl = finalUrl.replace('http://', 'https://');
-                }
+                if (!url || url === 'null') return ElementPlus.ElMessage.warning('暂无图片链接');
+
+                // 物理销毁视频弹窗并清空数据
+                showVideoDialog.value = false;
+                previewVideoUrl.value = '';
+
+                let finalUrl = String(url).split(',')[0].trim();
+                if (finalUrl.startsWith('http://')) finalUrl = finalUrl.replace('http://', 'https://');
+
                 previewImageUrlList.value = [finalUrl];
                 showImageViewer.value = true;
             };
 
             const openVideoPreview = (url) => {
-                if (!url) return ElementPlus.ElMessage.warning('暂无视频链接');
-                let finalUrl = url;
-                if (finalUrl.startsWith('http://')) {
-                    finalUrl = finalUrl.replace('http://', 'https://');
-                }
+                if (!url || url === 'null') return ElementPlus.ElMessage.warning('暂无视频链接');
+
+                // 1. 互斥清理：先确保图片预览和旧视频状态是关闭的
+                showImageViewer.value = false;
+                showVideoDialog.value = false;
+
+                // 2. 提取链接
+                let finalUrl = String(url).split(',')[0].trim();
+                if (finalUrl.startsWith('http://')) finalUrl = finalUrl.replace('http://', 'https://');
                 previewVideoUrl.value = finalUrl;
-                showVideoDialog.value = true;
+
+                // 3. 核心修复：使用 nextTick 等待清理完成后再开启弹窗
+                nextTick(() => {
+                    showVideoDialog.value = true;
+                });
             };
 
             const handleVideoError = () => {
