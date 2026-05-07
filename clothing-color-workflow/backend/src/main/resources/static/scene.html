@@ -48,7 +48,7 @@
                     <span style="margin-right: 15px; font-size: 18px; font-weight: bold;">✨ AI 矩阵工作流</span>
                     <el-button @click="goToColor" plain>🎨 批量换色</el-button>
                     <el-button type="primary" color="#409EFF">🖼️ 场景生成(当前)</el-button>
-                    <el-button v-if="currentUserName === 'PINKSIR'" @click="goToVideo" plain>🎬 视频生成</el-button>
+                    <el-button @click="goToVideo" plain>🎬 视频生成</el-button>
                 </div>
                 <div style="display: flex; gap: 10px;">
                     <el-button @click="goToTemplateManage" color="#E6A23C" style="color: #fff;">🎬 动作场景库</el-button>
@@ -203,6 +203,11 @@
             </el-button>
         </div>
 
+        <div style="margin-top: 20px; display: flex; align-items: center; justify-content: space-between; background: #fdf6ec; padding: 15px 20px; border-radius: 8px; border: 1px solid #faecd8;">
+            <span style="font-weight: bold; color: #E6A23C; font-size: 15px;">💰 任务预估总费用（参考模型单价，共 {{ totalTasksCount }} 张）</span>
+            <span style="font-size: 24px; font-weight: bold; color: #f56c6c;">￥{{ estimatedCost }}</span>
+        </div>
+
         <el-button type="primary" class="submit-btn" @click="submit" :loading="loading" :disabled="totalTasksCount === 0">
             {{ loading ? uploadProgressMsg : `🚀 立即并发提交 ${totalTasksCount} 个派发任务` }}
         </el-button>
@@ -268,6 +273,23 @@
 
             const totalTasksCount = computed(() => {
                 return tasks.value.reduce((sum, task) => sum + task.count, 0);
+            });
+
+            // 🔴 新增：计算单张图片的预估单价
+            const pricePerImage = computed(() => {
+                if (form.model === 'nano-banana-pro') {
+                    return form.resolution === '4K' ? 0.44 : 0.25;
+                } else if (form.model === 'gpt-image-2-image-to-image') {
+                    if (form.resolution === '4K') return 0.25;
+                    if (form.resolution === '2K') return 0.16;
+                    return 0.09; // 1K
+                }
+                return 0;
+            });
+
+            // 🔴 新增：计算整个批量任务的预估总价
+            const estimatedCost = computed(() => {
+                return (pricePerImage.value * totalTasksCount.value).toFixed(2);
             });
 
             // 新建任务
@@ -529,7 +551,9 @@
                             pairs: [{
                                 inputUrl: task.inputs.map(inp => inp.ossUrl).join(','),
                                 colorUrl: (task.ref && task.ref.ossUrl) ? task.ref.ossUrl : ""
-                            }]
+                            }],
+                            // 🔴 新增：传递单张图片的生成费用
+                            cost: parseFloat(pricePerImage.value)
                         };
                         for (let c = 0; c < task.count; c++) {
                             apiRequests.push(axios.post('/api/tasks/create', payload));
@@ -571,7 +595,8 @@
                 addTask, copyTask, removeTask, handleUploadMultiple, handleBatchCreateTasks,
                 handleUploadRef, removeInput, applyBatchPrompt, batchDeleteTasks, submit,
                 goToColor, goToList, goToColorManage, goToTemplateManage, goToVideo,
-                templateDrawer, dbTemplates, openTemplateDrawer, applyTemplate, templateSearchText, filteredTemplates
+                templateDrawer, dbTemplates, openTemplateDrawer, applyTemplate, templateSearchText, filteredTemplates,
+                estimatedCost
             };
         }
     }).use(ElementPlus).mount('#app');

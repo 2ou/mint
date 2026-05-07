@@ -53,7 +53,7 @@
                     <span style="margin-right: 15px; font-size: 18px; font-weight: bold;">✨ AI 矩阵工作流</span>
                     <el-button type="primary" color="#1e88e5">🎨 批量换色(当前)</el-button>
                     <el-button @click="goToScene" plain>🖼️ 场景生成</el-button>
-                    <el-button v-if="currentUserName === 'PINKSIR'" @click="goToVideo" plain>🎬 视频生成</el-button>
+                    <el-button @click="goToVideo" plain>🎬 视频生成</el-button>
                 </div>
                 <div style="display: flex; gap: 10px;">
                     <el-button @click="goToColorManage" color="#67c23a" style="color: #fff;">📚 色卡库维护</el-button>
@@ -164,7 +164,10 @@
                 </tbody>
             </table>
         </div>
-
+        <div style="margin-top: 20px; display: flex; align-items: center; justify-content: space-between; background: #fdf6ec; padding: 15px 20px; border-radius: 8px; border: 1px solid #faecd8;">
+            <span style="font-weight: bold; color: #E6A23C; font-size: 15px;">💰 搭配预估总费用（参考模型单价，共 {{ activeTaskCount }} 个搭配）</span>
+            <span style="font-size: 24px; font-weight: bold; color: #f56c6c;">￥{{ estimatedCost }}</span>
+        </div>
         <el-button type="primary" class="submit-btn" @click="submit" :loading="loading" :disabled="activeTaskCount === 0">
             {{ loading ? uploadProgressMsg : `🚀 立即提交 ${activeTaskCount} 个换色任务` }}
         </el-button>
@@ -256,6 +259,23 @@
             const removeImage = (type, index) => { type === 'input' ? inputPool.value.splice(index, 1) : colorPool.value.splice(index, 1); };
             const togglePair = (inpId, colId) => { pairingState[`${inpId}_${colId}`] = !pairingState[`${inpId}_${colId}`]; };
             const activeTaskCount = computed(() => { let count = 0; inputPool.value.forEach(inp => colorPool.value.forEach(col => { if (pairingState[`${inp.id}_${col.id}`]) count++; })); return count; });
+
+            // 🔴 新增：计算单张图片的预估单价
+            const pricePerImage = computed(() => {
+                if (form.model === 'nano-banana-pro') {
+                    return form.resolution === '4K' ? 0.44 : 0.25;
+                } else if (form.model === 'gpt-image-2-image-to-image') {
+                    if (form.resolution === '4K') return 0.25;
+                    if (form.resolution === '2K') return 0.16;
+                    return 0.09; // 1K
+                }
+                return 0;
+            });
+
+            // 🔴 新增：计算换色矩阵任务的预估总价
+            const estimatedCost = computed(() => {
+                return (pricePerImage.value * activeTaskCount.value).toFixed(2);
+            });
 
             const colorCardDrawer = ref(false);
             const dbColorCards = ref([]);
@@ -387,7 +407,9 @@
                     const finalPayload = {
                         spu: form.spu, prompt: form.prompt, model: form.model,
                         resolution: form.resolution, aspect_ratio: form.aspect_ratio,
-                        pairs: pairsPayload, taskType: 1
+                        pairs: pairsPayload, taskType: 1,
+                        // 🔴 新增：传递单张图片的生成费用给后端
+                        cost: parseFloat(pricePerImage.value)
                     };
 
                     uploadProgressMsg.value = '正在派发任务到 AI 队列...';
@@ -423,7 +445,7 @@
                 goToScene, goToList, goToColorManage, goToVideo,
                 colorCardDrawer, dbColorCards, openColorCardDialog, addSingleToMatrix, addAll,
                 drawerFilter, filteredDbColorCards,
-                currentUserName,
+                currentUserName, estimatedCost
             };
         }
     }).use(ElementPlus).mount('#app');

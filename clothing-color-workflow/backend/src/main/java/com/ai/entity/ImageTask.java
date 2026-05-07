@@ -69,4 +69,8 @@ public class ImageTask {
     private LocalDateTime updatedAt;
 
     private LocalDateTime completeTime; // 🔴 新增：任务完成时间戳 (毫秒)
+
+    // 🔴 新增：任务预估费用
+    @Column(precision = 10, scale = 2)
+    private java.math.BigDecimal cost;
 }
