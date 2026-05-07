@@ -5,6 +5,7 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Data
@@ -34,6 +35,7 @@ public class TaskCreateResponse {
 
 
     private LocalDateTime createdAt;
+    private BigDecimal cost;
 
     public TaskCreateResponse(ImageTask task) {
         this.id = task.getId();
@@ -55,5 +57,6 @@ public class TaskCreateResponse {
         this.shopName = task.getShopName();
         this.operator = task.getOperator();
         this.errorMessage = task.getErrorMessage();
+        this.cost = task.getCost();
     }
 }
