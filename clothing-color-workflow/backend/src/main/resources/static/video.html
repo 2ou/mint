@@ -116,11 +116,15 @@
             </el-row>
             <el-row :gutter="20" style="margin-top: 20px;">
                 <el-col :span="8">
-                    <el-form-item label="画质">
-                        <el-select v-model="form.motionMode">
-                            <el-option label="720p (std)" value="720p"></el-option>
-                            <el-option label="1080p (pro)" value="1080p"></el-option>
-                        </el-select>
+                    <el-form-item label="渲染画质">
+                        <div style="display: flex; gap: 15px; align-items: center;">
+                            <el-select v-model="form.klingMode" style="width: 130px;">
+                                <el-option label="标准 (std)" value="std"></el-option>
+                                <el-option label="专业 (pro)" value="pro"></el-option>
+                                <el-option label="超清 (4k)" value="4k"></el-option>
+                            </el-select>
+                            <el-switch v-model="form.klingAudio" active-text="生成音频"></el-switch>
+                        </div>
                     </el-form-item>
                 </el-col>
                 <el-col :span="8">
@@ -189,11 +193,14 @@
                                 <el-slider v-model="form.klingDuration" :min="1" :max="15" :step="1" show-input style="margin-left: 10px;"></el-slider>
                             </el-form-item>
                             <el-form-item label="渲染画质">
-                                <el-select v-model="form.klingMode" style="width: 140px; margin-right: 15px;">
-                                    <el-option label="标准 (std)" value="std"></el-option>
-                                    <el-option label="专业 (pro)" value="pro"></el-option>
-                                    <el-option label="超清 (4k)" value="4k"></el-option>
-                                </el-select>
+                                <div style="display: flex; gap: 15px; align-items: center; width: 100%;">
+                                    <el-select v-model="form.klingMode" style="flex: 1;">
+                                        <el-option label="标准 (std)" value="std"></el-option>
+                                        <el-option label="专业 (pro)" value="pro"></el-option>
+                                        <el-option label="超清 (4k)" value="4k"></el-option>
+                                    </el-select>
+                                    <el-switch v-model="form.klingAudio" active-text="音频"></el-switch>
+                                </div>
                             </el-form-item>
                         </el-col>
                     </el-row>
@@ -225,11 +232,14 @@
                                 </el-col>
                                 <el-col :span="12">
                                     <el-form-item label="渲染画质">
-                                        <el-select v-model="form.klingMode" style="width: 100%;">
-                                            <el-option label="标准 (std)" value="std"></el-option>
-                                            <el-option label="专业 (pro)" value="pro"></el-option>
-                                            <el-option label="超清 (4k)" value="4k"></el-option>
-                                        </el-select>
+                                        <div style="display: flex; gap: 15px; align-items: center; width: 100%;">
+                                            <el-select v-model="form.klingMode" style="flex: 1;">
+                                                <el-option label="标准 (std)" value="std"></el-option>
+                                                <el-option label="专业 (pro)" value="pro"></el-option>
+                                                <el-option label="超清 (4k)" value="4k"></el-option>
+                                            </el-select>
+                                            <el-switch v-model="form.klingAudio" active-text="音频"></el-switch>
+                                        </div>
                                     </el-form-item>
                                 </el-col>
                             </el-row>
@@ -409,6 +419,11 @@
             </el-row>
         </div>
 
+        <div style="margin-top: 20px; display: flex; align-items: center; justify-content: space-between; background: #fdf6ec; padding: 15px 20px; border-radius: 8px; border: 1px solid #faecd8;">
+            <span style="font-weight: bold; color: #E6A23C; font-size: 15px;">💰 任务预估费用（参考模型基础计费）</span>
+            <span style="font-size: 24px; font-weight: bold; color: #f56c6c;">￥{{ estimatedCost }}</span>
+        </div>
+
         <el-button type="primary" style="width: 100%; height: 50px; font-size: 18px; border-radius: 12px; margin-top: 30px; background-color: #673AB7; border: none;" @click="submit" :loading="loading">
             {{ loading ? uploadProgressMsg : '🚀 提交生成任务 (直传云端并轮询)' }}
         </el-button>
@@ -420,15 +435,16 @@
     const { createApp, ref, reactive, nextTick, computed } = Vue;
     const app = createApp({
         setup() {
-            const form = reactive({
-                spu: '', model: 'kling-3.0/video', prompt: '',
-                motionImg: '', motionVid: '', motionMode: '720p', motionOrient: 'video', motionBg: 'input_video',
-                klingShotMode: 'single', klingFirstImg: '', klingLastImg: '', klingMultiImage: '',
-                klingMultiPrompts: [{ prompt: '', duration: 5 }], klingRatio: '16:9', klingDuration: 5, klingMode: 'pro',
-                klingElements: [],
-                happyhorseImg: '', happyhorseRes: '1080p', happyhorseDuration: 5, happyhorseSeed: null,
-
-                seedanceVersion: 'bytedance/seedance-2',
+        const form = reactive({
+            spu: '', model: 'kling-3.0/video', prompt: '',
+            motionImg: '', motionVid: '', motionMode: '720p', motionOrient: 'video', motionBg: 'input_video',
+            klingShotMode: 'single', klingFirstImg: '', klingLastImg: '', klingMultiImage: '',
+            klingMultiPrompts: [{ prompt: '', duration: 5 }], klingRatio: '16:9', klingDuration: 5, klingMode: 'pro',
+            klingElements: [],
+            // 🔴 新增 klingAudio: false
+            klingAudio: false,
+            happyhorseImg: '', happyhorseRes: '1080p', happyhorseDuration: 5, happyhorseSeed: null,
+            seedanceVersion: 'bytedance/seedance-2',
                 seeImages: [], seeVid: '', seeRatio: '16:9', seeRes: '1080p', seeDuration: 15, seeAudio: true,
                 seeFirstImg: '', seeLastImg: ''
             });
@@ -447,6 +463,48 @@
                 happyhorseImg: false,
                 seeImages: false, seeVid: false,
                 seeFirstImg: false, seeLastImg: false
+            });
+
+            const estimatedCost = computed(() => {
+                let pricePerSec = 0;
+                let duration = 0;
+
+                if (form.model === 'kling-3.0/motion-control') {
+                    duration = 5; // 可灵运镜通常计费基准为5秒
+                    pricePerSec = form.motionMode === '1080p' ? 0.86 : 0.64;
+                }
+                else if (form.model === 'kling-3.0/video') {
+                    duration = form.klingShotMode === 'single' ? form.klingDuration : totalMultiShotDuration.value;
+                    // 🔴 严格根据 CSV 价格表引入音频变量
+                    if (form.klingMode === '4k') {
+                        pricePerSec = 2.14; // CSV 中 4K 带不带音频都是 2.14
+                    } else if (form.klingMode === 'pro') {
+                        pricePerSec = form.klingAudio ? 0.86 : 0.57; // 1080P 计费
+                    } else {
+                        pricePerSec = form.klingAudio ? 0.64 : 0.44; // 720P (std) 计费
+                    }
+                }
+                else if (form.model === 'happyhorse/image-to-video') {
+                    duration = form.happyhorseDuration;
+                    pricePerSec = form.happyhorseRes === '1080p' ? 1.53 : 0.89;
+                }
+                else if (form.model === 'bytedance/seedance') {
+                    duration = form.seeDuration;
+                    const hasVid = !!filesToUpload.seeVid;
+                    const isFast = form.seedanceVersion === 'bytedance/seedance-2-fast';
+                    const res = form.seeRes;
+
+                    if (isFast) {
+                        if (res === '1080p') pricePerSec = hasVid ? 1.98 : 3.26; // 极速版降级按标准版1080p算
+                        else if (res === '720p') pricePerSec = hasVid ? 0.64 : 1.05;
+                        else if (res === '480p') pricePerSec = hasVid ? 0.28 : 0.49;
+                    } else {
+                        if (res === '1080p') pricePerSec = hasVid ? 1.98 : 3.26;
+                        else if (res === '720p') pricePerSec = hasVid ? 0.80 : 1.31;
+                        else if (res === '480p') pricePerSec = hasVid ? 0.36 : 0.60;
+                    }
+                }
+                return (pricePerSec * duration).toFixed(2);
             });
 
             const loading = ref(false);
@@ -579,26 +637,40 @@
                     const policyRes = await axios.get('/api/oss/policy');
                     const pd = policyRes.data.data;
                     let inputPayload = {};
+                    let reqInputImg = ''; // 用于提取首帧/参考图
+                    let reqColorImg = ''; // 用于提取动作视频
 
                     if (form.model === 'kling-3.0/motion-control') {
                         if (!filesToUpload.motionImg || !filesToUpload.motionVid) throw new Error('运镜必须上传首图和视频');
                         uploadProgressMsg.value = '上传素材...';
                         const [imgOssUrl, vidOssUrl] = await Promise.all([ uploadSingleToOss(filesToUpload.motionImg, pd), uploadSingleToOss(filesToUpload.motionVid, pd) ]);
                         inputPayload = { prompt: form.prompt, input_urls: [imgOssUrl], video_urls: [vidOssUrl], mode: form.motionMode, character_orientation: form.motionOrient, background_source: form.motionBg };
+
+                        // 🔴 赋值给外层变量供后端大盘展示
+                        reqInputImg = imgOssUrl;
+                        reqColorImg = vidOssUrl;
                     }
                     else if (form.model === 'kling-3.0/video') {
-                        inputPayload = { aspect_ratio: form.klingRatio, mode: form.klingMode };
+                        inputPayload = { aspect_ratio: form.klingRatio, mode: form.klingMode, generate_audio: form.klingAudio };
                         let elementsPayload = [];
                         for (let elem of form.klingElements) { if (elem.name && elem.files.length >= 2) { const uploadedUrls = await Promise.all(elem.files.map(f => uploadSingleToOss(f, pd))); elementsPayload.push({ name: elem.name, description: elem.description, element_input_urls: uploadedUrls }); } }
                         if (elementsPayload.length > 0) inputPayload.kling_elements = elementsPayload;
                         uploadProgressMsg.value = '上传主画面...';
                         if (form.klingShotMode === 'single') {
                             inputPayload.multi_shots = false; inputPayload.prompt = form.prompt; inputPayload.duration = String(form.klingDuration);
-                            if (filesToUpload.klingFirstImg) inputPayload.image_urls = [await uploadSingleToOss(filesToUpload.klingFirstImg, pd)];
+                            if (filesToUpload.klingFirstImg) {
+                                const url = await uploadSingleToOss(filesToUpload.klingFirstImg, pd);
+                                inputPayload.image_urls = [url];
+                                reqInputImg = url; // 🔴 赋值
+                            }
                             if (filesToUpload.klingLastImg) inputPayload.last_frame_image_url = await uploadSingleToOss(filesToUpload.klingLastImg, pd);
                         } else {
                             inputPayload.multi_shots = true; inputPayload.duration = String(totalMultiShotDuration.value); inputPayload.multi_prompt = form.klingMultiPrompts.map(p => ({ prompt: p.prompt, duration: p.duration }));
-                            if (filesToUpload.klingMultiImage) inputPayload.image_urls = [await uploadSingleToOss(filesToUpload.klingMultiImage, pd)];
+                            if (filesToUpload.klingMultiImage) {
+                                const url = await uploadSingleToOss(filesToUpload.klingMultiImage, pd);
+                                inputPayload.image_urls = [url];
+                                reqInputImg = url; // 🔴 赋值
+                            }
                         }
                         validatePromptElements(form.prompt);
                     }
@@ -607,24 +679,39 @@
                         uploadProgressMsg.value = '上传素材...';
                         const imgUrl = await uploadSingleToOss(filesToUpload.happyhorseImg, pd);
                         inputPayload = { prompt: form.prompt, image_urls: [imgUrl], duration: form.happyhorseDuration, resolution: form.happyhorseRes };
+                        reqInputImg = imgUrl; // 🔴 赋值
                         if (form.happyhorseSeed !== null) inputPayload.seed = form.happyhorseSeed;
                     }
                     else if (form.model === 'bytedance/seedance') {
                         inputPayload = { prompt: form.prompt, resolution: form.seeRes, aspect_ratio: form.seeRatio, duration: form.seeDuration, generate_audio: form.seeAudio };
                         uploadProgressMsg.value = '上传素材...';
 
-                        if (filesToUpload.seeImages.length > 0) inputPayload.reference_image_urls = await Promise.all(filesToUpload.seeImages.map(f => uploadSingleToOss(f, pd)));
-                        if (filesToUpload.seeVid) inputPayload.reference_video_urls = [await uploadSingleToOss(filesToUpload.seeVid, pd)];
-
-                        // 🔴 均提取首尾帧，供标准版和极速版共同使用
-                        if (filesToUpload.seeFirstImg) inputPayload.first_frame_url = await uploadSingleToOss(filesToUpload.seeFirstImg, pd);
+                        if (filesToUpload.seeImages.length > 0) {
+                            inputPayload.reference_image_urls = await Promise.all(filesToUpload.seeImages.map(f => uploadSingleToOss(f, pd)));
+                            reqInputImg = inputPayload.reference_image_urls[0]; // 🔴 赋值
+                        }
+                        if (filesToUpload.seeVid) {
+                            inputPayload.reference_video_urls = [await uploadSingleToOss(filesToUpload.seeVid, pd)];
+                            reqColorImg = inputPayload.reference_video_urls[0]; // 🔴 赋值
+                        }
+                        if (filesToUpload.seeFirstImg) {
+                            inputPayload.first_frame_url = await uploadSingleToOss(filesToUpload.seeFirstImg, pd);
+                            reqInputImg = inputPayload.first_frame_url; // 🔴 首图优先级最高，覆盖赋值
+                        }
                         if (filesToUpload.seeLastImg) inputPayload.last_frame_url = await uploadSingleToOss(filesToUpload.seeLastImg, pd);
                     }
 
                     uploadProgressMsg.value = '任务派发中...';
                     const targetModel = form.model === 'bytedance/seedance' ? form.seedanceVersion : form.model;
 
-                    const res = await axios.post('/api/tasks/create-video', { spu: form.spu, model: targetModel, input: inputPayload });
+                    const res = await axios.post('/api/tasks/create-video', {
+                        spu: form.spu,
+                        model: targetModel,
+                        input: inputPayload,
+                        inputImageUrl: reqInputImg,
+                        colorImageUrl: reqColorImg,
+                        cost: parseFloat(estimatedCost.value)
+                    });
                     if (res.data.success) { ElementPlus.ElMessage.success('🎉 视频任务已下发！'); setTimeout(() => goToList(), 1500); } else { ElementPlus.ElMessage.error(res.data.message); }
                 } catch (e) { ElementPlus.ElMessage.error(e.message || '操作失败'); } finally { loading.value = false; }
             };
@@ -638,7 +725,7 @@
                 mention, mentionItems, mentionEmptyText, mentionTitle, handlePromptInput, insertMention,
                 totalMultiShotDuration, getMaxDurationForShot, triggerUpload, handleFileSelected, handleDrop, removeSeeImage, submit,
                 addKlingShot, removeKlingShot, addKlingElement, removeKlingElement, removeKlingElementImage,
-                goToColor, goToScene, goToList
+                goToColor, goToScene, goToList, estimatedCost
             };
         }
     });

@@ -39,6 +39,8 @@ public class BatchTaskRequest {
     private String shopName;
     private String operator;
 
+    private java.math.BigDecimal cost;
+
     /**
      * 前端配对好的任务组合列表 (1张原图对应1张颜色图为一组)
      */
