@@ -148,7 +148,7 @@
                            @change="handleSearch">
                     <el-option label="🎨 换色任务" :value="1"></el-option>
                     <el-option label="🖼️ 场景生成" :value="2"></el-option>
-                    <el-button @click="goToVideo" plain>🎬 视频生成</el-button>
+                    <el-option label="🎬 视频生成" :value="3"></el-option>
                 </el-select>
 
                 <el-select v-model="filters.status" placeholder="状态" clearable style="width: 120px"
