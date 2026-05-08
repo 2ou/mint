@@ -103,16 +103,20 @@
                     </div>
                 </el-col>
                 <el-col :span="12">
-                    <div style="font-weight:bold; margin-bottom:10px;">动作参考视频 (必填)</div>
+                    <div style="font-weight:bold; margin-bottom:10px;">
+                        动作参考视频 (必填)
+                        <span v-if="form.motionVidDuration" style="color: #67c23a; font-weight: normal; font-size: 13px; margin-left: 10px;">
+                            (已识别: {{ form.motionVidDuration }} 秒)
+                        </span>
+                    </div>
                     <div class="upload-box" :class="{'is-dragover': drag.motionVid}"
                          @click="triggerUpload('motionVid', 'video/*')"
                          @dragover.prevent="drag.motionVid = true" @dragleave.prevent="drag.motionVid = false"
                          @drop.prevent="e => handleDrop(e, 'motionVid', 'video/*')">
                         <video v-if="form.motionVid" :src="form.motionVid" class="media-preview" autoplay muted loop></video>
                         <div v-else>➕ 拖拽或点击上传 MP4</div>
-                        <div v-if="form.motionVid" class="remove-btn" @click.stop="form.motionVid=''; filesToUpload.motionVid=null">X</div>
-                    </div>
-                </el-col>
+                        <div v-if="form.motionVid" class="remove-btn" @click.stop="form.motionVid=''; filesToUpload.motionVid=null; form.motionVidDuration=0">X</div>
+                    </div> </el-col>
             </el-row>
             <el-row :gutter="20" style="margin-top: 20px;">
                 <el-col :span="8">
@@ -438,6 +442,7 @@
         const form = reactive({
             spu: '', model: 'kling-3.0/video', prompt: '',
             motionImg: '', motionVid: '', motionMode: '720p', motionOrient: 'video', motionBg: 'input_video',
+            motionVidDuration: 0, // 🔴 新增：用于保存运镜参考视频的真实时长
             klingShotMode: 'single', klingFirstImg: '', klingLastImg: '', klingMultiImage: '',
             klingMultiPrompts: [{ prompt: '', duration: 5 }], klingRatio: '16:9', klingDuration: 5, klingMode: 'pro',
             klingElements: [],
@@ -470,7 +475,8 @@
                 let duration = 0;
 
                 if (form.model === 'kling-3.0/motion-control') {
-                    duration = 5; // 可灵运镜通常计费基准为5秒
+                    // 🔴 修改：动态读取刚上传的视频时长，如果没有上传则默认预估 5 秒
+                    duration = form.motionVidDuration || 5;
                     pricePerSec = form.motionMode === '1080p' ? 0.86 : 0.64;
                 }
                 else if (form.model === 'kling-3.0/video') {
@@ -596,6 +602,18 @@
                 Array.from(files).forEach(file => {
                     if (currentUploadTarget.isElement && file.size > 10 * 1024 * 1024) return ElementPlus.ElMessage.error(`【${file.name}】大小超过 10MB，已被拒绝`);
                     const localBlobUrl = URL.createObjectURL(file);
+
+                    // 🔴 新增：如果是运镜参考视频，自动读取时长
+                    if (currentUploadTarget.field === 'motionVid' && file.type.startsWith('video/')) {
+                        const videoElement = document.createElement('video');
+                        videoElement.preload = 'metadata';
+                        videoElement.onloadedmetadata = function() {
+                            // 获取视频真实时长（向上取整计算，不足 1 秒按 1 秒算）
+                            form.motionVidDuration = Math.ceil(videoElement.duration);
+                        }
+                        videoElement.src = localBlobUrl;
+                    }
+
                     if (currentUploadTarget.isElement) {
                         const elem = form.klingElements[currentUploadTarget.elementIndex];
                         if (elem.urls.length >= 4) return ElementPlus.ElMessage.warning('单组 Element 最多允许 4 张图片');
