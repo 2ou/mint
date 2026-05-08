@@ -194,18 +194,8 @@ public class ImageTaskController {
         return ApiResponse.ok("ok", kieClientService.getRawResult(taskId));
     }
 
+    private final OssService ossService;
 
-    /**
-     * 🔴 新增：获取任务消费统计数据
-     */
-    @GetMapping("/stats")
-    public ApiResponse<List<com.ai.dto.SpuStatDTO>> getTaskStats(
-            @RequestParam(value = "spu", required = false) String spu,
-            @RequestParam(value = "startTime", required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime startTime,
-            @RequestParam(value = "endTime", required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime endTime) {
-
-        List<com.ai.dto.SpuStatDTO> stats = imageTaskService.getTaskStats(spu, startTime, endTime);
-        return ApiResponse.ok("ok", stats);
 
     @PostMapping("/create-video")
     public ApiResponse<ImageTask> createVideoTask(@RequestBody VideoTaskRequest req, HttpServletRequest request) {
@@ -269,4 +259,35 @@ public class ImageTaskController {
         }
     }
 
+    /**
+     * 删除任务（最高权限：仅限 PINKSIR 店铺操作）
+     */
+    @DeleteMapping("/{id}")
+    public ApiResponse<String> deleteTask(@PathVariable("id") Long id, HttpServletRequest request) {
+        // 1. 获取当前操作人的店铺名和姓名 (由 TokenInterceptor 注入)
+        String shopName = (String) request.getAttribute("shopName");
+        String operator = (String) request.getAttribute("operator");
+
+        // 2. 权限拦截：强制校验是否为 PINKSIR
+        if (shopName == null || !"PINKSIR".equalsIgnoreCase(shopName.trim())) {
+            log.warn("【越权拦截】店铺 [{}] 的员工 [{}] 尝试删除任务 {} 被拒绝！", shopName, operator, id);
+            return ApiResponse.fail("无权限操作：仅限 PINKSIR 内部管理删除");
+        }
+
+        try {
+            // 3. 检查任务是否存在
+            if (!imageTaskRepository.existsById(id)) {
+                return ApiResponse.fail("删除失败：该任务 ID 不存在");
+            }
+
+            // 4. 执行删除
+            imageTaskRepository.deleteById(id);
+            log.info("【任务删除】✅ 员工 [{}] 成功删除了任务 ID: {}", operator, id);
+
+            return ApiResponse.ok("删除成功", null);
+        } catch (Exception e) {
+            log.error("【任务删除】❌ 发生异常: ", e);
+            return ApiResponse.fail("删除失败：" + e.getMessage());
+        }
+    }
 }
