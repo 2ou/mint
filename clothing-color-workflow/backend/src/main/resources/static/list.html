@@ -352,13 +352,6 @@
         <el-image-viewer v-if="showImageViewer" :url-list="previewImageUrlList" @close="showImageViewer = false"
                          hide-on-click-modal/>
 
-        <el-dialog v-model="showVideoDialog" title="🎬 视频预览" width="60%" center append-to-body>
-            <div v-if="showVideoDialog" style="display: flex; justify-content: center; align-items: center; background: #000; border-radius: 8px; padding: 20px;">
-                <video :src="previewVideoUrl" controls autoplay
-                       style="max-width: 100%; max-height: 65vh; outline: none; border-radius: 4px;"
-                       @error="handleVideoError"></video>
-            </div>
-        </el-dialog>
     </div>
 </div>
 
@@ -409,21 +402,38 @@
                 showImageViewer.value = true;
             };
 
+            // 🔴 终极解决假死：纯 JS 强行召唤播放弹窗，完全绕过 HTML 渲染 Bug
             const openVideoPreview = (url) => {
-                if (!url || url === 'null') return ElementPlus.ElMessage.warning('暂无视频链接');
+                if (!url || String(url).trim() === '' || String(url).trim().toLowerCase() === 'null') {
+                    return ElementPlus.ElMessage.warning('暂无视频链接');
+                }
 
-                // 1. 互斥清理：先确保图片预览和旧视频状态是关闭的
-                showImageViewer.value = false;
-                showVideoDialog.value = false;
-
-                // 2. 提取链接
+                // 提取正确链接
                 let finalUrl = String(url).split(',')[0].trim();
-                if (finalUrl.startsWith('http://')) finalUrl = finalUrl.replace('http://', 'https://');
-                previewVideoUrl.value = finalUrl;
+                if (finalUrl.startsWith('http://')) {
+                    finalUrl = finalUrl.replace('http://', 'https://');
+                }
 
-                // 3. 核心修复：使用 nextTick 等待清理完成后再开启弹窗
-                nextTick(() => {
-                    showVideoDialog.value = true;
+                // 强制关闭图片预览弹窗（防重叠）
+                showImageViewer.value = false;
+
+                // 🚀 核心大招：直接调用底层的弹窗 API，强行渲染视频，100% 绝对秒开！
+                ElementPlus.ElMessageBox.alert(
+                    `<div style="display: flex; justify-content: center; align-items: center; background: #000; border-radius: 8px; padding: 20px;">
+                        <video src="${finalUrl}" controls autoplay style="max-width: 100%; max-height: 60vh; outline: none; border-radius: 4px; background: #000;"></video>
+                    </div>
+                    <div style="margin-top: 15px; text-align: center;">
+                        <a href="${finalUrl}" target="_blank" style="color: #409EFF; font-size: 14px; text-decoration: none;">👉 若黑屏或无法缓冲，请点击此处外部播放</a>
+                    </div>`,
+                    '🎬 视频预览',
+                    {
+                        dangerouslyUseHTMLString: true,
+                        customStyle: { width: '60%', maxWidth: '1000px', backgroundColor: '#1e1e1e', border: 'none' },
+                        confirmButtonText: '关闭窗口',
+                        center: true
+                    }
+                ).catch(() => {
+                    // 捕获用户点击关闭按钮的事件，防止控制台报错
                 });
             };
 

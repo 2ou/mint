@@ -632,6 +632,24 @@
 
             const submit = async () => {
                 if (!form.spu) return ElementPlus.ElMessage.warning('请输入 SPU 款号');
+
+                // 🔴 新增：二次确认弹窗拦截
+                try {
+                    await ElementPlus.ElMessageBox.confirm(
+                        `本次视频生成任务预估产生费用 <span style="color: #f56c6c; font-weight: bold; font-size: 18px;">￥${estimatedCost.value}</span>。<br/>提交后将直接扣费并直传云端，是否确认继续？`,
+                        '⚠️ 提交确认',
+                        {
+                            confirmButtonText: '确认提交',
+                            cancelButtonText: '取消',
+                            dangerouslyUseHTMLString: true, // 开启 HTML 渲染以突出费用
+                            type: 'warning',
+                        }
+                    );
+                } catch (e) {
+                    // 用户点击取消，直接中断
+                    return;
+                }
+
                 loading.value = true;
                 try {
                     const policyRes = await axios.get('/api/oss/policy');
