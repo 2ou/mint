@@ -123,9 +123,11 @@
             <template #header>
                 <span>📊 AI 任务管理大盘 (换色 / 场景 / 视频)</span>
                 <div style="display: flex; gap: 10px; align-items: center;">
-                    <el-button color="#8a2be2" :disabled="selectedRows.length === 0" @click="batchDownload">
-                        📦 批量下载 ({{ selectedRows.length }})
-                    </el-button>
+                    <el-tooltip effect="dark" content="处理中、生成失败或暂无结果的任务不支持勾选下载" placement="bottom">
+                        <el-button color="#8a2be2" :disabled="selectedRows.length === 0" @click="batchDownload">
+                            📦 批量下载 ({{ selectedRows.length }})
+                        </el-button>
+                    </el-tooltip>
                     <el-button type="primary" @click="exportLinks" :disabled="selectedRows.length === 0"
                                style="font-weight: bold; border: 2px solid white;">
                         📄 导出链接 (备用)
@@ -171,7 +173,7 @@
 
             <el-table :data="rawData" v-loading="loading" @selection-change="handleSelectionChange" border stripe
                       style="width: 100%" height="65vh">
-                <el-table-column type="selection" width="50" align="center"></el-table-column>
+                <el-table-column type="selection" width="50" align="center" :selectable="canSelectRow"></el-table-column>
                 <el-table-column prop="id" label="ID" width="70" align="center"></el-table-column>
                 <el-table-column prop="spu" label="SPU" width="100" align="center"></el-table-column>
                 <el-table-column prop="resolution" label="分辨率" width="80" align="center">
@@ -390,6 +392,11 @@
             const previewImageUrlList = ref([]);
             const showVideoDialog = ref(false);
             const previewVideoUrl = ref('');
+
+            // 🔴 核心拦截逻辑：只有状态为 SUCCESS 且确实拿到了结果链接的任务才能被勾选
+            const canSelectRow = (row) => {
+                return row.status === 'SUCCESS' && (row.resultOssUrl || row.resultTempUrl);
+            };
 
             const isVideo = (url) => {
                 if (!url) return false;
@@ -707,7 +714,8 @@
                 getStatusType, formatTime, handleSelectionChange, refreshRow, syncAllProcessing,
                 formatTaskId, fetchKieRaw, batchDownload, handleVideoError,
                 goToColor, goToScene, goToVideo, isVideo,
-                openImagePreview, openVideoPreview, saveToTemplateLibrary // 导出新方法
+                openImagePreview, openVideoPreview, saveToTemplateLibrary, // 导出新方法
+                canSelectRow
             };
         }
     }).use(ElementPlus).mount('#app');
