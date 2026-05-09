@@ -20,7 +20,7 @@
         .is-dragover { border-color: #67c23a !important; background: #f0f9eb !important; transform: scale(1.01); transition: all 0.2s; }
 
         .media-preview { width: 100%; height: 100%; object-fit: cover; }
-        .remove-btn { position: absolute; top: -6px; right: -6px; background-color: rgba(245, 108, 108, 0.95); color: white; border-radius: 50%; width: 20px; height: 20px; line-height: 18px; text-align: center; cursor: pointer; z-index: 10; font-size: 12px; font-weight: bold; transition: 0.2s;}
+        .remove-btn { position: absolute; top: -6px; right: -6px; background-color: rgba(245, 108, 108, 0.95); color: white; border-radius: 50%; width: 20px; height: 20px; line-height: 18px; text-align: center; cursor: pointer; z-index: 10; font-size: 12px; font-weight: bold; transition: 0.2s; box-shadow: 0 2px 4px rgba(0,0,0,0.2);}
         .remove-btn:hover { transform: scale(1.15); background-color: #f56c6c; }
 
         .ref-img-card { position: relative; width: 110px; height: 140px; border: 1px solid #ebeef5; border-radius: 8px; overflow: visible; background: #fff; text-align: center; display: flex; flex-direction: column; justify-content: space-between; box-shadow: 0 2px 8px rgba(0,0,0,0.05);}
@@ -92,43 +92,78 @@
             <div class="section-title">2. 运镜控制 参数</div>
             <el-row :gutter="20">
                 <el-col :span="12">
-                    <div style="font-weight:bold; margin-bottom:10px;">人物参考图 (必填)</div>
-                    <div class="upload-box" :class="{'is-dragover': drag.motionImg}"
+                    <div style="font-weight:bold; margin-bottom:10px; display: flex; align-items: center;">
+                        人物参考图 (必填)
+                        <el-tooltip effect="dark" placement="top" style="max-width: 300px;">
+                            <template #content>
+                                <div style="line-height: 1.6;">
+                                    <b>文件类型:</b> JPEG、PNG 或 JPG<br/>
+                                    <b>文件大小:</b> 最大 10MB，尺寸需大于 340px<br/>
+                                    <b>宽高比例:</b> 介于 2:5 到 5:2 之间<br/>
+                                    <b>内容要求:</b> 清楚显示对象的头部、肩膀和躯干
+                                </div>
+                            </template>
+                            <el-icon style="margin-left: 5px; color: #909399; cursor: help; font-size: 16px;"><info-filled></info-filled></el-icon>
+                        </el-tooltip>
+                    </div>
+
+                    <div v-if="form.motionImg" style="position: relative; width: 140px; height: 140px; border-radius: 8px; border: 1px solid #ebeef5; box-shadow: 0 2px 12px 0 rgba(0,0,0,0.05); padding: 4px; background: #fff;">
+                        <el-image :src="form.motionImg" :preview-src-list="[form.motionImg]" fit="cover" style="width: 100%; height: 100%; border-radius: 6px; cursor: pointer;" preview-teleported title="点击放大查看"></el-image>
+                        <div class="remove-btn" @click.stop="form.motionImg=''; filesToUpload.motionImg=null">X</div>
+                    </div>
+
+                    <div v-else class="upload-box" :class="{'is-dragover': drag.motionImg}"
                          @click="triggerUpload('motionImg', 'image/*')"
                          @dragover.prevent="drag.motionImg = true" @dragleave.prevent="drag.motionImg = false"
-                         @drop.prevent="e => handleDrop(e, 'motionImg', 'image/*')">
-                        <img v-if="form.motionImg" :src="form.motionImg" class="media-preview">
-                        <div v-else>➕ 拖拽或点击上传图片</div>
-                        <div v-if="form.motionImg" class="remove-btn" @click.stop="form.motionImg=''; filesToUpload.motionImg=null">X</div>
+                         @drop.prevent="e => handleDrop(e, 'motionImg', 'image/*')" style="height: 140px; width: 140px;">
+                        <div style="font-size: 24px; color: #409EFF; margin-bottom: 5px;">➕</div>
+                        <div style="font-size: 13px;">点击或拖拽</div>
                     </div>
                 </el-col>
+
                 <el-col :span="12">
-                    <div style="font-weight:bold; margin-bottom:10px;">
+                    <div style="font-weight:bold; margin-bottom:10px; display: flex; align-items: center;">
                         动作参考视频 (必填)
+                        <el-tooltip effect="dark" placement="top" style="max-width: 300px;">
+                            <template #content>
+                                <div style="line-height: 1.6;">
+                                    <b>文件类型:</b> MP4 或 QuickTime<br/>
+                                    <b>持续时间:</b> 3-30 秒<br/>
+                                    <b>文件大小:</b> 最大 100MB，尺寸需大于 340px<br/>
+                                    <b>宽高比例:</b> 介于 2:5 到 5:2 之间<br/>
+                                    <b>内容要求:</b> 清楚显示对象的头部、肩膀和躯干
+                                </div>
+                            </template>
+                            <el-icon style="margin-left: 5px; color: #909399; cursor: help; font-size: 16px;"><info-filled></info-filled></el-icon>
+                        </el-tooltip>
+
                         <span v-if="form.motionVidDuration" style="color: #67c23a; font-weight: normal; font-size: 13px; margin-left: 10px;">
                             (已识别: {{ form.motionVidDuration }} 秒)
                         </span>
                     </div>
-                    <div class="upload-box" :class="{'is-dragover': drag.motionVid}"
+
+                    <div v-if="form.motionVid" style="position: relative; width: 140px; height: 140px; border-radius: 8px; border: 1px solid #ebeef5; box-shadow: 0 2px 12px 0 rgba(0,0,0,0.05); padding: 4px; background: #fff; cursor: pointer;" @click="previewVideo(form.motionVid)" title="点击播放视频">
+                        <video :src="form.motionVid" style="width: 100%; height: 100%; object-fit: cover; border-radius: 6px;" @loadedmetadata="e => form.motionVidDuration = Math.max(1, Math.round(e.target.duration))"></video>
+                        <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; font-size: 32px; opacity: 0.9; text-shadow: 0 2px 6px rgba(0,0,0,0.6);">▶</div>
+                        <div class="remove-btn" @click.stop="form.motionVid=''; filesToUpload.motionVid=null; form.motionVidDuration=0">X</div>
+                    </div>
+
+                    <div v-else class="upload-box" :class="{'is-dragover': drag.motionVid}"
                          @click="triggerUpload('motionVid', 'video/*')"
                          @dragover.prevent="drag.motionVid = true" @dragleave.prevent="drag.motionVid = false"
-                         @drop.prevent="e => handleDrop(e, 'motionVid', 'video/*')">
-                        <video v-if="form.motionVid" :src="form.motionVid" class="media-preview" autoplay muted loop></video>
-                        <div v-else>➕ 拖拽或点击上传 MP4</div>
-                        <div v-if="form.motionVid" class="remove-btn" @click.stop="form.motionVid=''; filesToUpload.motionVid=null; form.motionVidDuration=0">X</div>
-                    </div> </el-col>
+                         @drop.prevent="e => handleDrop(e, 'motionVid', 'video/*')" style="height: 140px; width: 140px;">
+                        <div style="font-size: 24px; color: #409EFF; margin-bottom: 5px;">➕</div>
+                        <div style="font-size: 13px;">点击或拖拽</div>
+                    </div>
+                </el-col>
             </el-row>
             <el-row :gutter="20" style="margin-top: 20px;">
                 <el-col :span="8">
                     <el-form-item label="渲染画质">
-                        <div style="display: flex; gap: 15px; align-items: center;">
-                            <el-select v-model="form.klingMode" style="width: 130px;">
-                                <el-option label="标准 (std)" value="std"></el-option>
-                                <el-option label="专业 (pro)" value="pro"></el-option>
-                                <el-option label="超清 (4k)" value="4k"></el-option>
-                            </el-select>
-                            <el-switch v-model="form.klingAudio" active-text="生成音频"></el-switch>
-                        </div>
+                        <el-select v-model="form.motionMode" style="width: 100%;">
+                            <el-option label="标准模式 (720p)" value="720p"></el-option>
+                            <el-option label="专业模式 (1080p)" value="1080p"></el-option>
+                        </el-select>
                     </el-form-item>
                 </el-col>
                 <el-col :span="8">
@@ -433,23 +468,26 @@
         </el-button>
         <input type="file" id="hiddenUploader" style="display: none;" :multiple="isMultipleUpload" @change="handleFileSelected">
     </el-card>
+
+    <el-dialog v-model="showVideoDialog" title="🎬 动作参考预览" width="50%" center destroy-on-close>
+        <video :src="currentPreviewVideo" controls autoplay style="width: 100%; max-height: 60vh; background: #000; border-radius: 8px; outline: none;"></video>
+    </el-dialog>
 </div>
 
 <script>
     const { createApp, ref, reactive, nextTick, computed } = Vue;
     const app = createApp({
         setup() {
-        const form = reactive({
-            spu: '', model: 'kling-3.0/video', prompt: '',
-            motionImg: '', motionVid: '', motionMode: '720p', motionOrient: 'video', motionBg: 'input_video',
-            motionVidDuration: 0, // 🔴 新增：用于保存运镜参考视频的真实时长
-            klingShotMode: 'single', klingFirstImg: '', klingLastImg: '', klingMultiImage: '',
-            klingMultiPrompts: [{ prompt: '', duration: 5 }], klingRatio: '16:9', klingDuration: 5, klingMode: 'pro',
-            klingElements: [],
-            // 🔴 新增 klingAudio: false
-            klingAudio: false,
-            happyhorseImg: '', happyhorseRes: '1080p', happyhorseDuration: 5, happyhorseSeed: null,
-            seedanceVersion: 'bytedance/seedance-2',
+            const form = reactive({
+                spu: '', model: 'kling-3.0/video', prompt: '',
+                motionImg: '', motionVid: '', motionMode: '720p', motionOrient: 'video', motionBg: 'input_video',
+                motionVidDuration: 0,
+                klingShotMode: 'single', klingFirstImg: '', klingLastImg: '', klingMultiImage: '',
+                klingMultiPrompts: [{ prompt: '', duration: 5 }], klingRatio: '16:9', klingDuration: 5, klingMode: 'pro',
+                klingElements: [],
+                klingAudio: false,
+                happyhorseImg: '', happyhorseRes: '1080p', happyhorseDuration: 5, happyhorseSeed: null,
+                seedanceVersion: 'bytedance/seedance-2',
                 seeImages: [], seeVid: '', seeRatio: '16:9', seeRes: '1080p', seeDuration: 15, seeAudio: true,
                 seeFirstImg: '', seeLastImg: ''
             });
@@ -470,24 +508,30 @@
                 seeFirstImg: false, seeLastImg: false
             });
 
+            const showVideoDialog = ref(false);
+            const currentPreviewVideo = ref('');
+            const previewVideo = (url) => {
+                currentPreviewVideo.value = url;
+                showVideoDialog.value = true;
+            };
+
             const estimatedCost = computed(() => {
                 let pricePerSec = 0;
                 let duration = 0;
 
                 if (form.model === 'kling-3.0/motion-control') {
-                    // 🔴 修改：动态读取刚上传的视频时长，如果没有上传则默认预估 5 秒
                     duration = form.motionVidDuration || 5;
+                    // 🔴 修复：使用 1080p 和 720p 字符串来精确判断单价
                     pricePerSec = form.motionMode === '1080p' ? 0.86 : 0.64;
                 }
                 else if (form.model === 'kling-3.0/video') {
                     duration = form.klingShotMode === 'single' ? form.klingDuration : totalMultiShotDuration.value;
-                    // 🔴 严格根据 CSV 价格表引入音频变量
                     if (form.klingMode === '4k') {
-                        pricePerSec = 2.14; // CSV 中 4K 带不带音频都是 2.14
+                        pricePerSec = 2.14;
                     } else if (form.klingMode === 'pro') {
-                        pricePerSec = form.klingAudio ? 0.86 : 0.57; // 1080P 计费
+                        pricePerSec = form.klingAudio ? 0.86 : 0.57;
                     } else {
-                        pricePerSec = form.klingAudio ? 0.64 : 0.44; // 720P (std) 计费
+                        pricePerSec = form.klingAudio ? 0.64 : 0.44;
                     }
                 }
                 else if (form.model === 'happyhorse/image-to-video') {
@@ -501,7 +545,7 @@
                     const res = form.seeRes;
 
                     if (isFast) {
-                        if (res === '1080p') pricePerSec = hasVid ? 1.98 : 3.26; // 极速版降级按标准版1080p算
+                        if (res === '1080p') pricePerSec = hasVid ? 1.98 : 3.26;
                         else if (res === '720p') pricePerSec = hasVid ? 0.64 : 1.05;
                         else if (res === '480p') pricePerSec = hasVid ? 0.28 : 0.49;
                     } else {
@@ -603,17 +647,6 @@
                     if (currentUploadTarget.isElement && file.size > 10 * 1024 * 1024) return ElementPlus.ElMessage.error(`【${file.name}】大小超过 10MB，已被拒绝`);
                     const localBlobUrl = URL.createObjectURL(file);
 
-                    // 🔴 新增：如果是运镜参考视频，自动读取时长
-                    if (currentUploadTarget.field === 'motionVid' && file.type.startsWith('video/')) {
-                        const videoElement = document.createElement('video');
-                        videoElement.preload = 'metadata';
-                        videoElement.onloadedmetadata = function() {
-                            // 获取视频真实时长（向上取整计算，不足 1 秒按 1 秒算）
-                            form.motionVidDuration = Math.ceil(videoElement.duration);
-                        }
-                        videoElement.src = localBlobUrl;
-                    }
-
                     if (currentUploadTarget.isElement) {
                         const elem = form.klingElements[currentUploadTarget.elementIndex];
                         if (elem.urls.length >= 4) return ElementPlus.ElMessage.warning('单组 Element 最多允许 4 张图片');
@@ -651,7 +684,6 @@
             const submit = async () => {
                 if (!form.spu) return ElementPlus.ElMessage.warning('请输入 SPU 款号');
 
-                // 🔴 新增：二次确认弹窗拦截
                 try {
                     await ElementPlus.ElMessageBox.confirm(
                         `本次视频生成任务预估产生费用 <span style="color: #f56c6c; font-weight: bold; font-size: 18px;">￥${estimatedCost.value}</span>。<br/>提交后将直接扣费并直传云端，是否确认继续？`,
@@ -659,12 +691,11 @@
                         {
                             confirmButtonText: '确认提交',
                             cancelButtonText: '取消',
-                            dangerouslyUseHTMLString: true, // 开启 HTML 渲染以突出费用
+                            dangerouslyUseHTMLString: true,
                             type: 'warning',
                         }
                     );
                 } catch (e) {
-                    // 用户点击取消，直接中断
                     return;
                 }
 
@@ -673,16 +704,27 @@
                     const policyRes = await axios.get('/api/oss/policy');
                     const pd = policyRes.data.data;
                     let inputPayload = {};
-                    let reqInputImg = ''; // 用于提取首帧/参考图
-                    let reqColorImg = ''; // 用于提取动作视频
+                    let reqInputImg = '';
+                    let reqColorImg = '';
 
                     if (form.model === 'kling-3.0/motion-control') {
                         if (!filesToUpload.motionImg || !filesToUpload.motionVid) throw new Error('运镜必须上传首图和视频');
                         uploadProgressMsg.value = '上传素材...';
                         const [imgOssUrl, vidOssUrl] = await Promise.all([ uploadSingleToOss(filesToUpload.motionImg, pd), uploadSingleToOss(filesToUpload.motionVid, pd) ]);
-                        inputPayload = { prompt: form.prompt, input_urls: [imgOssUrl], video_urls: [vidOssUrl], mode: form.motionMode, character_orientation: form.motionOrient, background_source: form.motionBg };
 
-                        // 🔴 赋值给外层变量供后端大盘展示
+                        inputPayload = {
+                            input_urls: [imgOssUrl],
+                            video_urls: [vidOssUrl],
+                            mode: form.motionMode,
+                            character_orientation: form.motionOrient,
+                            background_source: form.motionBg
+                        };
+
+                        // 🔴 防御性处理：如果提示词为空，干脆不传这个可选字段，防止报空异常
+                        if (form.prompt && form.prompt.trim() !== '') {
+                            inputPayload.prompt = form.prompt.trim();
+                        }
+
                         reqInputImg = imgOssUrl;
                         reqColorImg = vidOssUrl;
                     }
@@ -697,7 +739,7 @@
                             if (filesToUpload.klingFirstImg) {
                                 const url = await uploadSingleToOss(filesToUpload.klingFirstImg, pd);
                                 inputPayload.image_urls = [url];
-                                reqInputImg = url; // 🔴 赋值
+                                reqInputImg = url;
                             }
                             if (filesToUpload.klingLastImg) inputPayload.last_frame_image_url = await uploadSingleToOss(filesToUpload.klingLastImg, pd);
                         } else {
@@ -705,7 +747,7 @@
                             if (filesToUpload.klingMultiImage) {
                                 const url = await uploadSingleToOss(filesToUpload.klingMultiImage, pd);
                                 inputPayload.image_urls = [url];
-                                reqInputImg = url; // 🔴 赋值
+                                reqInputImg = url;
                             }
                         }
                         validatePromptElements(form.prompt);
@@ -715,7 +757,7 @@
                         uploadProgressMsg.value = '上传素材...';
                         const imgUrl = await uploadSingleToOss(filesToUpload.happyhorseImg, pd);
                         inputPayload = { prompt: form.prompt, image_urls: [imgUrl], duration: form.happyhorseDuration, resolution: form.happyhorseRes };
-                        reqInputImg = imgUrl; // 🔴 赋值
+                        reqInputImg = imgUrl;
                         if (form.happyhorseSeed !== null) inputPayload.seed = form.happyhorseSeed;
                     }
                     else if (form.model === 'bytedance/seedance') {
@@ -724,15 +766,15 @@
 
                         if (filesToUpload.seeImages.length > 0) {
                             inputPayload.reference_image_urls = await Promise.all(filesToUpload.seeImages.map(f => uploadSingleToOss(f, pd)));
-                            reqInputImg = inputPayload.reference_image_urls[0]; // 🔴 赋值
+                            reqInputImg = inputPayload.reference_image_urls[0];
                         }
                         if (filesToUpload.seeVid) {
                             inputPayload.reference_video_urls = [await uploadSingleToOss(filesToUpload.seeVid, pd)];
-                            reqColorImg = inputPayload.reference_video_urls[0]; // 🔴 赋值
+                            reqColorImg = inputPayload.reference_video_urls[0];
                         }
                         if (filesToUpload.seeFirstImg) {
                             inputPayload.first_frame_url = await uploadSingleToOss(filesToUpload.seeFirstImg, pd);
-                            reqInputImg = inputPayload.first_frame_url; // 🔴 首图优先级最高，覆盖赋值
+                            reqInputImg = inputPayload.first_frame_url;
                         }
                         if (filesToUpload.seeLastImg) inputPayload.last_frame_url = await uploadSingleToOss(filesToUpload.seeLastImg, pd);
                     }
@@ -748,8 +790,37 @@
                         colorImageUrl: reqColorImg,
                         cost: parseFloat(estimatedCost.value)
                     });
-                    if (res.data.success) { ElementPlus.ElMessage.success('🎉 视频任务已下发！'); setTimeout(() => goToList(), 1500); } else { ElementPlus.ElMessage.error(res.data.message); }
-                } catch (e) { ElementPlus.ElMessage.error(e.message || '操作失败'); } finally { loading.value = false; }
+
+                    // 🔴 核心修改：成功时使用右上角醒目提醒并延迟自动跳转；失败时原地强阻断报错
+                    if (res.data.success) {
+                        ElementPlus.ElNotification({
+                            title: '✅ 任务提交成功',
+                            message: '视频生成任务已成功下发至云端，2秒后自动为您跳转至大盘查看...',
+                            type: 'success',
+                            duration: 2000 // 提示停留2秒
+                        });
+                        setTimeout(() => goToList(), 2000); // 2秒后自动跳转
+                    } else {
+                        // 失败时，在当前页面直接弹出巨大的红框报错，不跳转
+                        ElementPlus.ElMessageBox.alert(
+                            `<div style="font-weight: bold; color: #f56c6c; font-size: 15px; margin-top: 10px;">
+                                ❌ 提交失败：${res.data.message || '未知错误'}
+                             </div>
+                             <div style="color: #909399; font-size: 13px; margin-top: 5px;">请检查参数或稍后重试</div>`,
+                            '任务提交失败',
+                            { dangerouslyUseHTMLString: true, type: 'error', confirmButtonText: '返回修改' }
+                        );
+                    }
+
+                } catch (e) {
+                    ElementPlus.ElMessageBox.alert(
+                        `<div style="font-weight: bold; color: #f56c6c;">❌ 操作失败：${e.message || '网络异常'}</div>`,
+                        '系统错误',
+                        { dangerouslyUseHTMLString: true, type: 'error', confirmButtonText: '返回修改' }
+                    );
+                } finally {
+                    loading.value = false;
+                }
             };
 
             const goToColor = () => window.location.href = 'index.html';
@@ -761,7 +832,8 @@
                 mention, mentionItems, mentionEmptyText, mentionTitle, handlePromptInput, insertMention,
                 totalMultiShotDuration, getMaxDurationForShot, triggerUpload, handleFileSelected, handleDrop, removeSeeImage, submit,
                 addKlingShot, removeKlingShot, addKlingElement, removeKlingElement, removeKlingElementImage,
-                goToColor, goToScene, goToList, estimatedCost
+                goToColor, goToScene, goToList, estimatedCost,
+                showVideoDialog, currentPreviewVideo, previewVideo
             };
         }
     });

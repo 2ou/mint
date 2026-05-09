@@ -234,15 +234,13 @@
 
                 <el-table-column label="参考素材" width="95" align="center">
                     <template #default="scope">
-                        <el-tooltip
-                                :content="scope.row.taskType === 3 ? '动作参考/场景视频' : (scope.row.taskType === 2 ? '场景参考图' : '颜色参考图')"
-                                placement="top">
+                        <el-tooltip :content="scope.row.taskType === 3 ? '动作参考/场景视频' : (scope.row.taskType === 2 ? '场景参考图' : '颜色参考图')" placement="top">
                             <div v-if="scope.row.colorImageUrl">
-                                <video v-if="isVideo(scope.row.colorImageUrl)" :src="scope.row.colorImageUrl"
-                                       class="thumbnail" controls style="background: #000; object-fit: cover;"></video>
-                                <el-image v-else class="thumbnail" :src="scope.row.colorImageUrl"
-                                          :preview-src-list="[scope.row.colorImageUrl]" preview-teleported
-                                          fit="cover"></el-image>
+                                <div v-if="isVideo(scope.row.colorImageUrl)" style="position: relative; width: 55px; height: 55px; cursor: pointer; border-radius: 6px; overflow: hidden; border: 1px solid #ddd;" @click="openVideoPreview(scope.row.colorImageUrl)">
+                                    <el-image style="width: 100%; height: 100%;" :src="scope.row.colorImageUrl + '?x-oss-process=video/snapshot,t_1000,f_jpg,w_100,h_100,m_fast'" fit="cover"></el-image>
+                                    <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; font-size: 20px; opacity: 0.8; text-shadow: 0 1px 3px rgba(0,0,0,0.8);">▶</div>
+                                </div>
+                                <el-image v-else class="thumbnail" :src="scope.row.colorImageUrl" :preview-src-list="[scope.row.colorImageUrl]" preview-teleported fit="cover"></el-image>
                             </div>
                             <div v-else class="empty-img">无素材</div>
                         </el-tooltip>
@@ -330,9 +328,20 @@
                     <template #default="scope">{{ formatTime(scope.row.createdAt) }}</template>
                 </el-table-column>
 
-                <el-table-column label="预估费用" width="100" align="center">
+                <el-table-column label="预估费用" width="120" align="center">
+                    <template #header>
+                        <div style="display: flex; align-items: center; justify-content: center;">
+                            预估费用
+                            <el-tooltip effect="dark" content="只有状态为 SUCCESS 或 PROCESSING 的任务会计入实际费用，FAILED（失败）的任务不会产生任何扣费。" placement="top">
+                                <el-icon style="margin-left: 4px; cursor: help; color: #909399;"><svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg"><path fill="currentColor" d="M512 64a448 448 0 1 1 0 896 448 448 0 0 1 0-896zm0 192a58.432 58.432 0 0 0-58.24 63.744l23.36 256.384a35.072 35.072 0 0 0 69.76 0l23.296-256.384A58.432 58.432 0 0 0 512 256zm0 512a51.2 51.2 0 1 0 0-102.4 51.2 51.2 0 0 0 0 102.4z"></path></svg></el-icon>
+                            </el-tooltip>
+                        </div>
+                    </template>
                     <template #default="scope">
-                        <span v-if="scope.row.cost !== undefined && scope.row.cost !== null" style="color: #f56c6c; font-weight: bold;">
+                        <span v-if="scope.row.status === 'FAILED'" style="color: #909399; text-decoration: line-through;" title="失败任务不扣费">
+                            ￥{{ Number(scope.row.cost).toFixed(2) }}
+                        </span>
+                        <span v-else-if="scope.row.cost !== undefined && scope.row.cost !== null" style="color: #f56c6c; font-weight: bold;">
                             ￥{{ Number(scope.row.cost).toFixed(2) }}
                         </span>
                         <span v-else style="color: #909399;">-</span>
