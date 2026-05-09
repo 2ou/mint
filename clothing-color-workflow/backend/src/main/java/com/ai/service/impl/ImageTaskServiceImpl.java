@@ -249,10 +249,40 @@ public class ImageTaskServiceImpl implements ImageTaskService {
                     String imageUrl = task.getResultOssUrl() != null ? task.getResultOssUrl() : task.getResultTempUrl();
                     if (imageUrl == null || imageUrl.isEmpty()) continue;
 
-                    // 构造压缩包内的文件名：SPU_前8位任务ID.png
-                    String ext = imageUrl.toLowerCase().contains(".jpg") ? ".jpg" : ".png";
-                    String shortTaskId = task.getTaskId() != null && task.getTaskId().length() >= 8 ? task.getTaskId().substring(0, 8) : String.valueOf(task.getId());
-                    String fileName = task.getSpu() + "_" + shortTaskId + ext;
+                    // 🔴 优化1：更智能地判断扩展名（兼容图片与视频任务）
+                    String lowerUrl = imageUrl.toLowerCase();
+                    String ext = ".png"; // 默认兜底
+                    if (lowerUrl.contains(".jpg") || lowerUrl.contains(".jpeg")) ext = ".jpg";
+                    else if (lowerUrl.contains(".mp4")) ext = ".mp4";
+                    else if (lowerUrl.contains(".mov")) ext = ".mov";
+                    else if (lowerUrl.contains(".webp")) ext = ".webp";
+
+                    // 🔴 优化2：构造压缩包内的文件名 -> SPU-颜色名称主图名称.ext
+                    String spu = task.getSpu() != null ? task.getSpu().trim() : "未知款";
+
+                    // 提取主图/原图名称（从 inputImageUrl 中截取最后的原文件名）
+                    String inputUrl = task.getInputImageUrl() != null ? task.getInputImageUrl().split(",")[0] : "";
+                    String mainName = "";
+                    if (inputUrl.lastIndexOf('/') != -1) {
+                        mainName = inputUrl.substring(inputUrl.lastIndexOf('/') + 1);
+                        if (mainName.contains("?")) mainName = mainName.substring(0, mainName.indexOf('?')); // 去除 OSS 参数
+                        if (mainName.lastIndexOf('.') != -1) mainName = mainName.substring(0, mainName.lastIndexOf('.')); // 去除后缀
+                    }
+
+                    // 提取颜色/参考图名称（从 colorImageUrl 中截取最后的原文件名）
+                    String colorUrl = task.getColorImageUrl() != null ? task.getColorImageUrl().split(",")[0] : "";
+                    String colorName = "";
+                    if (colorUrl.lastIndexOf('/') != -1) {
+                        colorName = colorUrl.substring(colorUrl.lastIndexOf('/') + 1);
+                        if (colorName.contains("?")) colorName = colorName.substring(0, colorName.indexOf('?')); // 去除 OSS 参数
+                        if (colorName.lastIndexOf('.') != -1) colorName = colorName.substring(0, colorName.lastIndexOf('.')); // 去除后缀
+                    }
+
+                    // 最终拼接结果：SPU-颜色名称主图名称.扩展名
+                    String fileName = spu + "-" + colorName + mainName + ext;
+
+                    // 防御性处理：过滤掉 Windows/Mac 操作系统不支持的文件名特殊字符，防止打包崩溃
+                    fileName = fileName.replaceAll("[\\\\/:*?\"<>|]", "_");
 
                     // 使用 httpClient 直接从网络拉取图片流
                     okhttp3.Request request = new okhttp3.Request.Builder()
@@ -288,7 +318,7 @@ public class ImageTaskServiceImpl implements ImageTaskService {
             // 如果用户选中的任务全都没图，放一个提示文本进去，防止下载到一个无效的空 ZIP
             if (!hasFiles) {
                 zos.putNextEntry(new java.util.zip.ZipEntry("下载失败提示.txt"));
-                String msg = "您选中的任务尚未生成结果，或者链接已失效，因此没有任何图片。";
+                String msg = "您选中的任务尚未生成结果，或者链接已失效，因此没有任何内容。";
                 zos.write(msg.getBytes("UTF-8"));
                 zos.closeEntry();
             }
