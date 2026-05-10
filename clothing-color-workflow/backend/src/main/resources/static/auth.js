@@ -70,7 +70,7 @@ if (window.location.hostname === 'localhost') {
             // 左侧显示系统名称，右侧显示店铺名和退出按钮
             header.innerHTML = `
                 <div style="font-size: 16px; font-weight: bold; letter-spacing: 1px; display: flex; align-items: center; gap: 8px;">
-                    <span style="font-size: 20px;">✨</span> AI 批量跑图小工具
+                    <span style="font-size: 20px;">✨</span> AI 时尚视觉设计平台
                 </div>
                 
                 <div style="display: flex; align-items: center; gap: 20px;">
