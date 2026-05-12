@@ -717,7 +717,8 @@
                             video_urls: [vidOssUrl],
                             mode: form.motionMode,
                             character_orientation: form.motionOrient,
-                            background_source: form.motionBg
+                            background_source: form.motionBg,
+                            sound: false
                         };
 
                         // 🔴 防御性处理：如果提示词为空，干脆不传这个可选字段，防止报空异常
@@ -729,7 +730,7 @@
                         reqColorImg = vidOssUrl;
                     }
                     else if (form.model === 'kling-3.0/video') {
-                        inputPayload = { aspect_ratio: form.klingRatio, mode: form.klingMode, generate_audio: form.klingAudio };
+                        inputPayload = { aspect_ratio: form.klingRatio, mode: form.klingMode, generate_audio: form.klingAudio, sound: form.klingAudio };
                         let elementsPayload = [];
                         for (let elem of form.klingElements) { if (elem.name && elem.files.length >= 2) { const uploadedUrls = await Promise.all(elem.files.map(f => uploadSingleToOss(f, pd))); elementsPayload.push({ name: elem.name, description: elem.description, element_input_urls: uploadedUrls }); } }
                         if (elementsPayload.length > 0) inputPayload.kling_elements = elementsPayload;
