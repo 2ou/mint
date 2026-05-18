@@ -97,19 +97,29 @@
                 </el-col>
             </el-row>
 
-            <el-row v-if="form.model === 'gpt-image-2-image-to-image'" style="margin-bottom: 15px;">
+            <el-row v-if="form.model === 'gpt-image-2-image-to-image' && ((form.aspect_ratio === '1:1' && form.resolution === '4K') || (form.aspect_ratio === 'auto' && form.resolution !== '1K'))" style="margin-bottom: 15px;">
                 <el-col :span="24">
-                    <el-alert title="⚠️ 注意: 1:1比例的图片无法生成4K图片, auto比例或者未传递比例参数的话只能生成1K图片, 否则将无法创建任务" type="warning" :closable="false"></el-alert>
+                    <el-alert title="⚠️ 注意: 1:1比例的图片无法生成4K图片，auto比例或者未传递比例参数的话只能生成1K图片，否则将无法创建任务" type="error" :closable="false"></el-alert>
                 </el-col>
             </el-row>
 
             <el-row :gutter="20">
-                <el-col :span="8"><el-form-item label="衣服类型"><el-input v-model="form.type" placeholder="eg: cardigan..." @input="updatePrompt"/></el-form-item></el-col>
+                <el-col :span="8">
+                    <el-form-item label="衣服类型">
+                        <el-input v-model="form.type" placeholder="输入英文 eg: cardigan..." @input="updatePrompt"/>
+                    </el-form-item>
+                    <el-form-item label="换色模式" style="margin-top: 15px;">
+                        <el-radio-group v-model="form.promptType" @change="updatePrompt">
+                            <el-radio value="solid" label="solid">🎨 纯色</el-radio>
+                            <el-radio value="print" label="print">🌸 印花</el-radio>
+                        </el-radio-group>
+                    </el-form-item>
+                </el-col>
                 <el-col :span="16">
                     <el-form-item label="提示词">
-                        <div style="display: flex; flex-direction: column; width: 100%;">
-                            <el-input type="textarea" v-model="form.prompt" rows="3"/>
-                            <span style="font-size: 12px; color: #909399; padding-top: 4px;">💡 默认为（纯色提示词）</span>
+                        <div style="display: flex; flex-direction: column; width: 100%; height: 100%;">
+                            <el-input type="textarea" v-model="form.prompt" :rows="4"/>
+                            <span style="font-size: 12px; color: #909399; padding-top: 4px;">💡 切换左侧“换色模式”，会自动套用对应的优质提示词模板</span>
                         </div>
                     </el-form-item>
                 </el-col>
@@ -232,12 +242,26 @@
 
             const goToVideo = () => { window.location.href = 'video.html'; };
 
-            const basePromptTemplate = "Please replace the color of the 【衣服类型】 in the image with the average color from the solid color block in the reference image. Ensure that only the color of the 【衣服类型】 is modified, keeping all other details and the background unchanged.";
-            const form = reactive({ spu: '', model: 'nano-banana-pro', resolution: '4K', type: '', aspect_ratio: 'auto', prompt: basePromptTemplate });
+            // 🔴 更新：分别定义纯色和印花的标准提示词（印花使用反引号保留多行格式）
+            const solidPromptTemplate = "Please replace the color of the 【衣服类型】 in the image with the average color from the solid color block in the reference image. Ensure that only the color of the 【衣服类型】 is modified, keeping all other details and the background unchanged.";
+
+            const printPromptTemplate = `Replace the checkered print pattern with the flat 【衣服类型】 and detail image in the first picture, and output the print image and detail image of the 【衣服类型】 in picture 1.
+1. First, remove the base color of the 【衣服类型】 in the first picture and the base color of the detail image, so that the original 【衣服类型】 color and image do not affect the color of the printed pattern. Then, change the grid printed color of the 【衣服类型】 and detail image in the first picture.
+2. Read the proportional correspondence between the printed patterns on the 【衣服类型】 in the second image, corresponding at the pixel level.
+3. Extract the details, colors, sizes, etc. from the individual printed pattern in Figure 2, fully transplant and integrate them into the 【衣服类型】 and detail images in the first image, without changing the 【衣服类型】 design, style, and spatial size ratio of the image, and without a panel design. Completely preserve the details, colors, etc. of the printed pattern and transplant them onto the 【衣服类型】 in Figure 1.
+4. The background and panel design of the first image remain unchanged, with the same size and spatial proportion of the image.`;
+
+            // 增加 promptType 字段默认选中 solid
+            const form = reactive({ spu: '', model: 'nano-banana-pro', resolution: '4K', type: '', aspect_ratio: 'auto', promptType: 'solid', prompt: solidPromptTemplate });
             const loading = ref(false), uploadProgressMsg = ref('正在处理...');
             const inputPool = ref([]), colorPool = ref([]), pairingState = reactive({}), drag = reactive({input: false, color: false});
 
-            const updatePrompt = () => { form.prompt = basePromptTemplate.replace(/【衣服类型】/g, form.type && form.type.trim() ? form.type : '【衣服类型】'); };
+            // 🔴 动态切换提示词逻辑（正则 /g 会把上面文本中所有的 【衣服类型】 全局替换成您输入的类型）
+            const updatePrompt = () => {
+                const template = form.promptType === 'solid' ? solidPromptTemplate : printPromptTemplate;
+                form.prompt = template.replace(/【衣服类型】/g, form.type && form.type.trim() ? form.type : '【衣服类型】');
+            };
+
             const processFiles = (files, type) => {
                 files.forEach(file => {
                     if (file.size > 10 * 1024 * 1024) {
@@ -375,6 +399,16 @@
             const submit = async () => {
                 if (!form.spu) return ElementPlus.ElMessage.warning('SPU 款号不能为空！');
                 if (activeTaskCount.value === 0) return ElementPlus.ElMessage.warning('当前没有选中的有效搭配任务！');
+
+                // 🔴 新增：严格拦截错误的组合，防止强行提交导致 KIE 报错
+                if (form.model === 'gpt-image-2-image-to-image') {
+                    if (form.aspect_ratio === '1:1' && form.resolution === '4K') {
+                        return ElementPlus.ElMessage.error('提交失败：1:1 比例无法生成 4K 图片，请修改分辨率或比例！');
+                    }
+                    if (form.aspect_ratio === 'auto' && form.resolution !== '1K') {
+                        return ElementPlus.ElMessage.error('提交失败：auto 比例只能生成 1K 图片，请修改分辨率或比例！');
+                    }
+                }
 
                 try {
                     await ElementPlus.ElMessageBox.confirm(

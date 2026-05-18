@@ -7,9 +7,7 @@
     <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css"/>
     <script src="https://unpkg.com/element-plus"></script>
     <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
-
-    <script src="auth.js"></script>
-
+    <script src="https://unpkg.com/@element-plus/icons-vue"></script>
 
     <style>
         body {
@@ -18,11 +16,10 @@
             justify-content: center;
             align-items: center;
             height: 100vh;
-            /* 👇 主要修改这一行 👇 */
             background: url('bg.png') no-repeat center center/cover;
             font-family: 'PingFang SC', sans-serif;
         }
-        .login-box { width: 400px; padding: 40px; background: #fff; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); text-align: center; }
+        .login-box { width: 400px; padding: 40px; background: rgba(255, 255, 255, 0.95); border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.15); text-align: center; backdrop-filter: blur(5px); }
         .title { font-size: 24px; font-weight: bold; color: #303133; margin-bottom: 30px; }
         .submit-btn { width: 100%; height: 45px; font-size: 16px; margin-top: 10px; }
     </style>
@@ -30,7 +27,7 @@
 <body>
 <div id="app">
     <div class="login-box">
-        <div class="title">✨ AI 时尚视觉设计平台 - 内部登录</div>
+        <div class="title">✨ AI 时尚视觉设计平台<br><span style="font-size: 16px; color: #909399; font-weight: normal; margin-top: 5px; display: inline-block;">内部管理系统登录</span></div>
         <el-form :model="form" @keyup.enter="handleLogin">
             <el-form-item>
                 <el-input v-model="form.username" placeholder="请输入账号" size="large" prefix-icon="User"></el-input>
@@ -45,7 +42,7 @@
 
 <script>
     const { createApp, reactive, ref } = Vue;
-    createApp({
+    const app = createApp({
         setup() {
             const form = reactive({ username: '', password: '' });
             const loading = ref(false);
@@ -74,7 +71,14 @@
             };
             return { form, loading, handleLogin };
         }
-    }).use(ElementPlus).mount('#app');
+    });
+
+    // 🔴 修复2：将所有的图标遍历注册为全局组件，让 User 和 Lock 图标能正常显示出来
+    for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
+        app.component(key, component);
+    }
+
+    app.use(ElementPlus).mount('#app');
 </script>
 </body>
 </html>

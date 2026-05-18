@@ -361,6 +361,12 @@ public class ImageTaskServiceImpl implements ImageTaskService {
     @Override
     public void downloadTaskFile(Long id) { throw new RuntimeException("此接口已停用，请使用批量下载功能 (ZIP)"); }
 
+    @Override
+    public java.util.List<com.ai.dto.SpuStatDTO> getTaskStats(String spu, LocalDateTime startTime, LocalDateTime endTime) {
+        return imageTaskRepository.getTaskStats(spu, startTime, endTime);
+    }
+
+    // 👇 下面是原本就有的代码，插在它的上面即可 👇
     @jakarta.annotation.PreDestroy
     public void onDestroy() {
         log.info("【系统关闭】正在释放轮询线程池...");
@@ -368,5 +374,5 @@ public class ImageTaskServiceImpl implements ImageTaskService {
             pollingPool.shutdown();
         }
     }
-
 }
+

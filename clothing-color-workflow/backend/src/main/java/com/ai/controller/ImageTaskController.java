@@ -260,6 +260,19 @@ public class ImageTaskController {
     }
 
     /**
+     * 消费统计报表（支持 SPU 和时间段筛选）
+     */
+    @GetMapping("/stats")
+    public ApiResponse<List<SpuStatDTO>> getStats(
+            @RequestParam(value = "spu", required = false) String spu,
+            @RequestParam(value = "startTime", required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime startTime,
+            @RequestParam(value = "endTime", required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime endTime) {
+
+        List<SpuStatDTO> stats = imageTaskService.getTaskStats(spu, startTime, endTime);
+        return ApiResponse.ok("ok", stats);
+    }
+
+    /**
      * 删除任务（最高权限：仅限 PINKSIR 店铺操作）
      */
     @DeleteMapping("/{id}")

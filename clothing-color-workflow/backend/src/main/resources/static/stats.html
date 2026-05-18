@@ -7,14 +7,12 @@
   <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css"/>
   <script src="https://unpkg.com/element-plus"></script>
   <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
-
   <script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js"></script>
-
   <script src="auth.js"></script>
 
   <style>
     body { background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); min-height: 100vh; margin: 0; font-family: 'PingFang SC', sans-serif; padding-top: 3vh; padding-bottom: 5vh; }
-    .stats-card { max-width: 1200px; margin: 0 auto; border-radius: 16px !important; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08) !important; border: none !important; }
+    .stats-card { max-width: 1000px; margin: 0 auto; border-radius: 16px !important; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08) !important; border: none !important; }
     .stats-card .el-card__header { background: #409EFF; color: white; border-bottom: none; padding: 15px 20px;}
 
     .summary-boxes { display: flex; gap: 20px; margin-bottom: 20px; }
@@ -22,7 +20,7 @@
     .summary-icon { font-size: 40px; width: 60px; height: 60px; border-radius: 12px; display: flex; align-items: center; justify-content: center; }
     .summary-content { flex: 1; }
     .summary-title { font-size: 14px; color: #909399; margin-bottom: 5px; font-weight: bold; }
-    .summary-value { font-size: 28px; font-weight: bold; color: #303133; }
+    .summary-value { font-size: 32px; font-weight: bold; color: #303133; }
   </style>
 </head>
 <body>
@@ -31,10 +29,7 @@
     <template #header>
       <div style="display: flex; justify-content: space-between; align-items: center;">
         <div style="display: flex; gap: 10px; align-items: center;">
-          <span style="margin-right: 15px; font-size: 18px; font-weight: bold;">💰 消费统计</span>
-          <el-button color="#fff" style="color: #409EFF; border: none; font-weight: bold; cursor: default;">📊 数据报表 (当前)</el-button>
-          <el-button type="primary" color="#1e88e5" @click="goTo('index.html')">🎨 批量换色</el-button>
-          <el-button type="primary" color="#1e88e5" @click="goTo('scene.html')">🖼️ 场景生成</el-button>
+          <span style="margin-right: 15px; font-size: 18px; font-weight: bold;">💰 AI 消费统计</span>
         </div>
         <div style="display: flex; gap: 10px;">
           <el-button @click="goTo('list.html')" color="#f5f7fa" style="color: #606266; font-weight: bold;">返回任务大盘</el-button>
@@ -44,7 +39,7 @@
 
     <div style="background: #f8f9fa; padding: 20px; border-radius: 12px; margin-bottom: 20px; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 15px;">
       <div style="display: flex; gap: 15px; align-items: center;">
-        <el-input v-model="filter.spu" placeholder="按 SPU 款号搜索" clearable style="width: 200px;"></el-input>
+        <el-input v-model="filter.spu" placeholder="按 SPU 款号模糊搜索" clearable style="width: 200px;"></el-input>
 
         <el-date-picker
                 v-model="filter.dateRange"
@@ -71,13 +66,6 @@
 
     <div class="summary-boxes">
       <div class="summary-box">
-        <div class="summary-icon" style="background: #f0f9eb; color: #67c23a;">✅</div>
-        <div class="summary-content">
-          <div class="summary-title">成功出图总数 (张)</div>
-          <div class="summary-value">{{ totalImageCount }}</div>
-        </div>
-      </div>
-      <div class="summary-box">
         <div class="summary-icon" style="background: #fef0f0; color: #f56c6c;">💴</div>
         <div class="summary-content">
           <div class="summary-title">预估总消费 (元)</div>
@@ -87,41 +75,23 @@
     </div>
 
     <div style="font-size: 13px; color: #E6A23C; margin-top: -10px; margin-bottom: 20px; font-weight: bold; background: #fdf6ec; padding: 10px 15px; border-radius: 6px; border: 1px solid #faecd8;">
-      💡 计费说明：系统已自动过滤无效数据。所有失败的任务【均不计入】下方的图片量与总消费统计中，请放心查看。
+      💡 计费说明：系统已自动过滤无效数据。只有状态为 SUCCESS 的成功任务才会计入消费，请放心查看。
     </div>
 
     <el-table :data="tableData" v-loading="loading" border stripe style="width: 100%; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 12px rgba(0,0,0,0.05);">
-      <el-table-column type="index" label="排名" width="70" align="center"></el-table-column>
+      <el-table-column type="index" label="排名" width="80" align="center"></el-table-column>
 
-      <el-table-column prop="spu" label="SPU 款号" min-width="150">
+      <el-table-column prop="spu" label="SPU 款号" min-width="200" align="center">
         <template #default="scope">
-          <span style="font-weight: bold; color: #409EFF;">{{ scope.row.spu }}</span>
+          <span style="font-weight: bold; color: #409EFF; font-size: 16px;">{{ scope.row.spu }}</span>
         </template>
       </el-table-column>
 
-      <el-table-column label="2K 图片量 (0.22元/张)" width="180" align="center">
+      <el-table-column label="产生消费 (元)" width="200" align="center">
         <template #default="scope">
-          <el-tag type="info" disable-transitions>{{ scope.row.count2K }} 张</el-tag>
-        </template>
-      </el-table-column>
-
-      <el-table-column label="4K 图片量 (0.44元/张)" width="180" align="center">
-        <template #default="scope">
-          <el-tag type="warning" disable-transitions>{{ scope.row.count4K }} 张</el-tag>
-        </template>
-      </el-table-column>
-
-      <el-table-column prop="taskCount" label="成功总数" width="120" align="center">
-        <template #default="scope">
-          <span style="font-weight: bold;">{{ scope.row.taskCount }}</span>
-        </template>
-      </el-table-column>
-
-      <el-table-column label="产生消费 (元)" width="150" align="right">
-        <template #default="scope">
-                    <span style="color: #f56c6c; font-weight: bold; font-size: 16px;">
-                        ¥ {{ scope.row.totalCost.toFixed(2) }}
-                    </span>
+            <span style="color: #f56c6c; font-weight: bold; font-size: 18px;">
+                ¥ {{ scope.row.totalCost ? scope.row.totalCost.toFixed(2) : '0.00' }}
+            </span>
         </template>
       </el-table-column>
     </el-table>
@@ -142,11 +112,8 @@
 
       const goTo = (url) => { window.location.href = url; };
 
-      const totalImageCount = computed(() => {
-        return tableData.value.reduce((sum, item) => sum + item.taskCount, 0);
-      });
       const totalCost = computed(() => {
-        return tableData.value.reduce((sum, item) => sum + item.totalCost, 0);
+        return tableData.value.reduce((sum, item) => sum + (item.totalCost || 0), 0);
       });
 
       const resetFilter = () => {
@@ -181,59 +148,36 @@
         }
       };
 
-      // 🔴 核心逻辑：导出 Excel
       const exportExcel = () => {
         if (tableData.value.length === 0) {
-          ElementPlus.ElMessage.warning('没有可导出的数据');
-          return;
+          return ElementPlus.ElMessage.warning('没有可导出的数据');
         }
 
-        // 1. 组装并映射为中文表头的数据
         const exportData = tableData.value.map((item, index) => {
           return {
             '排名': index + 1,
             'SPU 款号': item.spu,
-            '2K 图片量 (张)': item.count2K,
-            '4K 图片量 (张)': item.count4K,
-            '成功总图数 (张)': item.taskCount,
-            '产生消费 (元)': Number(item.totalCost.toFixed(2)) // 转为数字，方便 Excel 直接求和
+            '产生消费 (元)': item.totalCost ? Number(item.totalCost.toFixed(2)) : 0
           };
         });
 
-        // 2. 在最后追加一行“合计”数据
         exportData.push({
           '排名': '合计',
           'SPU 款号': '-',
-          '2K 图片量 (张)': tableData.value.reduce((sum, item) => sum + item.count2K, 0),
-          '4K 图片量 (张)': tableData.value.reduce((sum, item) => sum + item.count4K, 0),
-          '成功总图数 (张)': totalImageCount.value,
           '产生消费 (元)': Number(totalCost.value.toFixed(2))
         });
 
-        // 3. 使用 SheetJS 生成并触发下载
         try {
           const worksheet = XLSX.utils.json_to_sheet(exportData);
-
-          // 稍微设置一下列宽让导出的 Excel 更好看
-          worksheet['!cols'] = [
-            { wch: 8 },  // 排名
-            { wch: 20 }, // SPU 款号
-            { wch: 18 }, // 2K
-            { wch: 18 }, // 4K
-            { wch: 18 }, // 成功总数
-            { wch: 18 }  // 消费
-          ];
+          worksheet['!cols'] = [ { wch: 10 }, { wch: 30 }, { wch: 20 } ];
 
           const workbook = XLSX.utils.book_new();
           XLSX.utils.book_append_sheet(workbook, worksheet, "消费统计");
 
-          // 生成带当前时间的文件名
           const dateStr = new Date().toISOString().slice(0, 10);
           XLSX.writeFile(workbook, `AI消费统计报表_${dateStr}.xlsx`);
-
           ElementPlus.ElMessage.success('🎉 导出成功！');
         } catch (e) {
-          console.error(e);
           ElementPlus.ElMessage.error('导出失败，请检查浏览器是否拦截了下载');
         }
       };
@@ -243,7 +187,7 @@
       });
 
       return {
-        filter, loading, tableData, totalImageCount, totalCost,
+        filter, loading, tableData, totalCost,
         fetchData, resetFilter, goTo, exportExcel
       };
     }
