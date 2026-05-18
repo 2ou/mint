@@ -7,10 +7,7 @@ import com.aliyun.oss.common.utils.BinaryUtil;
 import com.aliyun.oss.model.MatchMode;
 import com.aliyun.oss.model.PolicyConditions;
 import lombok.RequiredArgsConstructor;
-import org.springframework.web.bind.annotation.CrossOrigin;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
@@ -32,32 +29,32 @@ public class OssController {
     private final AppProperties appProperties;
 
     /**
-     * 获取 OSS 临时上传凭证 (Policy)
-     * * @return 包含 accessid, policy, signature, host 等签名字段的 Map，前端拿着这些参数直接 POST 到阿里云
+     * 🔴 新增 type 参数：
+     * 不传或传 temp -> 走临时桶 (inputBucket, 5天删)
+     * 传 permanent -> 走永久桶 (resultBucket, 永久保留)
      */
     @GetMapping("/policy")
-    public ApiResponse<Map<String, String>> getPolicy() {
+    public ApiResponse<Map<String, String>> getPolicy(@RequestParam(value = "type", defaultValue = "temp") String type) {
         AppProperties.Oss oss = appProperties.getOss();
-        String host = oss.getInputPublicHost();
 
-        // 动态生成按天分类的文件夹，防止所有文件堆在根目录 (如: direct-upload/20231025/)
-        String dir = "direct-upload/" + new SimpleDateFormat("yyyyMMdd").format(new Date()) + "/";
+        // 根据 type 动态决定使用哪个桶的参数
+        boolean isPermanent = "permanent".equalsIgnoreCase(type);
+        String host = isPermanent ? oss.getResultPublicHost() : oss.getInputPublicHost();
 
-        // 签名有效期设置为 5 分钟 (300,000 毫秒)
+        // 动态生成目录 (色卡走 color-cards 目录，任务走 direct-upload)
+        String baseDir = isPermanent ? "color-cards/" : "direct-upload/";
+        String dir = baseDir + new SimpleDateFormat("yyyyMMdd").format(new Date()) + "/";
+
         long expireEndTime = System.currentTimeMillis() + 300 * 1000;
 
         PolicyConditions policyConds = new PolicyConditions();
-        // 限制单个上传文件大小：最大 1GB (1048576000 字节)
         policyConds.addConditionItem(PolicyConditions.COND_CONTENT_LENGTH_RANGE, 0, 1048576000);
-        // 限制上传的目录前缀，防止前端乱传到其他目录
         policyConds.addConditionItem(MatchMode.StartWith, PolicyConditions.COND_KEY, dir);
 
-        // 利用阿里云 SDK 生成加密的 policy 和 signature
         String postPolicy = ossClient.generatePostPolicy(new Date(expireEndTime), policyConds);
         String encodedPolicy = BinaryUtil.toBase64String(postPolicy.getBytes(StandardCharsets.UTF_8));
         String postSignature = ossClient.calculatePostSignature(postPolicy);
 
-        // 组装前端需要的全部参数
         Map<String, String> respMap = new LinkedHashMap<>();
         respMap.put("accessid", oss.getAccessKeyId());
         respMap.put("policy", encodedPolicy);
@@ -66,5 +63,50 @@ public class OssController {
         respMap.put("host", host);
 
         return ApiResponse.ok("ok", respMap);
+    }
+
+    /**
+     * 🔴 新增：将临时桶中的图片跨桶复制到永久桶中
+     */
+    @PostMapping("/copy-to-permanent")
+    public ApiResponse<String> copyToPermanent(@RequestBody Map<String, String> body) {
+        String sourceUrl = body.get("url");
+        if (sourceUrl == null || sourceUrl.trim().isEmpty()) {
+            return ApiResponse.fail("链接不能为空");
+        }
+
+        AppProperties.Oss oss = appProperties.getOss();
+        String tempHost = oss.getInputPublicHost();
+        String permHost = oss.getResultPublicHost();
+
+        // 如果不是临时桶的链接（说明可能是别的网图或已是永久图），直接原样放行
+        if (!sourceUrl.startsWith(tempHost)) {
+            return ApiResponse.ok("ok", sourceUrl);
+        }
+
+        try {
+            // 1. 提取出临时桶中的真实 objectKey (去除域名和开头的 /)
+            String sourceKey = sourceUrl.replace(tempHost, "");
+            if (sourceKey.startsWith("/")) sourceKey = sourceKey.substring(1);
+            // 去除图片后可能带有的缩放参数 (?x-oss-process=...)
+            if (sourceKey.contains("?")) sourceKey = sourceKey.substring(0, sourceKey.indexOf("?"));
+
+            // 对中文路径进行 URL 解码，防止找不到文件
+            sourceKey = java.net.URLDecoder.decode(sourceKey, StandardCharsets.UTF_8.name());
+
+            // 2. 构造永久桶的新路径 (统一放在 templates/ 目录下)
+            String ext = sourceKey.contains(".") ? sourceKey.substring(sourceKey.lastIndexOf(".")) : ".png";
+            String destKey = "templates/copied_" + System.currentTimeMillis() + ext;
+
+            // 3. 🚀 召唤阿里云进行内网秒级拷贝 (从源桶 到 目标桶)
+            ossClient.copyObject(oss.getInputBucket(), sourceKey, oss.getResultBucket(), destKey);
+
+            // 4. 组装并返回永久桶的新链接
+            String permanentUrl = permHost + "/" + destKey;
+            return ApiResponse.ok("ok", permanentUrl);
+
+        } catch (Exception e) {
+            return ApiResponse.fail("跨桶转存失败: " + e.getMessage());
+        }
     }
 }

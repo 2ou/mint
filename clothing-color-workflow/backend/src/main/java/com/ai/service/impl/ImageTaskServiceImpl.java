@@ -202,10 +202,12 @@ public class ImageTaskServiceImpl implements ImageTaskService {
                     log.error("【转存降级】任务 {} 原始图已拿到，但本地保存或 OSS 上传失败: {}", id, subEx.getMessage());
                 }
 
-            } else if (kieResult != null && "FAILED".equalsIgnoreCase(kieResult.getStatus())) {
+            } else if (kieResult != null && ("FAILED".equalsIgnoreCase(kieResult.getStatus()) || "FAIL".equalsIgnoreCase(kieResult.getStatus()))) {
+                // 🔴 修复4：同时兼容 "FAIL" 和 "FAILED" 两种拼写，防止漏网之鱼
+
                 // KIE 侧明确返回失败
                 task.setStatus("FAILED");
-                // 💡 使用 getErrorMsg() 匹配 DTO 字段
+                // 使用 getErrorMsg() 匹配 DTO 字段
                 task.setErrorMessage(kieResult.getErrorMessage());
                 imageTaskRepository.save(task);
                 log.warn("【任务标记失败】单号: {}, 失败原因: {}", task.getTaskId(), kieResult.getErrorMessage());
@@ -226,65 +228,42 @@ public class ImageTaskServiceImpl implements ImageTaskService {
     }
 
 
-    // ======================== 下载与查询逻辑 ========================
     @Override
     public void batchDownloadZip(List<Long> ids, jakarta.servlet.http.HttpServletResponse response) {
-        // 设置响应头，告知浏览器这是一个 ZIP 文件下载
         response.setContentType("application/zip");
-        // 解决中文乱码问题（如果有中文名），建议使用英文或拼音
+        // 解决响应头的中文或默认乱码问题
         response.setHeader("Content-Disposition", "attachment; filename=AI_tasks_results.zip");
 
-        // 直接将 ZIP 流绑定到 HTTP 响应流上，实现“边下载边打包边传给用户”
         try (java.util.zip.ZipOutputStream zos = new java.util.zip.ZipOutputStream(response.getOutputStream())) {
-
             boolean hasFiles = false;
 
             for (Long id : ids) {
                 try {
-                    // 因为外面用了流，这里用传统方式获取对象更方便处理异常
                     ImageTask task = imageTaskRepository.findById(id).orElse(null);
                     if (task == null) continue;
 
-                    // 优先取 OSS 永久链接，没有的话取 KIE 的临时链接
                     String imageUrl = task.getResultOssUrl() != null ? task.getResultOssUrl() : task.getResultTempUrl();
                     if (imageUrl == null || imageUrl.isEmpty()) continue;
 
-                    // 🔴 优化1：更智能地判断扩展名（兼容图片与视频任务）
                     String lowerUrl = imageUrl.toLowerCase();
-                    String ext = ".png"; // 默认兜底
+                    String ext = ".png";
                     if (lowerUrl.contains(".jpg") || lowerUrl.contains(".jpeg")) ext = ".jpg";
                     else if (lowerUrl.contains(".mp4")) ext = ".mp4";
                     else if (lowerUrl.contains(".mov")) ext = ".mov";
                     else if (lowerUrl.contains(".webp")) ext = ".webp";
 
-                    // 🔴 优化2：构造压缩包内的文件名 -> SPU-颜色名称主图名称.ext
                     String spu = task.getSpu() != null ? task.getSpu().trim() : "未知款";
 
-                    // 提取主图/原图名称（从 inputImageUrl 中截取最后的原文件名）
-                    String inputUrl = task.getInputImageUrl() != null ? task.getInputImageUrl().split(",")[0] : "";
-                    String mainName = "";
-                    if (inputUrl.lastIndexOf('/') != -1) {
-                        mainName = inputUrl.substring(inputUrl.lastIndexOf('/') + 1);
-                        if (mainName.contains("?")) mainName = mainName.substring(0, mainName.indexOf('?')); // 去除 OSS 参数
-                        if (mainName.lastIndexOf('.') != -1) mainName = mainName.substring(0, mainName.lastIndexOf('.')); // 去除后缀
-                    }
+                    // 🔴 核心修复：调用专门的解码方法，完美提取出中文名称
+                    String mainName = extractFileName(task.getInputImageUrl());
+                    String colorName = extractFileName(task.getColorImageUrl());
 
-                    // 提取颜色/参考图名称（从 colorImageUrl 中截取最后的原文件名）
-                    String colorUrl = task.getColorImageUrl() != null ? task.getColorImageUrl().split(",")[0] : "";
-                    String colorName = "";
-                    if (colorUrl.lastIndexOf('/') != -1) {
-                        colorName = colorUrl.substring(colorUrl.lastIndexOf('/') + 1);
-                        if (colorName.contains("?")) colorName = colorName.substring(0, colorName.indexOf('?')); // 去除 OSS 参数
-                        if (colorName.lastIndexOf('.') != -1) colorName = colorName.substring(0, colorName.lastIndexOf('.')); // 去除后缀
-                    }
-
-                    // 最终拼接结果：SPU-颜色名称主图名称.扩展名
+                    // 🔴 拼接规则：SPU-颜色图名称原图名称
                     String fileName = spu + "-" + colorName + mainName + ext;
 
-                    // 防御性处理：过滤掉 Windows/Mac 操作系统不支持的文件名特殊字符，防止打包崩溃
+                    // 防御性处理：去除所有 Windows/Mac 操作系统不支持的文件名特殊字符
                     fileName = fileName.replaceAll("[\\\\/:*?\"<>|]", "_");
 
-                    // 使用 httpClient 直接从网络拉取图片流
                     okhttp3.Request request = new okhttp3.Request.Builder()
                             .url(imageUrl)
                             .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0")
@@ -292,10 +271,7 @@ public class ImageTaskServiceImpl implements ImageTaskService {
 
                     try (okhttp3.Response okResponse = httpClient.newCall(request).execute()) {
                         if (okResponse.isSuccessful() && okResponse.body() != null) {
-                            // 开启一个新的 ZIP 实体
                             zos.putNextEntry(new java.util.zip.ZipEntry(fileName));
-
-                            // 直接将网络的 InputStream 灌入 ZIP 的 OutputStream，完全不占本地硬盘和内存！
                             try (InputStream is = okResponse.body().byteStream()) {
                                 byte[] buffer = new byte[8192];
                                 int length;
@@ -305,17 +281,13 @@ public class ImageTaskServiceImpl implements ImageTaskService {
                             }
                             zos.closeEntry();
                             hasFiles = true;
-                        } else {
-                            log.warn("【ZIP打包】单图下载失败: HTTP {}, 链接: {}", okResponse.code(), imageUrl);
                         }
                     }
                 } catch (Exception e) {
                     log.error("【ZIP打包】处理任务 ID: {} 时发生异常: {}", id, e.getMessage());
-                    // 某一张图失败了，跳过它，继续打包下一张，绝不中断整个下载
                 }
             }
 
-            // 如果用户选中的任务全都没图，放一个提示文本进去，防止下载到一个无效的空 ZIP
             if (!hasFiles) {
                 zos.putNextEntry(new java.util.zip.ZipEntry("下载失败提示.txt"));
                 String msg = "您选中的任务尚未生成结果，或者链接已失效，因此没有任何内容。";
@@ -327,6 +299,33 @@ public class ImageTaskServiceImpl implements ImageTaskService {
             log.error("【ZIP打包】全局严重异常", e);
             throw new RuntimeException("打包 ZIP 失败: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * 🔴 新增：辅助提取并解码 URL 中的真实文件名
+     */
+    private String extractFileName(String url) {
+        if (url == null || url.trim().isEmpty()) return "";
+        try {
+            // 如果是以逗号分隔的多图，只取第一张
+            String firstUrl = url.split(",")[0];
+            int slashIndex = firstUrl.lastIndexOf('/');
+            if (slashIndex != -1) {
+                String name = firstUrl.substring(slashIndex + 1);
+                // 去除 OSS 的 ? 签名参数
+                int qmIndex = name.indexOf('?');
+                if (qmIndex != -1) name = name.substring(0, qmIndex);
+                // 去除后缀名
+                int dotIndex = name.lastIndexOf('.');
+                if (dotIndex != -1) name = name.substring(0, dotIndex);
+
+                // 执行 URL 解码 (将 %E7%BA%A2%E8%89%B2 等乱码还原为中文)
+                return java.net.URLDecoder.decode(name, java.nio.charset.StandardCharsets.UTF_8.name());
+            }
+        } catch (Exception e) {
+            log.error("提取文件名失败: {}", e.getMessage());
+        }
+        return "";
     }
 
     @Override

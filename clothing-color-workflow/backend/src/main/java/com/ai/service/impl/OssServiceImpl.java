@@ -161,18 +161,22 @@ public class OssServiceImpl implements OssService {
 
                 String ossUrl = "";
                 try {
+                    // 原本是 spu + "/result/" + fileName，可以保留，但桶要换
                     String objectName = spu + "/result/" + fileName;
 
-                    // 🔴 关键优化：根据后缀设置 Metadata，确保视频可在线播放
                     com.aliyun.oss.model.ObjectMetadata metadata = new com.aliyun.oss.model.ObjectMetadata();
                     if (extension.equals(".jpg")) metadata.setContentType("image/jpeg");
                     else if (extension.equals(".png")) metadata.setContentType("image/png");
                     else if (extension.equals(".mp4")) metadata.setContentType("video/mp4");
                     else if (extension.equals(".mov")) metadata.setContentType("video/quicktime");
 
-                    ossClient.putObject(oss.getResultBucket(), objectName, permanentFile, metadata);
-                    ossUrl = oss.getResultPublicHost() + "/" + objectName;
-                    log.info("【OSS上传成功】链接: {}", ossUrl);
+                    // 🔴 核心修改 1：将 AI 生成的结果图也放进会被 5 天清理的 InputBucket 中
+                    ossClient.putObject(oss.getInputBucket(), objectName, permanentFile, metadata);
+
+                    // 🔴 核心修改 2：返回的主机域名也要换成 InputBucket 的域名
+                    ossUrl = oss.getInputPublicHost() + "/" + objectName;
+
+                    log.info("【OSS临时结果上传成功】链接: {}", ossUrl);
                 } catch (Exception ossEx) {
                     log.error("【OSS上传失败】本地已保留原图: {}", ossEx.getMessage());
                 }

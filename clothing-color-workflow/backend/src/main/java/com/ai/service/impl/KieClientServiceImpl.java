@@ -156,15 +156,19 @@ public class KieClientServiceImpl implements KieClientService {
 
                 if ("success".equals(state)) {
                     resultBuilder.success(true);
+                    resultBuilder.status("SUCCESS"); // 🔴 修复1：覆盖原有的状态，统一为大写 SUCCESS
+
                     // 解析图片 URL
                     resultBuilder.resultUrl(parseUrlFromData(dataNode));
 
-                    // 🔴 解析毫秒级完成时间
+                    // 解析毫秒级完成时间
                     if (dataNode.has("completeTime")) {
                         resultBuilder.completeTime(dataNode.get("completeTime").asLong());
                     }
                 } else if ("fail".equals(state) || "failed".equals(state)) {
                     resultBuilder.success(false);
+                    resultBuilder.status("FAILED"); // 🔴 修复2：强制将底层的 "fail" 转换为标准大写 "FAILED"
+
                     String failMsg = dataNode.has("failMsg") ? dataNode.get("failMsg").asText() : "生成失败";
                     resultBuilder.errorMessage(failMsg);
                 }
@@ -173,7 +177,8 @@ public class KieClientServiceImpl implements KieClientService {
             }
         } catch (Exception e) {
             log.error("查询 KIE 任务详情崩溃: {}", e.getMessage(), e);
-            return KieTaskResult.builder().taskId(taskId).finished(true).success(false).errorMessage(e.getMessage()).build();
+            // 🔴 修复3：异常兜底时必须显式赋给 status("FAILED")，否则外层会判断为 null 跳过处理
+            return KieTaskResult.builder().taskId(taskId).status("FAILED").finished(true).success(false).errorMessage(e.getMessage()).build();
         }
     }
 

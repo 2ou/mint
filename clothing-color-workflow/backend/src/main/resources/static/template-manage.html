@@ -185,7 +185,6 @@
             const uploading = ref(false);
             const saving = ref(false);
 
-            // 搜索与分页参数
             const searchKeyword = ref('');
             const searchCategory = ref('');
             const pageParams = reactive({ current: 1, size: 10 });
@@ -213,7 +212,6 @@
                 basePrompt: '', exampleImageUrl: '', isActive: true
             });
 
-            // 🔴 修改：对接后端的 /page 分页搜索接口
             const fetchTemplates = async () => {
                 loading.value = true;
                 try {
@@ -264,7 +262,7 @@
                 }
                 uploading.value = true;
                 try {
-                    const policyRes = await axios.get('/api/oss/policy');
+                    const policyRes = await axios.get('/api/oss/policy?type=permanent');
                     const policyData = policyRes.data.data;
                     const suffix = file.name.substring(file.name.lastIndexOf('.'));
                     const finalKey = `${policyData.dir}template_${Date.now()}_${Math.random().toString(36).substr(2, 6)}${suffix}`;

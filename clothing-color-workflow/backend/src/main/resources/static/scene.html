@@ -20,7 +20,6 @@
         .task-card { margin-bottom: 15px; position: relative; border-radius: 8px; border: 1px solid #ebeef5; transition: 0.3s; }
         .task-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); border-color: #c0c4cc; }
 
-        /* 🔴 任务卡片高亮样式 */
         .task-card.is-selected { border-color: #409EFF; box-shadow: 0 0 10px rgba(64, 158, 255, 0.15); background-color: #fcfdff; }
 
         .upload-box { border: 2px dashed #dcdfe6; border-radius: 8px; display: flex; align-items: center; justify-content: center; cursor: pointer; background: #fafafa; color: #909399; transition: 0.3s; box-sizing: border-box; }
@@ -29,7 +28,6 @@
         .remove-img-btn { position: absolute; top: 2px; right: 2px; background-color: rgba(245, 108, 108, 0.9); color: white; border-radius: 50%; width: 20px; height: 20px; line-height: 18px; text-align: center; cursor: pointer; z-index: 10; font-size: 12px; font-weight: bold; }
         .remove-img-btn:hover { background-color: #f56c6c; transform: scale(1.1); }
 
-        /* 批量快捷面板样式 */
         .batch-panel { display: flex; gap: 20px; margin-bottom: 20px; padding: 0 10px; }
         .batch-dropzone { flex: 1; border: 2px dashed #409EFF; border-radius: 8px; padding: 25px 20px; text-align: center; background: #ecf5ff; cursor: pointer; transition: 0.3s; }
         .batch-dropzone:hover { background: #d9ecff; transform: translateY(-2px); }
@@ -92,9 +90,9 @@
                 </el-col>
             </el-row>
 
-            <el-row v-if="form.model === 'gpt-image-2-image-to-image'" style="margin-bottom: 15px;">
+            <el-row v-if="showGptWarning" style="margin-bottom: 15px;">
                 <el-col :span="24">
-                    <el-alert title="⚠️ 注意: 1:1比例的图片无法生成4K图片, auto比例或者未传递参数只能生成1K图片, 否则将无法创建任务" type="warning" :closable="false"></el-alert>
+                    <el-alert :title="gptWarningText" type="error" :closable="false"></el-alert>
                 </el-col>
             </el-row>
         </el-form>
@@ -252,16 +250,34 @@
     const {createApp, ref, reactive, computed} = Vue;
     createApp({
         setup() {
-            // 🔴 融合点：加入goToVideo路由
             const goToVideo = () => { window.location.href = 'video.html'; };
 
             const form = reactive({ spu: '', model: 'nano-banana-pro', resolution: '4K', aspect_ratio: 'auto', modelRole: '图中模特' });
+
+            // 🔴 同步引入：新增计算属性，100%保证响应式拦截显示
+            const showGptWarning = computed(() => {
+                if (form.model !== 'gpt-image-2-image-to-image') return false;
+                if (form.aspect_ratio === '1:1' && form.resolution === '4K') return true;
+                if (form.aspect_ratio === 'auto' && form.resolution !== '1K') return true;
+                return false;
+            });
+
+            // 🔴 同步引入：动态计算精准的错误提示文案
+            const gptWarningText = computed(() => {
+                if (form.aspect_ratio === '1:1' && form.resolution === '4K') {
+                    return "⚠️ 注意：1:1 (正方形) 比例的图片无法生成 4K 分辨率，请降低分辨率或修改比例！";
+                }
+                if (form.aspect_ratio === 'auto' && form.resolution !== '1K') {
+                    return "⚠️ 注意：Auto (自动) 比例未传确切尺寸，只能生成 1K 图片，请修改分辨率或比例！";
+                }
+                return "";
+            });
+
             const loading = ref(false);
             const uploadProgressMsg = ref('正在处理...');
             const tasks = ref([]);
             const batchPromptText = ref('');
 
-            // 全选与选中数计算
             const selectedCount = computed(() => tasks.value.filter(t => t.selected).length);
 
             const selectAll = computed({
@@ -275,7 +291,6 @@
                 return tasks.value.reduce((sum, task) => sum + task.count, 0);
             });
 
-            // 🔴 新增：计算单张图片的预估单价
             const pricePerImage = computed(() => {
                 if (form.model === 'nano-banana-pro') {
                     return form.resolution === '4K' ? 0.44 : 0.25;
@@ -287,12 +302,10 @@
                 return 0;
             });
 
-            // 🔴 新增：计算整个批量任务的预估总价
             const estimatedCost = computed(() => {
                 return (pricePerImage.value * totalTasksCount.value).toFixed(2);
             });
 
-            // 新建任务
             const addTask = () => {
                 tasks.value.push({
                     id: Date.now() + '_' + Math.random(),
@@ -305,7 +318,6 @@
             };
             addTask();
 
-            // 复制任务
             const copyTask = (index) => {
                 const origin = tasks.value[index];
                 const newTask = {
@@ -325,7 +337,6 @@
             };
             const removeInput = (taskIndex, inputIndex) => tasks.value[taskIndex].inputs.splice(inputIndex, 1);
 
-            // 批量传图拆分
             const handleBatchCreateTasks = (e) => {
                 const rawFiles = e.dataTransfer ? e.dataTransfer.files : e.target.files;
                 const files = Array.from(rawFiles).filter(f => f.type.startsWith('image/'));
@@ -353,7 +364,6 @@
                 if(added > 0) ElementPlus.ElMessage.success(`🎉 成功拆分新建 ${added} 个场景任务！`);
             };
 
-            // 批量应用提示词
             const applyBatchPrompt = () => {
                 if (!batchPromptText.value.trim()) return ElementPlus.ElMessage.warning('请输入需要同步的提示词');
 
@@ -364,7 +374,6 @@
                 ElementPlus.ElMessage.success(`✨ 已成功覆盖 ${targetTasks.length} 个任务的提示词！`);
             };
 
-            // 批量删除勾选的任务
             const batchDeleteTasks = async () => {
                 if (selectedCount.value === 0) return ElementPlus.ElMessage.warning('请先在下方勾选需要删除的任务！');
 
@@ -378,12 +387,9 @@
                     tasks.value = tasks.value.filter(task => !task.selected);
                     ElementPlus.ElMessage.success(`🗑️ 已成功清理掉勾选的任务！`);
 
-                } catch (e) {
-                    // 取消
-                }
+                } catch (e) {}
             };
 
-            // 上传处理
             const handleUploadMultiple = (e, index) => {
                 const rawFiles = e.dataTransfer ? e.dataTransfer.files : e.target.files;
                 const files = Array.from(rawFiles).filter(f => f.type.startsWith('image/'));
@@ -425,7 +431,6 @@
                 if (e.target && e.target.value !== undefined) e.target.value = '';
             };
 
-            // 模板库逻辑
             const templateDrawer = ref(false);
             const dbTemplates = ref([]);
             const templateSearchText = ref('');
@@ -465,7 +470,6 @@
                 ElementPlus.ElMessage.success('🎉 模板选用成功！');
             };
 
-            // OSS 异步上传逻辑
             const directUploadToOss = async (itemObj, policyData, onProgress) => {
                 if (itemObj.ossUrl) {
                     if (onProgress) onProgress((itemObj.raw || itemObj.file || itemObj).size || 0);
@@ -493,10 +497,14 @@
                 } catch (err) { throw new Error("OSS_UPLOAD_FAILED"); }
             };
 
-            // 提交全局任务
             const submit = async () => {
                 if (!form.spu) return ElementPlus.ElMessage.warning('SPU 款号不能为空！');
                 if (tasks.value.length === 0) return ElementPlus.ElMessage.warning('当前任务池为空！');
+
+                // 🔴 同步引入：复用计算属性进行拦截，简洁高效
+                if (showGptWarning.value) {
+                    return ElementPlus.ElMessage.error(gptWarningText.value);
+                }
 
                 for (let i = 0; i < tasks.value.length; i++) {
                     if (tasks.value[i].inputs.length === 0) return ElementPlus.ElMessage.warning(`第 ${i+1} 个任务缺少原图`);
@@ -552,7 +560,6 @@
                                 inputUrl: task.inputs.map(inp => inp.ossUrl).join(','),
                                 colorUrl: (task.ref && task.ref.ossUrl) ? task.ref.ossUrl : ""
                             }],
-                            // 🔴 新增：传递单张图片的生成费用
                             cost: parseFloat(pricePerImage.value)
                         };
                         for (let c = 0; c < task.count; c++) {
@@ -596,7 +603,9 @@
                 handleUploadRef, removeInput, applyBatchPrompt, batchDeleteTasks, submit,
                 goToColor, goToList, goToColorManage, goToTemplateManage, goToVideo,
                 templateDrawer, dbTemplates, openTemplateDrawer, applyTemplate, templateSearchText, filteredTemplates,
-                estimatedCost
+                estimatedCost,
+                // 🔴 同步引入：必须将两个计算属性暴露给 HTML 模板
+                showGptWarning, gptWarningText
             };
         }
     }).use(ElementPlus).mount('#app');

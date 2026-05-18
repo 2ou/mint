@@ -27,13 +27,16 @@
 <body>
 <div id="app">
     <div class="login-box">
-        <div class="title">✨ AI 时尚视觉设计平台<br><span style="font-size: 16px; color: #909399; font-weight: normal; margin-top: 5px; display: inline-block;">内部管理系统登录</span></div>
-        <el-form :model="form" @keyup.enter="handleLogin">
-            <el-form-item>
-                <el-input v-model="form.username" placeholder="请输入账号" size="large" prefix-icon="User"></el-input>
+        <div class="title">
+            ✨ AI 时尚视觉设计平台<br>
+            <span style="font-size: 16px; color: #909399; font-weight: normal; margin-top: 5px; display: inline-block;">内部管理系统登录</span>
+        </div>
+        <el-form :model="form" :rules="rules" ref="loginFormRef" @keyup.enter="handleLogin">
+            <el-form-item prop="username">
+                <el-input v-model="form.username" placeholder="请输入账号" size="large" prefix-icon="User" :disabled="loading" clearable></el-input>
             </el-form-item>
-            <el-form-item>
-                <el-input v-model="form.password" type="password" placeholder="请输入密码" size="large" prefix-icon="Lock" show-password></el-input>
+            <el-form-item prop="password">
+                <el-input v-model="form.password" type="password" placeholder="请输入密码" size="large" prefix-icon="Lock" show-password :disabled="loading"></el-input>
             </el-form-item>
             <el-button type="primary" class="submit-btn" :loading="loading" @click="handleLogin">登 录</el-button>
         </el-form>
@@ -44,36 +47,52 @@
     const { createApp, reactive, ref } = Vue;
     const app = createApp({
         setup() {
+            const loginFormRef = ref(null);
             const form = reactive({ username: '', password: '' });
             const loading = ref(false);
 
-            const handleLogin = async () => {
-                if (!form.username || !form.password) return ElementPlus.ElMessage.warning("请填写完整账号密码");
-                loading.value = true;
-                try {
-                    const res = await axios.post('/api/auth/login', form);
-                    if (res.data.success) {
-                        // 登录成功，将 Token 和 账号信息 存入本地浏览器
-                        localStorage.setItem("user_token", res.data.data.token);
-                        localStorage.setItem("user_name", res.data.data.realName);
-                        localStorage.setItem("shop_name", res.data.data.shopName);
+            // 定义 Element Plus 官方表单校验规则
+            const rules = reactive({
+                username: [{ required: true, message: '请输入账号', trigger: 'blur' }],
+                password: [{ required: true, message: '请输入密码', trigger: 'blur' }]
+            });
 
-                        ElementPlus.ElMessage.success("登录成功！即将跳转...");
-                        setTimeout(() => window.location.href = 'index.html', 1000);
-                    } else {
-                        ElementPlus.ElMessage.error(res.data.message || "登录失败");
+            const handleLogin = () => {
+                if (!loginFormRef.value) return;
+
+                // 触发官方校验
+                loginFormRef.value.validate(async (valid) => {
+                    if (valid) {
+                        loading.value = true;
+                        try {
+                            const res = await axios.post('/api/auth/login', form);
+                            if (res.data.success) {
+                                // 登录成功，将 Token 和 账号信息 存入本地浏览器
+                                localStorage.setItem("user_token", res.data.data.token);
+                                localStorage.setItem("user_name", res.data.data.realName);
+                                localStorage.setItem("shop_name", res.data.data.shopName);
+
+                                ElementPlus.ElMessage.success("登录成功！即将跳转...");
+                                setTimeout(() => window.location.href = 'index.html', 1000);
+                            } else {
+                                ElementPlus.ElMessage.error(res.data.message || "登录失败");
+                            }
+                        } catch (e) {
+                            // 优化拦截报错，优先展示后端抛出的精确错误信息
+                            const errorMsg = e.response?.data?.message || "网络或服务异常，请检查服务是否启动";
+                            ElementPlus.ElMessage.error(errorMsg);
+                        } finally {
+                            loading.value = false;
+                        }
                     }
-                } catch (e) {
-                    ElementPlus.ElMessage.error("网络或服务异常");
-                } finally {
-                    loading.value = false;
-                }
+                });
             };
-            return { form, loading, handleLogin };
+
+            return { loginFormRef, form, rules, loading, handleLogin };
         }
     });
 
-    // 🔴 修复2：将所有的图标遍历注册为全局组件，让 User 和 Lock 图标能正常显示出来
+    // 遍历注册所有的 Element Plus 图标组件
     for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
         app.component(key, component);
     }

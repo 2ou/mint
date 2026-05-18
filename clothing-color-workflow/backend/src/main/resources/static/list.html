@@ -132,6 +132,9 @@
                                style="font-weight: bold; border: 2px solid white;">
                         📄 导出链接 (备用)
                     </el-button>
+                    <el-button type="warning" @click="goToStats" plain style="font-weight: bold;">
+                        💰 费用统计
+                    </el-button>
                     <el-tooltip content="系统已开启后台自动同步（3分钟/次）" placement="bottom" effect="light">
                         <el-button type="warning" disabled style="cursor: not-allowed;">⚡ 自动同步运行中...</el-button>
                     </el-tooltip>
@@ -169,7 +172,16 @@
 
                 <el-button type="primary" @click="handleSearch">搜索</el-button>
                 <el-button @click="resetFilters">重置</el-button>
-            </div>
+            </div> <div style="margin-bottom: 15px;">
+            <el-alert
+                    title="⚠️ 资产清理提醒：为优化系统性能，所有生成的临时结果图片将在 5 天后自动销毁！"
+                    description="💡 强烈建议：如果您遇到了非常满意的生图效果与提示词，请务必及时点击表格中的【💡 存入动作库】按钮，系统将自动把该图片跨桶转存为「永久数字资产」，不再过期。"
+                    type="warning"
+                    show-icon
+                    :closable="false"
+                    style="border: 1px solid #faecd8; border-radius: 8px;">
+            </el-alert>
+        </div>
 
             <el-table :data="rawData" v-loading="loading" @selection-change="handleSelectionChange" border stripe
                       style="width: 100%" height="65vh">
@@ -334,7 +346,7 @@
                     <template #header>
                         <div style="display: flex; align-items: center; justify-content: center;">
                             预估费用
-                            <el-tooltip effect="dark" content="只有状态为 SUCCESS 或 PROCESSING 的任务会计入实际费用，FAILED（失败）的任务不会产生任何扣费。" placement="top">
+                            <el-tooltip effect="dark" content="只有状态为 SUCCESS 的任务会计入实际费用，FAILED（失败）的任务不会产生任何扣费。" placement="top">
                                 <el-icon style="margin-left: 4px; cursor: help; color: #909399;"><svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg"><path fill="currentColor" d="M512 64a448 448 0 1 1 0 896 448 448 0 0 1 0-896zm0 192a58.432 58.432 0 0 0-58.24 63.744l23.36 256.384a35.072 35.072 0 0 0 69.76 0l23.296-256.384A58.432 58.432 0 0 0 512 256zm0 512a51.2 51.2 0 1 0 0-102.4 51.2 51.2 0 0 0 0 102.4z"></path></svg></el-icon>
                             </el-tooltip>
                         </div>
@@ -634,6 +646,9 @@
             const goToVideo = () => {
                 window.location.href = 'video.html';
             };
+            const goToStats = () => {
+                window.location.href = 'stats.html';
+            };
 
             const fetchKieRaw = async (taskId) => {
                 const loadingInstance = ElementPlus.ElLoading.service({fullscreen: true, text: '正在拉取 KIE 数据...'});
@@ -666,7 +681,7 @@
                 }
             };
 
-            // 🔴 核心新增：一键保存为模板
+            // 🔴 核心新增：一键保存为模板 (已接入跨桶永久化逻辑)
             const saveToTemplateLibrary = async (row) => {
                 try {
                     await ElementPlus.ElMessageBox.confirm(
@@ -680,12 +695,29 @@
                         return ElementPlus.ElMessage.warning('该任务尚未生成成功的结果图，无法作为参考图存入！');
                     }
 
+                    // 🚀 优化核心：呼叫后端把临时图片跨桶复制到永久桶！
+                    const loadingInstance = ElementPlus.ElLoading.service({ fullscreen: true, text: '正在跨桶转存图片为永久资产...' });
+                    let finalPermanentUrl = targetImageUrl;
+                    try {
+                        const copyRes = await axios.post('/api/oss/copy-to-permanent', { url: targetImageUrl });
+                        if (copyRes.data && copyRes.data.success) {
+                            finalPermanentUrl = copyRes.data.data; // 拿到洗白后的永久链接
+                        } else {
+                            loadingInstance.close();
+                            return ElementPlus.ElMessage.error(copyRes.data.message || '转存永久图片失败，入库中止');
+                        }
+                    } catch (err) {
+                        loadingInstance.close();
+                        return ElementPlus.ElMessage.error('网络请求异常，转存失败');
+                    }
+                    loadingInstance.close();
+
                     // 构造满足后端的 Template 实体对象
                     const templateData = {
-                        title: "大盘快捷入库",        // 根据您的要求，标题给个默认值
-                        category: "通用动作库",       // 强制设定为通用动作库
-                        basePrompt: row.prompt,       // 直接存入完整提示词
-                        exampleImageUrl: targetImageUrl, // 保存最后生成的那张好看的图作为演示
+                        title: "大盘快捷入库",
+                        category: "通用动作库",
+                        basePrompt: row.prompt,
+                        exampleImageUrl: finalPermanentUrl, // 👈 完美替换为永久桶的新链接
                         isActive: true
                     };
 
@@ -713,7 +745,7 @@
                 exportLinks, fetchData, handleSearch, handleSizeChange, handleCurrentChange, resetFilters,
                 getStatusType, formatTime, handleSelectionChange, refreshRow, syncAllProcessing,
                 formatTaskId, fetchKieRaw, batchDownload, handleVideoError,
-                goToColor, goToScene, goToVideo, isVideo,
+                goToColor, goToScene, goToVideo, isVideo, goToStats,
                 openImagePreview, openVideoPreview, saveToTemplateLibrary, // 导出新方法
                 canSelectRow
             };

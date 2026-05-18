@@ -97,9 +97,9 @@
                 </el-col>
             </el-row>
 
-            <el-row v-if="form.model === 'gpt-image-2-image-to-image' && ((form.aspect_ratio === '1:1' && form.resolution === '4K') || (form.aspect_ratio === 'auto' && form.resolution !== '1K'))" style="margin-bottom: 15px;">
+            <el-row v-if="showGptWarning" style="margin-bottom: 15px;">
                 <el-col :span="24">
-                    <el-alert title="⚠️ 注意: 1:1比例的图片无法生成4K图片，auto比例或者未传递比例参数的话只能生成1K图片，否则将无法创建任务" type="error" :closable="false"></el-alert>
+                    <el-alert :title="gptWarningText" type="error" :closable="false"></el-alert>
                 </el-col>
             </el-row>
 
@@ -253,6 +253,26 @@
 
             // 增加 promptType 字段默认选中 solid
             const form = reactive({ spu: '', model: 'nano-banana-pro', resolution: '4K', type: '', aspect_ratio: 'auto', promptType: 'solid', prompt: solidPromptTemplate });
+
+            // 🔴 修改 2：新增计算属性，100%保证响应式拦截显示
+            const showGptWarning = computed(() => {
+                if (form.model !== 'gpt-image-2-image-to-image') return false;
+                if (form.aspect_ratio === '1:1' && form.resolution === '4K') return true;
+                if (form.aspect_ratio === 'auto' && form.resolution !== '1K') return true;
+                return false;
+            });
+
+            // 🔴 修改 2：动态计算精准的错误提示文案
+            const gptWarningText = computed(() => {
+                if (form.aspect_ratio === '1:1' && form.resolution === '4K') {
+                    return "⚠️ 注意：1:1 (正方形) 比例的图片无法生成 4K 分辨率，请降低分辨率或修改比例！";
+                }
+                if (form.aspect_ratio === 'auto' && form.resolution !== '1K') {
+                    return "⚠️ 注意：Auto (自动) 比例未传确切尺寸，只能生成 1K 图片，请修改分辨率或比例！";
+                }
+                return "";
+            });
+
             const loading = ref(false), uploadProgressMsg = ref('正在处理...');
             const inputPool = ref([]), colorPool = ref([]), pairingState = reactive({}), drag = reactive({input: false, color: false});
 
@@ -400,6 +420,11 @@
                 if (!form.spu) return ElementPlus.ElMessage.warning('SPU 款号不能为空！');
                 if (activeTaskCount.value === 0) return ElementPlus.ElMessage.warning('当前没有选中的有效搭配任务！');
 
+                // 🔴 修改 3：复用计算属性进行拦截，简洁高效
+                if (showGptWarning.value) {
+                    return ElementPlus.ElMessage.error(gptWarningText.value);
+                }
+
                 // 🔴 新增：严格拦截错误的组合，防止强行提交导致 KIE 报错
                 if (form.model === 'gpt-image-2-image-to-image') {
                     if (form.aspect_ratio === '1:1' && form.resolution === '4K') {
@@ -479,7 +504,7 @@
                 goToScene, goToList, goToColorManage, goToVideo,
                 colorCardDrawer, dbColorCards, openColorCardDialog, addSingleToMatrix, addAll,
                 drawerFilter, filteredDbColorCards,
-                currentUserName, estimatedCost
+                currentUserName, estimatedCost, showGptWarning, gptWarningText
             };
         }
     }).use(ElementPlus).mount('#app');
