@@ -3,21 +3,24 @@
 <head>
     <meta charset="UTF-8">
     <title>系统用户管理 (仅 PINKSIR 可见)</title>
+    <link rel="stylesheet" href="css/variables.css">
+    <link rel="stylesheet" href="css/shared.css">
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css"/>
     <script src="https://unpkg.com/element-plus"></script>
     <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
     <script src="auth.js"></script>
+    <script src="js/sidebar.js"></script>
     <style>
-        body { background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); min-height: 100vh; margin: 0; font-family: 'PingFang SC', sans-serif; padding-top: 3vh; padding-bottom: 5vh; }
-        .admin-card { max-width: 1000px; margin: 0 auto; border-radius: 16px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08); border: none; }
-        .admin-card .el-card__header { background: #E6A23C; color: white; border-bottom: none; padding: 15px 20px;}
+        body { margin: 0; font-family: var(--app-font-family); }
         .el-message, .el-overlay.is-message-box { z-index: 99999 !important; top: 80px !important; }
     </style>
 </head>
 <body>
-<div id="app">
-    <el-card class="admin-card">
+<div class="app-layout">
+  <div class="app-main">
+    <div id="app">
+    <el-card class="app-card">
         <template #header>
             <div style="display: flex; justify-content: space-between; align-items: center;">
                 <div style="font-size: 18px; font-weight: bold;">⚙️ 超级管理员面板 - 用户管理</div>
@@ -72,6 +75,8 @@
             </span>
         </template>
     </el-dialog>
+    </div>
+  </div>
 </div>
 
 <script>

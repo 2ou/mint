@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>系统色卡库管理</title>
+    <link rel="stylesheet" href="css/variables.css">
+    <link rel="stylesheet" href="css/shared.css">
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
     <script src="https://unpkg.com/element-plus"></script>
@@ -11,11 +13,9 @@
     <script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/exceljs/dist/exceljs.min.js"></script>
     <script src="auth.js"></script>
+    <script src="js/sidebar.js"></script>
     <style>
-        body { margin: 0; min-height: 100vh; padding: 20px; font-family: 'PingFang SC', sans-serif; background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); }
-        .page-wrap { max-width: 1400px; margin: 0 auto; }
-        .dashboard-card { border-radius: 12px !important; box-shadow: 0 8px 24px rgba(0,0,0,0.1) !important; border: none !important; }
-        .el-card__header { background: #67c23a; color: white; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
+        body { margin: 0; font-family: var(--app-font-family); }
         .thumbnail { width: 60px; height: 60px; border-radius: 6px; border: 1px solid #ddd; object-fit: cover; }
         .preview-box { width: 100px; height: 100px; border: 1px dashed #dcdfe6; border-radius: 6px; display: flex; align-items: center; justify-content: center; overflow: hidden; margin-top: 10px; background: #fafafa; }
         .preview-box img { width: 100%; height: 100%; object-fit: cover; }
@@ -25,15 +25,12 @@
     </style>
 </head>
 <body>
-<div id="app">
-    <div class="page-wrap">
-        <el-card class="dashboard-card">
+<div class="app-layout">
+  <div class="app-main">
+    <div id="app">
+        <el-card class="app-card">
             <template #header>
                 <span>📚 品牌数字资产 - 系统色卡库管理</span>
-                <div style="display: flex; gap: 10px;">
-                    <el-button type="primary" color="#1e88e5" @click="goToWorkflow">🎨 去换色工作流</el-button>
-                    <el-button color="#f5f7fa" style="color: #606266; font-weight: bold;" @click="goToList">📊 任务大盘</el-button>
-                </div>
             </template>
 
             <div style="margin-bottom: 20px; display: flex; gap: 15px; align-items: center; background: #fff; padding: 15px; border-radius: 8px;">
@@ -136,6 +133,7 @@
             </template>
         </el-dialog>
     </div>
+  </div>
 </div>
 
 <script>
@@ -452,17 +450,13 @@
                 }
             };
 
-            const goToWorkflow = () => window.location.href = 'index.html';
-            const goToList = () => window.location.href = 'list.html';
-
             onMounted(fetchData);
 
             return {
                 tableData, loading, dialogVisible, form, uploading, saving, importing, exporting,
                 filters, pageParams, total, selectedIds,
                 fetchData, openDialog, resetForm, uploadToOss, submitForm,
-                handleDelete, handleBatchDelete, handleSelectionChange, handleBatchImport, handleBatchExport,
-                goToWorkflow, goToList
+                handleDelete, handleBatchDelete, handleSelectionChange, handleBatchImport, handleBatchExport
             };
         }
     }).use(ElementPlus).mount('#app');

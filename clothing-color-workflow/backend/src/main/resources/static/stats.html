@@ -3,17 +3,18 @@
 <head>
   <meta charset="UTF-8">
   <title>AI 消费统计报表</title>
+  <link rel="stylesheet" href="css/variables.css">
+  <link rel="stylesheet" href="css/shared.css">
   <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
   <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css"/>
   <script src="https://unpkg.com/element-plus"></script>
   <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
   <script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js"></script>
   <script src="auth.js"></script>
+  <script src="js/sidebar.js"></script>
 
   <style>
-    body { background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); min-height: 100vh; margin: 0; font-family: 'PingFang SC', sans-serif; padding-top: 3vh; padding-bottom: 5vh; }
-    .stats-card { max-width: 1000px; margin: 0 auto; border-radius: 16px !important; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08) !important; border: none !important; }
-    .stats-card .el-card__header { background: #409EFF; color: white; border-bottom: none; padding: 15px 20px;}
+    body { margin: 0; font-family: var(--app-font-family); }
 
     .summary-boxes { display: flex; gap: 20px; margin-bottom: 20px; }
     .summary-box { flex: 1; background: white; border-radius: 12px; padding: 25px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); display: flex; align-items: center; gap: 20px; border: 1px solid #ebeef5; }
@@ -24,8 +25,10 @@
   </style>
 </head>
 <body>
-<div id="app">
-  <el-card class="stats-card">
+<div class="app-layout">
+  <div class="app-main">
+    <div id="app">
+  <el-card class="app-card">
     <template #header>
       <div style="display: flex; justify-content: space-between; align-items: center;">
         <div style="display: flex; gap: 10px; align-items: center;">
@@ -97,6 +100,8 @@
     </el-table>
 
   </el-card>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -109,8 +114,6 @@
         spu: '',
         dateRange: []
       });
-
-      const goTo = (url) => { window.location.href = url; };
 
       const totalCost = computed(() => {
         return tableData.value.reduce((sum, item) => sum + (item.totalCost || 0), 0);
@@ -188,7 +191,7 @@
 
       return {
         filter, loading, tableData, totalCost,
-        fetchData, resetFilter, goTo, exportExcel
+        fetchData, resetFilter, exportExcel
       };
     }
   }).use(ElementPlus).mount('#app');
