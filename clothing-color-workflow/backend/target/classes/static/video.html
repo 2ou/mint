@@ -1,0 +1,834 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>AI 视频生成矩阵</title>
+    <link rel="stylesheet" href="css/variables.css">
+    <link rel="stylesheet" href="css/shared.css">
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css"/>
+    <script src="https://unpkg.com/element-plus"></script>
+    <script src="https://unpkg.com/@element-plus/icons-vue"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <script src="auth.js"></script>
+    <script src="js/sidebar.js"></script>
+    <style>
+        body { margin: 0; font-family: var(--app-font-family); }
+        .upload-box { border: 2px dashed #dcdfe6; border-radius: 8px; display: flex; align-items: center; justify-content: center; cursor: pointer; background: #fafafa; transition: 0.3s; width: 100%; height: 140px; position: relative; overflow: hidden; flex-direction: column; color: #909399;}
+        .upload-box:hover { border-color: #673AB7; background: #f9f2ff; color: #673AB7;}
+        .is-dragover { border-color: #67c23a !important; background: #f0f9eb !important; transform: scale(1.01); transition: all 0.2s; }
+        .media-preview { width: 100%; height: 100%; object-fit: cover; }
+        .remove-btn { position: absolute; top: -6px; right: -6px; background-color: rgba(245, 108, 108, 0.95); color: white; border-radius: 50%; width: 20px; height: 20px; line-height: 18px; text-align: center; cursor: pointer; z-index: 10; font-size: 12px; font-weight: bold; transition: 0.2s; box-shadow: 0 2px 4px rgba(0,0,0,0.2);}
+        .remove-btn:hover { transform: scale(1.15); background-color: #f56c6c; }
+        .ref-img-card { position: relative; width: 110px; height: 140px; border: 1px solid #ebeef5; border-radius: 8px; overflow: visible; background: #fff; text-align: center; display: flex; flex-direction: column; justify-content: space-between; box-shadow: 0 2px 8px rgba(0,0,0,0.05);}
+        .ref-img-card img { width: 100%; height: 105px; object-fit: cover; border-top-left-radius: 8px; border-top-right-radius: 8px; }
+        .insert-btn { width: 100%; padding: 4px 0; font-size: 12px; font-weight: bold; border-radius: 0 0 8px 8px; border-top: 1px solid #ebeef5; cursor: pointer; }
+        .seedance-drop-zone { display: flex; flex-wrap: wrap; gap: 15px; margin-bottom: 10px; padding: 15px; background: #fcfcfc; border: 2px dashed #ebeef5; border-radius: 8px; min-height: 100px; transition: 0.3s;}
+        .dynamic-card { background: #f8f9fa; border: 1px solid #ebeef5; border-radius: 8px; padding: 15px; margin-bottom: 15px; position: relative; }
+        .dynamic-card:hover { border-color: #dcdfe6; box-shadow: 0 2px 12px 0 rgba(0,0,0,.05); }
+        .mention-backdrop { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 9998; }
+        .mention-menu { position: fixed; background: white; border: 1px solid #dcdfe6; box-shadow: 0 4px 12px rgba(0,0,0,0.15); border-radius: 4px; z-index: 9999; width: 160px; max-height: 200px; overflow-y: auto; }
+        .mention-item { padding: 8px 12px; cursor: pointer; font-size: 13px; }
+        .mention-item:hover { background: #f5f7fa; color: #673ab7; font-weight: bold; }
+        .mention-title { padding: 8px 12px; font-size: 12px; color: #909399; background: #fafafa; border-bottom: 1px solid #ebeef5; font-weight: bold; }
+    </style>
+</head>
+<body>
+<div class="app-layout">
+<div class="app-main">
+<div id="app">
+    <div v-if="mention.visible" class="mention-backdrop" @click="mention.visible = false"></div>
+    <div v-if="mention.visible" class="mention-menu" :style="{ top: mention.y + 'px', left: mention.x + 'px' }">
+        <div class="mention-title">{{ mentionTitle }}</div>
+        <div v-for="(item, idx) in mentionItems" :key="idx" class="mention-item" @click="insertMention(item.value)">
+            <el-tag size="small" type="success" style="margin-right: 5px;">@</el-tag>{{ item.label }}
+        </div>
+        <div v-if="mentionItems.length === 0" style="padding: 10px; font-size: 12px; color: #f56c6c;">
+            {{ mentionEmptyText }}
+        </div>
+    </div>
+
+    <div class="app-card">
+        <div class="app-card__header app-card__header--module-video">
+            <div style="display: flex; gap: 10px; align-items: center;">
+                <span style="margin-right: 15px; font-size: 18px; font-weight: bold;">✨ AI 视频生成工作流</span>
+                <el-button type="primary" color="#673AB7" style="color: #fff;">🎬 视频生成(当前)</el-button>
+            </div>
+            <el-button @click="goToList" color="#f5f7fa" style="color: #606266; font-weight: bold;">📊 任务大盘</el-button>
+        </div>
+
+        <div class="app-card__body">
+            <div class="app-section-title">1. 模型与基础配置</div>
+            <el-form label-width="120px">
+                <el-form-item label="任务 SPU">
+                    <el-input v-model="form.spu" placeholder="输入款式编号..."></el-input>
+                </el-form-item>
+                <el-form-item label="选择模型引擎">
+                    <el-radio-group v-model="form.model" size="small">
+                        <el-radio-button value="kling-3.0/motion-control">🌟 可灵 3.0 (运镜)</el-radio-button>
+                        <el-radio-button value="kling-3.0/video">🎥 可灵 3.0 (标准)</el-radio-button>
+                        <el-radio-button value="happyhorse/image-to-video">🐴 HappyHorse</el-radio-button>
+                        <el-radio-button value="bytedance/seedance">💃 字节 Seedance</el-radio-button>
+                    </el-radio-group>
+                </el-form-item>
+
+                <el-form-item label="核心提示词" v-show="!(form.model === 'kling-3.0/video' && form.klingShotMode === 'multi')">
+                    <el-input type="textarea" v-model="form.prompt" :rows="4"
+                              :placeholder="(form.model === 'kling-3.0/motion-control' || form.model === 'happyhorse/image-to-video') ? '描述视频画面、人物动作或环境光影' : '描述视频画面。输入 @ 自动唤出面板插入特征图或元素'"
+                              @keyup="e => handlePromptInput(e, form, 'prompt')"
+                              @click="e => handlePromptInput(e, form, 'prompt')"></el-input>
+                </el-form-item>
+            </el-form>
+
+            <div v-if="form.model === 'kling-3.0/motion-control'">
+                <div class="app-section-title">2. 运镜控制 参数</div>
+                <el-row :gutter="20">
+                    <el-col :span="12">
+                        <div style="font-weight:bold; margin-bottom:10px; display: flex; align-items: center;">
+                            人物参考图 (必填)
+                            <el-tooltip effect="dark" placement="top" style="max-width: 300px;">
+                                <template #content>
+                                    <div style="line-height: 1.6;">
+                                        <b>文件类型:</b> JPEG、PNG 或 JPG<br/>
+                                        <b>文件大小:</b> 最大 10MB，尺寸需大于 340px<br/>
+                                        <b>宽高比例:</b> 介于 2:5 到 5:2 之间<br/>
+                                        <b>内容要求:</b> 清楚显示对象的头部、肩膀和躯干
+                                    </div>
+                                </template>
+                                <el-icon style="margin-left: 5px; color: #909399; cursor: help; font-size: 16px;"><info-filled></info-filled></el-icon>
+                            </el-tooltip>
+                        </div>
+
+                        <div v-if="form.motionImg" style="position: relative; width: 140px; height: 140px; border-radius: 8px; border: 1px solid #ebeef5; box-shadow: 0 2px 12px 0 rgba(0,0,0,0.05); padding: 4px; background: #fff;">
+                            <el-image :src="form.motionImg" :preview-src-list="[form.motionImg]" fit="cover" style="width: 100%; height: 100%; border-radius: 6px; cursor: pointer;" preview-teleported title="点击放大查看"></el-image>
+                            <div class="remove-btn" @click.stop="form.motionImg=''; filesToUpload.motionImg=null">X</div>
+                        </div>
+
+                        <div v-else class="upload-box" :class="{'is-dragover': drag.motionImg}"
+                             @click="triggerUpload('motionImg', 'image/*')"
+                             @dragover.prevent="drag.motionImg = true" @dragleave.prevent="drag.motionImg = false"
+                             @drop.prevent="e => handleDrop(e, 'motionImg', 'image/*')" style="height: 140px; width: 140px;">
+                            <div style="font-size: 24px; color: #409EFF; margin-bottom: 5px;">➕</div>
+                            <div style="font-size: 13px;">点击或拖拽</div>
+                        </div>
+                    </el-col>
+
+                    <el-col :span="12">
+                        <div style="font-weight:bold; margin-bottom:10px; display: flex; align-items: center;">
+                            动作参考视频 (必填)
+                            <el-tooltip effect="dark" placement="top" style="max-width: 300px;">
+                                <template #content>
+                                    <div style="line-height: 1.6;">
+                                        <b>文件类型:</b> MP4 或 QuickTime<br/>
+                                        <b>持续时间:</b> 3-30 秒<br/>
+                                        <b>文件大小:</b> 最大 100MB，尺寸需大于 340px<br/>
+                                        <b>宽高比例:</b> 介于 2:5 到 5:2 之间<br/>
+                                        <b>内容要求:</b> 清楚显示对象的头部、肩膀和躯干
+                                    </div>
+                                </template>
+                                <el-icon style="margin-left: 5px; color: #909399; cursor: help; font-size: 16px;"><info-filled></info-filled></el-icon>
+                            </el-tooltip>
+
+                            <span v-if="form.motionVidDuration" style="color: #67c23a; font-weight: normal; font-size: 13px; margin-left: 10px;">
+                                (已识别: {{ form.motionVidDuration }} 秒)
+                            </span>
+                        </div>
+
+                        <div v-if="form.motionVid" style="position: relative; width: 140px; height: 140px; border-radius: 8px; border: 1px solid #ebeef5; box-shadow: 0 2px 12px 0 rgba(0,0,0,0.05); padding: 4px; background: #fff; cursor: pointer;" @click="previewVideo(form.motionVid)" title="点击播放视频">
+                            <video :src="form.motionVid" style="width: 100%; height: 100%; object-fit: cover; border-radius: 6px;" @loadedmetadata="e => form.motionVidDuration = Math.max(1, Math.round(e.target.duration))"></video>
+                            <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; font-size: 32px; opacity: 0.9; text-shadow: 0 2px 6px rgba(0,0,0,0.6);">▶</div>
+                            <div class="remove-btn" @click.stop="form.motionVid=''; filesToUpload.motionVid=null; form.motionVidDuration=0">X</div>
+                        </div>
+
+                        <div v-else class="upload-box" :class="{'is-dragover': drag.motionVid}"
+                             @click="triggerUpload('motionVid', 'video/*')"
+                             @dragover.prevent="drag.motionVid = true" @dragleave.prevent="drag.motionVid = false"
+                             @drop.prevent="e => handleDrop(e, 'motionVid', 'video/*')" style="height: 140px; width: 140px;">
+                            <div style="font-size: 24px; color: #409EFF; margin-bottom: 5px;">➕</div>
+                            <div style="font-size: 13px;">点击或拖拽</div>
+                        </div>
+                    </el-col>
+                </el-row>
+                <el-row :gutter="20" style="margin-top: 20px;">
+                    <el-col :span="8">
+                        <el-form-item label="渲染画质">
+                            <el-select v-model="form.motionMode" style="width: 100%;">
+                                <el-option label="标准模式 (720p)" value="720p"></el-option>
+                                <el-option label="专业模式 (1080p)" value="1080p"></el-option>
+                            </el-select>
+                        </el-form-item>
+                    </el-col>
+                    <el-col :span="8">
+                        <el-form-item label="背景来源">
+                            <el-select v-model="form.motionBg">
+                                <el-option label="保留视频背景" value="input_video"></el-option>
+                                <el-option label="保留图片背景" value="input_image"></el-option>
+                            </el-select>
+                        </el-form-item>
+                    </el-col>
+                    <el-col :span="8">
+                        <el-form-item label="人物朝向">
+                            <el-select v-model="form.motionOrient">
+                                <el-option label="参考视频" value="video"></el-option>
+                                <el-option label="参考图片" value="image"></el-option>
+                            </el-select>
+                        </el-form-item>
+                    </el-col>
+                </el-row>
+            </div>
+
+            <div v-if="form.model === 'kling-3.0/video'">
+                <div class="app-section-title">2. 可灵视频 参数 (Kling 3.0 API)</div>
+
+                <el-form label-width="100px">
+                    <el-form-item label="生成模式">
+                        <el-radio-group v-model="form.klingShotMode" size="large">
+                            <el-radio-button value="single">🎬 单镜头 (Single-Shot)</el-radio-button>
+                            <el-radio-button value="multi">🎞️ 多镜头分镜 (Multi-Shot)</el-radio-button>
+                        </el-radio-group>
+                    </el-form-item>
+
+                    <div v-if="form.klingShotMode === 'single'" style="background: #fff; padding: 20px; border-radius: 8px; border: 1px solid #ebeef5;">
+                        <el-row :gutter="20">
+                            <el-col :span="6">
+                                <div style="font-weight:bold; margin-bottom:10px; color:#606266; font-size: 13px;">首帧参考图 (可选)</div>
+                                <div class="upload-box" :class="{'is-dragover': drag.klingFirstImg}"
+                                     @click="triggerUpload('klingFirstImg', 'image/*')"
+                                     @dragover.prevent="drag.klingFirstImg = true" @dragleave.prevent="drag.klingFirstImg = false"
+                                     @drop.prevent="e => handleDrop(e, 'klingFirstImg', 'image/*')">
+                                    <img v-if="form.klingFirstImg" :src="form.klingFirstImg" class="media-preview">
+                                    <div v-else>➕ 拖拽上传首帧</div>
+                                    <div v-if="form.klingFirstImg" class="remove-btn" @click.stop="form.klingFirstImg=''; filesToUpload.klingFirstImg=null">X</div>
+                                </div>
+                            </el-col>
+                            <el-col :span="6">
+                                <div style="font-weight:bold; margin-bottom:10px; color:#606266; font-size: 13px;">尾帧参考图 (可选)</div>
+                                <div class="upload-box" :class="{'is-dragover': drag.klingLastImg}"
+                                     @click="triggerUpload('klingLastImg', 'image/*')"
+                                     @dragover.prevent="drag.klingLastImg = true" @dragleave.prevent="drag.klingLastImg = false"
+                                     @drop.prevent="e => handleDrop(e, 'klingLastImg', 'image/*')">
+                                    <img v-if="form.klingLastImg" :src="form.klingLastImg" class="media-preview">
+                                    <div v-else>➕ 拖拽上传尾帧</div>
+                                    <div v-if="form.klingLastImg" class="remove-btn" @click.stop="form.klingLastImg=''; filesToUpload.klingLastImg=null">X</div>
+                                </div>
+                            </el-col>
+                            <el-col :span="12">
+                                <el-form-item label="画面比例">
+                                    <el-select v-model="form.klingRatio" style="width: 100%;">
+                                        <el-option label="16:9 横屏" value="16:9"></el-option>
+                                        <el-option label="9:16 竖屏" value="9:16"></el-option>
+                                        <el-option label="1:1 方屏" value="1:1"></el-option>
+                                    </el-select>
+                                </el-form-item>
+                                <el-form-item label="视频时长">
+                                    <el-slider v-model="form.klingDuration" :min="1" :max="15" :step="1" show-input style="margin-left: 10px;"></el-slider>
+                                </el-form-item>
+                                <el-form-item label="渲染画质">
+                                    <div style="display: flex; gap: 15px; align-items: center; width: 100%;">
+                                        <el-select v-model="form.klingMode" style="flex: 1;">
+                                            <el-option label="标准 (std)" value="std"></el-option>
+                                            <el-option label="专业 (pro)" value="pro"></el-option>
+                                            <el-option label="超清 (4k)" value="4k"></el-option>
+                                        </el-select>
+                                        <el-switch v-model="form.klingAudio" active-text="音频"></el-switch>
+                                    </div>
+                                </el-form-item>
+                            </el-col>
+                        </el-row>
+                    </div>
+
+                    <div v-if="form.klingShotMode === 'multi'" style="background: #fff; padding: 20px; border-radius: 8px; border: 1px solid #ebeef5;">
+                        <el-row :gutter="20">
+                            <el-col :span="6">
+                                <div style="font-weight:bold; margin-bottom:10px; color:#606266; font-size: 13px;">主参考图 (只能1张)</div>
+                                <div class="upload-box" :class="{'is-dragover': drag.klingMultiImage}"
+                                     @click="triggerUpload('klingMultiImage', 'image/*')"
+                                     @dragover.prevent="drag.klingMultiImage = true" @dragleave.prevent="drag.klingMultiImage = false"
+                                     @drop.prevent="e => handleDrop(e, 'klingMultiImage', 'image/*')">
+                                    <img v-if="form.klingMultiImage" :src="form.klingMultiImage" class="media-preview">
+                                    <div v-else>➕ 拖拽上传图</div>
+                                    <div v-if="form.klingMultiImage" class="remove-btn" @click.stop="form.klingMultiImage=''; filesToUpload.klingMultiImage=null">X</div>
+                                </div>
+                            </el-col>
+                            <el-col :span="18">
+                                <el-row :gutter="20">
+                                    <el-col :span="12">
+                                        <el-form-item label="画面比例">
+                                            <el-select v-model="form.klingRatio" style="width: 100%;">
+                                                <el-option label="16:9 横屏" value="16:9"></el-option>
+                                                <el-option label="9:16 竖屏" value="9:16"></el-option>
+                                                <el-option label="1:1 方屏" value="1:1"></el-option>
+                                            </el-select>
+                                        </el-form-item>
+                                    </el-col>
+                                    <el-col :span="12">
+                                        <el-form-item label="渲染画质">
+                                            <div style="display: flex; gap: 15px; align-items: center; width: 100%;">
+                                                <el-select v-model="form.klingMode" style="flex: 1;">
+                                                    <el-option label="标准 (std)" value="std"></el-option>
+                                                    <el-option label="专业 (pro)" value="pro"></el-option>
+                                                    <el-option label="超清 (4k)" value="4k"></el-option>
+                                                </el-select>
+                                                <el-switch v-model="form.klingAudio" active-text="音频"></el-switch>
+                                            </div>
+                                        </el-form-item>
+                                    </el-col>
+                                </el-row>
+                            </el-col>
+                        </el-row>
+                        <div style="font-weight:bold; margin-top:25px; margin-bottom:15px; color:#606266; display: flex; justify-content: space-between;">
+                            <span>分镜设计 (总时长不超过 15 秒)</span>
+                            <span style="color:#E6A23C; font-size: 13px;">已分配时长: {{ totalMultiShotDuration }}s / 15s</span>
+                        </div>
+                        <div v-for="(shot, idx) in form.klingMultiPrompts" :key="idx" class="dynamic-card">
+                            <div style="display: flex; gap: 15px; align-items: flex-start;">
+                                <div style="flex: 1;">
+                                    <div style="font-size: 12px; color: #909399; margin-bottom: 5px;">分镜 {{ idx + 1 }} 提示词 (输入 @ 唤出元素)</div>
+                                    <el-input type="textarea" :rows="2" v-model="shot.prompt"
+                                              placeholder="分镜动作与画面描述..."
+                                              @keyup="e => handlePromptInput(e, shot, 'prompt')"
+                                              @click="e => handlePromptInput(e, shot, 'prompt')"></el-input>
+                                </div>
+                                <div style="width: 250px;">
+                                    <div style="font-size: 12px; color: #909399; margin-bottom: 5px;">持续时长 (秒)</div>
+                                    <el-slider v-model="shot.duration" :min="1" :max="getMaxDurationForShot(idx)" show-input style="margin-left:10px;"></el-slider>
+                                </div>
+                                <el-button type="danger" plain @click="removeKlingShot(idx)" style="margin-top: 22px;" :disabled="form.klingMultiPrompts.length === 1">删除</el-button>
+                            </div>
+                        </div>
+                        <el-button type="primary" plain @click="addKlingShot" style="width: 100%; border-style: dashed;" :disabled="totalMultiShotDuration >= 15">➕ 添加新分镜</el-button>
+                    </div>
+
+                    <div style="margin-top: 30px; border-top: 1px dashed #dcdfe6; padding-top: 20px;">
+                        <div style="font-weight:bold; margin-bottom:5px; color:#606266; display: flex; justify-content: space-between; align-items: center;">
+                            <span>Kling Elements (角色/场景一致性控制)</span>
+                            <el-button type="success" size="small" plain @click="addKlingElement">➕ 新增 Element</el-button>
+                        </div>
+                        <div style="font-size: 12px; color: #909399; margin-bottom: 15px;">通过添加特征组保持人物或物品特征一致。单组 2-4 张图，单张图上限 10MB。</div>
+                        <div v-for="(elem, idx) in form.klingElements" :key="idx" class="dynamic-card" style="border-left: 4px solid #67c23a;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                                <span style="font-weight:bold; color:#67c23a;">Element {{ idx + 1 }}</span>
+                                <el-button type="danger" size="small" plain @click="removeKlingElement(idx)">删除当前组</el-button>
+                            </div>
+                            <el-row :gutter="15" style="margin-bottom: 15px;">
+                                <el-col :span="8"><el-input v-model="elem.name" placeholder="元素名称"></el-input></el-col>
+                                <el-col :span="16"><el-input v-model="elem.description" placeholder="元素详细特征描述..."></el-input></el-col>
+                            </el-row>
+                            <div class="seedance-drop-zone" style="min-height: 80px; padding: 10px; margin-bottom: 0;">
+                                <div v-for="(url, imgIdx) in elem.urls" :key="imgIdx" class="ref-img-card" style="width: 80px; height: 80px;">
+                                    <img :src="url" style="height: 100%; border-radius: 6px;" />
+                                    <div class="remove-btn" @click="removeKlingElementImage(idx, imgIdx)">X</div>
+                                </div>
+                                <div v-if="elem.urls.length < 4" class="upload-box" style="width: 80px; height: 80px;" @click="triggerUpload('klingElements', 'image/*', true, true, idx)">
+                                    <div style="font-size: 20px;">➕</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </el-form>
+            </div>
+
+            <div v-if="form.model === 'happyhorse/image-to-video'">
+                <div class="app-section-title">2. HappyHorse 图生视频 参数</div>
+                <el-row :gutter="20">
+                    <el-col :span="8">
+                        <div style="font-weight:bold; margin-bottom:10px; color:#606266; font-size: 13px;">首帧参考图 (必填)</div>
+                        <div class="upload-box" :class="{'is-dragover': drag.happyhorseImg}"
+                             @click="triggerUpload('happyhorseImg', 'image/*')"
+                             @dragover.prevent="drag.happyhorseImg = true" @dragleave.prevent="drag.happyhorseImg = false"
+                             @drop.prevent="e => handleDrop(e, 'happyhorseImg', 'image/*')">
+                            <img v-if="form.happyhorseImg" :src="form.happyhorseImg" class="media-preview">
+                            <div v-else>➕ 拖拽上传图 (支持 JPEG/PNG/WEBP)</div>
+                            <div v-if="form.happyhorseImg" class="remove-btn" @click.stop="form.happyhorseImg=''; filesToUpload.happyhorseImg=null">X</div>
+                        </div>
+                    </el-col>
+                    <el-col :span="16">
+                        <el-form label-width="100px">
+                            <el-form-item label="输出分辨率">
+                                <el-select v-model="form.happyhorseRes" style="width: 100%;">
+                                    <el-option label="1080p (超高清)" value="1080p"></el-option>
+                                    <el-option label="720p (标准高清)" value="720p"></el-option>
+                                </el-select>
+                            </el-form-item>
+                            <el-form-item label="视频时长">
+                                <el-slider v-model="form.happyhorseDuration" :min="1" :max="10" :step="1" show-input style="margin-left: 10px;"></el-slider>
+                                <span style="font-size: 12px; color: #909399;">(单位: 秒)</span>
+                            </el-form-item>
+                            <el-form-item label="随机种子">
+                                <el-input-number v-model="form.happyhorseSeed" :precision="0" placeholder="随机" style="width: 100%;"></el-input-number>
+                            </el-form-item>
+                        </el-form>
+                    </el-col>
+                </el-row>
+            </div>
+
+            <div v-if="form.model === 'bytedance/seedance'">
+                <div class="app-section-title">2. 字节 Seedance 强控参数</div>
+
+                <el-form label-width="120px" style="margin-bottom: 20px;">
+                    <el-form-item label="引擎版本">
+                        <el-radio-group v-model="form.seedanceVersion" size="small">
+                            <el-radio-button value="bytedance/seedance-2">标准版 (Seedance 2.0)</el-radio-button>
+                            <el-radio-button value="bytedance/seedance-2-fast">⚡ 极速版 (Fast)</el-radio-button>
+                        </el-radio-group>
+                    </el-form-item>
+                </el-form>
+
+                <el-row :gutter="20" style="margin-bottom: 20px;">
+                    <el-col :span="6">
+                        <div style="font-weight:bold; margin-bottom:10px; color:#606266; font-size: 13px;">首帧参考图 (可选)</div>
+                        <div class="upload-box" :class="{'is-dragover': drag.seeFirstImg}"
+                             @click="triggerUpload('seeFirstImg', 'image/*')"
+                             @dragover.prevent="drag.seeFirstImg = true" @dragleave.prevent="drag.seeFirstImg = false"
+                             @drop.prevent="e => handleDrop(e, 'seeFirstImg', 'image/*')">
+                            <img v-if="form.seeFirstImg" :src="form.seeFirstImg" class="media-preview">
+                            <div v-else>➕ 拖拽上传首帧</div>
+                            <div v-if="form.seeFirstImg" class="remove-btn" @click.stop="form.seeFirstImg=''; filesToUpload.seeFirstImg=null">X</div>
+                        </div>
+                    </el-col>
+                    <el-col :span="6">
+                        <div style="font-weight:bold; margin-bottom:10px; color:#606266; font-size: 13px;">尾帧参考图 (可选)</div>
+                        <div class="upload-box" :class="{'is-dragover': drag.seeLastImg}"
+                             @click="triggerUpload('seeLastImg', 'image/*')"
+                             @dragover.prevent="drag.seeLastImg = true" @dragleave.prevent="drag.seeLastImg = false"
+                             @drop.prevent="e => handleDrop(e, 'seeLastImg', 'image/*')">
+                            <img v-if="form.seeLastImg" :src="form.seeLastImg" class="media-preview">
+                            <div v-else>➕ 拖拽上传尾帧</div>
+                            <div v-if="form.seeLastImg" class="remove-btn" @click.stop="form.seeLastImg=''; filesToUpload.seeLastImg=null">X</div>
+                        </div>
+                    </el-col>
+                </el-row>
+
+                <div style="font-weight:bold; margin-bottom:10px;">多参考图 (支持框选多图 / 直接拖拽到框内)</div>
+                <div class="seedance-drop-zone" :class="{'is-dragover': drag.seeImages}"
+                     @dragover.prevent="drag.seeImages = true" @dragleave.prevent="drag.seeImages = false"
+                     @drop.prevent="e => handleDrop(e, 'seeImages', 'image/*', true)">
+                    <div v-for="(imgUrl, index) in form.seeImages" :key="index" class="ref-img-card">
+                        <img :src="imgUrl" style="height: 100%; border-radius: 8px;" />
+                        <div class="remove-btn" @click="removeSeeImage(index)">X</div>
+                    </div>
+                    <div class="upload-box" style="width: 110px; height: 140px; border-color: #dcdfe6; background: #fff;" @click="triggerUpload('seeImages', 'image/*', true)">
+                        <div style="font-size: 24px; margin-bottom: 5px;">➕</div>
+                        <div style="font-size: 12px; font-weight: bold; padding: 0 5px;">点击或拖拽</div>
+                    </div>
+                </div>
+                <el-row :gutter="20">
+                    <el-col :span="8">
+                        <div style="font-weight:bold; margin-bottom:10px;">动作参考视频 (可选)</div>
+                        <div class="upload-box" :class="{'is-dragover': drag.seeVid}"
+                             @click="triggerUpload('seeVid', 'video/*')"
+                             @dragover.prevent="drag.seeVid = true" @dragleave.prevent="drag.seeVid = false"
+                             @drop.prevent="e => handleDrop(e, 'seeVid', 'video/*')">
+                            <video v-if="form.seeVid" :src="form.seeVid" class="media-preview" autoplay muted loop></video>
+                            <div v-else>➕ 拖拽/上传动作参考</div>
+                            <div v-if="form.seeVid" class="remove-btn" @click.stop="form.seeVid=''; filesToUpload.seeVid=null">X</div>
+                        </div>
+                    </el-col>
+                    <el-col :span="16">
+                        <el-form label-width="120px">
+                            <el-form-item label="画面比例">
+                                <el-select v-model="form.seeRatio" style="width: 100%;">
+                                    <el-option label="16:9 (标准横屏)" value="16:9"></el-option>
+                                    <el-option label="4:3 (复古横屏)" value="4:3"></el-option>
+                                    <el-option label="1:1 (正方形)" value="1:1"></el-option>
+                                    <el-option label="3:4 (复古竖屏)" value="3:4"></el-option>
+                                    <el-option label="9:16 (标准竖屏)" value="9:16"></el-option>
+                                    <el-option label="21:9 (宽荧幕)" value="21:9"></el-option>
+                                </el-select>
+                            </el-form-item>
+                            <el-form-item label="视频时长"><el-input-number v-model="form.seeDuration" :min="4" :max="15" style="width: 100%;"></el-input-number></el-form-item>
+                            <el-form-item label="画质与声音">
+                                <el-select v-model="form.seeRes" style="width: 150px; margin-right: 15px;">
+                                    <el-option label="480p (快速测试)" value="480p"></el-option>
+                                    <el-option label="720p (默认)" value="720p"></el-option>
+                                    <el-option label="1080p (超清专业)" value="1080p"></el-option>
+                                </el-select>
+                                <el-switch v-model="form.seeAudio" active-text="生成音频"></el-switch>
+                            </el-form-item>
+                        </el-form>
+                    </el-col>
+                </el-row>
+            </div>
+
+            <div style="margin-top: 20px; display: flex; align-items: center; justify-content: space-between; background: #fdf6ec; padding: 15px 20px; border-radius: 8px; border: 1px solid #faecd8;">
+                <span style="font-weight: bold; color: #E6A23C; font-size: 15px;">💰 任务预估费用（参考模型基础计费）</span>
+                <span style="font-size: 24px; font-weight: bold; color: #f56c6c;">￥{{ estimatedCost }}</span>
+            </div>
+
+            <el-button type="primary" class="app-btn-submit" @click="submit" :loading="loading">
+                {{ loading ? uploadProgressMsg : '🚀 提交生成任务 (直传云端并轮询)' }}
+            </el-button>
+            <input type="file" id="hiddenUploader" style="display: none;" :multiple="isMultipleUpload" @change="handleFileSelected">
+        </div>
+    </div>
+
+    <el-dialog v-model="showVideoDialog" title="🎬 动作参考预览" width="50%" center destroy-on-close>
+        <video :src="currentPreviewVideo" controls autoplay style="width: 100%; max-height: 60vh; background: #000; border-radius: 8px; outline: none;"></video>
+    </el-dialog>
+</div>
+</div>
+</div>
+
+<script>
+    const { createApp, ref, reactive, nextTick, computed } = Vue;
+    const app = createApp({
+        setup() {
+            const form = reactive({
+                spu: '', model: 'kling-3.0/video', prompt: '',
+                motionImg: '', motionVid: '', motionMode: '720p', motionOrient: 'video', motionBg: 'input_video',
+                motionVidDuration: 0,
+                klingShotMode: 'single', klingFirstImg: '', klingLastImg: '', klingMultiImage: '',
+                klingMultiPrompts: [{ prompt: '', duration: 5 }], klingRatio: '16:9', klingDuration: 5, klingMode: 'pro',
+                klingElements: [],
+                klingAudio: false,
+                happyhorseImg: '', happyhorseRes: '1080p', happyhorseDuration: 5, happyhorseSeed: null,
+                seedanceVersion: 'bytedance/seedance-2',
+                seeImages: [], seeVid: '', seeRatio: '16:9', seeRes: '1080p', seeDuration: 15, seeAudio: true,
+                seeFirstImg: '', seeLastImg: ''
+            });
+
+            const filesToUpload = reactive({
+                motionImg: null, motionVid: null,
+                klingFirstImg: null, klingLastImg: null, klingMultiImage: null,
+                happyhorseImg: null,
+                seeImages: [], seeVid: null,
+                seeFirstImg: null, seeLastImg: null
+            });
+
+            const drag = reactive({
+                motionImg: false, motionVid: false,
+                klingFirstImg: false, klingLastImg: false, klingMultiImage: false,
+                happyhorseImg: false,
+                seeImages: false, seeVid: false,
+                seeFirstImg: false, seeLastImg: false
+            });
+
+            const showVideoDialog = ref(false);
+            const currentPreviewVideo = ref('');
+            const previewVideo = (url) => {
+                currentPreviewVideo.value = url;
+                showVideoDialog.value = true;
+            };
+
+            const estimatedCost = computed(() => {
+                let pricePerSec = 0;
+                let duration = 0;
+
+                if (form.model === 'kling-3.0/motion-control') {
+                    duration = form.motionVidDuration || 5;
+                    pricePerSec = form.motionMode === '1080p' ? 0.86 : 0.64;
+                }
+                else if (form.model === 'kling-3.0/video') {
+                    duration = form.klingShotMode === 'single' ? form.klingDuration : totalMultiShotDuration.value;
+                    if (form.klingMode === '4k') {
+                        pricePerSec = 2.14;
+                    } else if (form.klingMode === 'pro') {
+                        pricePerSec = form.klingAudio ? 0.86 : 0.57;
+                    } else {
+                        pricePerSec = form.klingAudio ? 0.64 : 0.44;
+                    }
+                }
+                else if (form.model === 'happyhorse/image-to-video') {
+                    duration = form.happyhorseDuration;
+                    pricePerSec = form.happyhorseRes === '1080p' ? 1.53 : 0.89;
+                }
+                else if (form.model === 'bytedance/seedance') {
+                    duration = form.seeDuration;
+                    const hasVid = !!filesToUpload.seeVid;
+                    const isFast = form.seedanceVersion === 'bytedance/seedance-2-fast';
+                    const res = form.seeRes;
+
+                    if (isFast) {
+                        if (res === '1080p') pricePerSec = hasVid ? 1.98 : 3.26;
+                        else if (res === '720p') pricePerSec = hasVid ? 0.64 : 1.05;
+                        else if (res === '480p') pricePerSec = hasVid ? 0.28 : 0.49;
+                    } else {
+                        if (res === '1080p') pricePerSec = hasVid ? 1.98 : 3.26;
+                        else if (res === '720p') pricePerSec = hasVid ? 0.80 : 1.31;
+                        else if (res === '480p') pricePerSec = hasVid ? 0.36 : 0.60;
+                    }
+                }
+                return (pricePerSec * duration).toFixed(2);
+            });
+
+            const loading = ref(false);
+            const uploadProgressMsg = ref('');
+            const isMultipleUpload = ref(false);
+            let currentUploadTarget = { field: '', isArray: false, isElement: false, elementIndex: -1 };
+
+            const totalMultiShotDuration = computed(() => form.klingMultiPrompts.reduce((sum, shot) => sum + shot.duration, 0));
+            const getMaxDurationForShot = (idx) => {
+                const otherTotal = form.klingMultiPrompts.reduce((sum, shot, i) => sum + (i === idx ? 0 : shot.duration), 0);
+                return Math.max(1, 15 - otherTotal);
+            };
+
+            const mentionItems = computed(() => {
+                if (form.model === 'kling-3.0/video') {
+                    return form.klingElements.map(e => ({ value: e.name, label: e.name || '未命名 Element' }));
+                } else if (form.model === 'bytedance/seedance') {
+                    return form.seeImages.map((_, i) => ({ value: `Image${i + 1}`, label: `Image${i + 1}` }));
+                }
+                return [];
+            });
+
+            const mentionEmptyText = computed(() => {
+                if (form.model === 'kling-3.0/video') return '请先在下方添加 Element 组';
+                if (form.model === 'bytedance/seedance') return '请先上传参考图，系统将自动生成 @Image 标签';
+                return '暂无可用元素';
+            });
+
+            const mentionTitle = computed(() => {
+                if (form.model === 'kling-3.0/video') return '选择插入 Element';
+                if (form.model === 'bytedance/seedance') return '选择插入参考图 (@Image)';
+                return '选择元素';
+            });
+
+            const addKlingShot = () => { if (totalMultiShotDuration.value < 15) form.klingMultiPrompts.push({ prompt: '', duration: 1 }); else ElementPlus.ElMessage.warning('分镜总时长已达 15 秒上限'); };
+            const removeKlingShot = (idx) => form.klingMultiPrompts.splice(idx, 1);
+            const addKlingElement = () => form.klingElements.push({ name: '', description: '', urls: [], files: [] });
+            const removeKlingElement = (idx) => form.klingElements.splice(idx, 1);
+            const removeKlingElementImage = (elemIdx, imgIdx) => { form.klingElements[elemIdx].urls.splice(imgIdx, 1); form.klingElements[elemIdx].files.splice(imgIdx, 1); };
+
+            const mention = reactive({ visible: false, targetObj: null, targetField: '', startPos: 0, endPos: 0, x: 0, y: 0, limitWarned: false });
+
+            const handlePromptInput = (e, obj, field) => {
+                if (form.model !== 'kling-3.0/video' && form.model !== 'bytedance/seedance') {
+                    mention.visible = false;
+                    return;
+                }
+
+                const target = e.target;
+                if (!target || typeof target.selectionStart !== 'number') return;
+                const val = obj[field] || '';
+                const cursor = target.selectionStart;
+                const textBeforeCursor = val.substring(0, cursor);
+                const lastAtPos = textBeforeCursor.lastIndexOf('@');
+                if (lastAtPos !== -1 && !textBeforeCursor.substring(lastAtPos).includes(' ')) {
+                    if (form.model === 'kling-3.0/video') {
+                        const atCount = (val.match(/@/g) || []).length;
+                        if (atCount > 3) {
+                            if (!mention.limitWarned) { ElementPlus.ElMessage.warning('🚨 每条提示词最多只能引用 3 个 Element！'); mention.limitWarned = true; setTimeout(() => mention.limitWarned = false, 3000); }
+                            obj[field] = val.substring(0, lastAtPos) + val.substring(lastAtPos + 1);
+                            return (mention.visible = false);
+                        }
+                    }
+                    const rect = target.getBoundingClientRect();
+                    mention.visible = true; mention.targetObj = obj; mention.targetField = field; mention.startPos = lastAtPos; mention.endPos = cursor;
+                    mention.x = rect.left + 15; mention.y = rect.top + 30;
+                } else { mention.visible = false; }
+            };
+
+            const insertMention = (name) => {
+                const obj = mention.targetObj; const field = mention.targetField; const val = obj[field] || '';
+                if (form.model === 'kling-3.0/video') {
+                    let usedCount = 0; form.klingElements.forEach(elem => { if (elem.name && val.includes('@' + elem.name)) usedCount++; });
+                    if (usedCount >= 3) { ElementPlus.ElMessage.warning('🚨 每条提示词最多只能引用 3 个 Element！'); return (mention.visible = false); }
+                }
+                obj[field] = val.substring(0, mention.startPos) + '@' + (name || '未命名') + ' ' + val.substring(mention.endPos);
+                mention.visible = false;
+            };
+
+            const validatePromptElements = (promptText) => { if (!promptText) return; const atCount = (promptText.match(/@/g) || []).length; if (atCount > 3) throw new Error('🚨 提交失败：每条提示词最多只能包含 3 个 @ 元素引用'); };
+
+            const triggerUpload = (field, accept, isArray = false, isElement = false, elementIndex = -1) => {
+                currentUploadTarget = { field, isArray, isElement, elementIndex }; isMultipleUpload.value = isArray;
+                nextTick(() => { const uploader = document.getElementById('hiddenUploader'); uploader.accept = accept; uploader.click(); });
+            };
+
+            const processFiles = (files) => {
+                if (!files || files.length === 0) return;
+                Array.from(files).forEach(file => {
+                    if (currentUploadTarget.isElement && file.size > 10 * 1024 * 1024) return ElementPlus.ElMessage.error(`【${file.name}】大小超过 10MB，已被拒绝`);
+                    const localBlobUrl = URL.createObjectURL(file);
+
+                    if (currentUploadTarget.isElement) {
+                        const elem = form.klingElements[currentUploadTarget.elementIndex];
+                        if (elem.urls.length >= 4) return ElementPlus.ElMessage.warning('单组 Element 最多允许 4 张图片');
+                        elem.urls.push(localBlobUrl); elem.files.push(file);
+                    } else if (currentUploadTarget.isArray) {
+                        form[currentUploadTarget.field].push(localBlobUrl); filesToUpload[currentUploadTarget.field].push(file);
+                    } else {
+                        form[currentUploadTarget.field] = localBlobUrl; filesToUpload[currentUploadTarget.field] = file;
+                    }
+                });
+            };
+
+            const handleFileSelected = (e) => { processFiles(e.target.files); e.target.value = ''; };
+            const handleDrop = (e, field, accept, isArray = false) => {
+                if (drag[field] !== undefined) drag[field] = false;
+                currentUploadTarget = { field, isArray, isElement: false, elementIndex: -1 };
+                const files = e.dataTransfer.files;
+                const filteredFiles = Array.from(files).filter(f => accept.includes('image/*') ? f.type.startsWith('image/') : f.type.startsWith('video/'));
+                if (filteredFiles.length === 0) return ElementPlus.ElMessage.warning('不支持的文件格式');
+                processFiles(!isArray && filteredFiles.length > 1 ? [filteredFiles[0]] : filteredFiles);
+            };
+
+            const removeSeeImage = (index) => { form.seeImages.splice(index, 1); filesToUpload.seeImages.splice(index, 1); };
+
+            const uploadSingleToOss = async (file, pd) => {
+                if (!file) return null;
+                const suffix = file.name.substring(file.name.lastIndexOf('.'));
+                const finalKey = `${pd.dir}${Date.now()}_${Math.random().toString(36).substr(2, 6)}${suffix}`;
+                const fd = new FormData();
+                fd.append('key', finalKey); fd.append('policy', pd.policy); fd.append('OSSAccessKeyId', pd.accessid);
+                fd.append('success_action_status', '200'); fd.append('signature', pd.signature); fd.append('file', file);
+                await axios.post(pd.host, fd); return `${pd.host}/${finalKey}`;
+            };
+
+            const submit = async () => {
+                if (!form.spu) return ElementPlus.ElMessage.warning('请输入 SPU 款号');
+
+                try {
+                    await ElementPlus.ElMessageBox.confirm(
+                        `本次视频生成任务预估产生费用 <span style="color: #f56c6c; font-weight: bold; font-size: 18px;">￥${estimatedCost.value}</span>。<br/>提交后将直接扣费并直传云端，是否确认继续？`,
+                        '⚠️ 提交确认',
+                        {
+                            confirmButtonText: '确认提交',
+                            cancelButtonText: '取消',
+                            dangerouslyUseHTMLString: true,
+                            type: 'warning',
+                        }
+                    );
+                } catch (e) {
+                    return;
+                }
+
+                loading.value = true;
+                try {
+                    const policyRes = await axios.get('/api/oss/policy');
+                    const pd = policyRes.data.data;
+                    let inputPayload = {};
+                    let reqInputImg = '';
+                    let reqColorImg = '';
+
+                    if (form.model === 'kling-3.0/motion-control') {
+                        if (!filesToUpload.motionImg || !filesToUpload.motionVid) throw new Error('运镜必须上传首图和视频');
+                        uploadProgressMsg.value = '上传素材...';
+                        const [imgOssUrl, vidOssUrl] = await Promise.all([ uploadSingleToOss(filesToUpload.motionImg, pd), uploadSingleToOss(filesToUpload.motionVid, pd) ]);
+
+                        inputPayload = {
+                            input_urls: [imgOssUrl],
+                            video_urls: [vidOssUrl],
+                            mode: form.motionMode,
+                            character_orientation: form.motionOrient,
+                            background_source: form.motionBg,
+                            sound: false
+                        };
+
+                        if (form.prompt && form.prompt.trim() !== '') {
+                            inputPayload.prompt = form.prompt.trim();
+                        }
+
+                        reqInputImg = imgOssUrl;
+                        reqColorImg = vidOssUrl;
+                    }
+                    else if (form.model === 'kling-3.0/video') {
+                        inputPayload = { aspect_ratio: form.klingRatio, mode: form.klingMode, generate_audio: form.klingAudio, sound: form.klingAudio };
+                        let elementsPayload = [];
+                        for (let elem of form.klingElements) { if (elem.name && elem.files.length >= 2) { const uploadedUrls = await Promise.all(elem.files.map(f => uploadSingleToOss(f, pd))); elementsPayload.push({ name: elem.name, description: elem.description, element_input_urls: uploadedUrls }); } }
+                        if (elementsPayload.length > 0) inputPayload.kling_elements = elementsPayload;
+                        uploadProgressMsg.value = '上传主画面...';
+                        if (form.klingShotMode === 'single') {
+                            inputPayload.multi_shots = false; inputPayload.prompt = form.prompt; inputPayload.duration = String(form.klingDuration);
+                            if (filesToUpload.klingFirstImg) {
+                                const url = await uploadSingleToOss(filesToUpload.klingFirstImg, pd);
+                                inputPayload.image_urls = [url];
+                                reqInputImg = url;
+                            }
+                            if (filesToUpload.klingLastImg) inputPayload.last_frame_image_url = await uploadSingleToOss(filesToUpload.klingLastImg, pd);
+                        } else {
+                            inputPayload.multi_shots = true; inputPayload.duration = String(totalMultiShotDuration.value); inputPayload.multi_prompt = form.klingMultiPrompts.map(p => ({ prompt: p.prompt, duration: p.duration }));
+                            if (filesToUpload.klingMultiImage) {
+                                const url = await uploadSingleToOss(filesToUpload.klingMultiImage, pd);
+                                inputPayload.image_urls = [url];
+                                reqInputImg = url;
+                            }
+                        }
+                        validatePromptElements(form.prompt);
+                    }
+                    else if (form.model === 'happyhorse/image-to-video') {
+                        if (!filesToUpload.happyhorseImg) throw new Error('HappyHorse 必须上传首帧图');
+                        uploadProgressMsg.value = '上传素材...';
+                        const imgUrl = await uploadSingleToOss(filesToUpload.happyhorseImg, pd);
+                        inputPayload = { prompt: form.prompt, image_urls: [imgUrl], duration: form.happyhorseDuration, resolution: form.happyhorseRes };
+                        reqInputImg = imgUrl;
+                        if (form.happyhorseSeed !== null) inputPayload.seed = form.happyhorseSeed;
+                    }
+                    else if (form.model === 'bytedance/seedance') {
+                        inputPayload = { prompt: form.prompt, resolution: form.seeRes, aspect_ratio: form.seeRatio, duration: form.seeDuration, generate_audio: form.seeAudio };
+                        uploadProgressMsg.value = '上传素材...';
+
+                        if (filesToUpload.seeImages.length > 0) {
+                            inputPayload.reference_image_urls = await Promise.all(filesToUpload.seeImages.map(f => uploadSingleToOss(f, pd)));
+                            reqInputImg = inputPayload.reference_image_urls[0];
+                        }
+                        if (filesToUpload.seeVid) {
+                            inputPayload.reference_video_urls = [await uploadSingleToOss(filesToUpload.seeVid, pd)];
+                            reqColorImg = inputPayload.reference_video_urls[0];
+                        }
+                        if (filesToUpload.seeFirstImg) {
+                            inputPayload.first_frame_url = await uploadSingleToOss(filesToUpload.seeFirstImg, pd);
+                            reqInputImg = inputPayload.first_frame_url;
+                        }
+                        if (filesToUpload.seeLastImg) inputPayload.last_frame_url = await uploadSingleToOss(filesToUpload.seeLastImg, pd);
+                    }
+
+                    uploadProgressMsg.value = '任务派发中...';
+                    const targetModel = form.model === 'bytedance/seedance' ? form.seedanceVersion : form.model;
+
+                    const res = await axios.post('/api/tasks/create-video', {
+                        spu: form.spu,
+                        model: targetModel,
+                        input: inputPayload,
+                        inputImageUrl: reqInputImg,
+                        colorImageUrl: reqColorImg,
+                        cost: parseFloat(estimatedCost.value)
+                    });
+
+                    if (res.data.success) {
+                        ElementPlus.ElNotification({
+                            title: '✅ 任务提交成功',
+                            message: '视频生成任务已成功下发至云端，2秒后自动为您跳转至大盘查看...',
+                            type: 'success',
+                            duration: 2000
+                        });
+                        setTimeout(() => goToList(), 2000);
+                    } else {
+                        ElementPlus.ElMessageBox.alert(
+                            `<div style="font-weight: bold; color: #f56c6c; font-size: 15px; margin-top: 10px;">
+                                ❌ 提交失败：${res.data.message || '未知错误'}
+                             </div>
+                             <div style="color: #909399; font-size: 13px; margin-top: 5px;">请检查参数或稍后重试</div>`,
+                            '任务提交失败',
+                            { dangerouslyUseHTMLString: true, type: 'error', confirmButtonText: '返回修改' }
+                        );
+                    }
+
+                } catch (e) {
+                    ElementPlus.ElMessageBox.alert(
+                        `<div style="font-weight: bold; color: #f56c6c;">❌ 操作失败：${e.message || '网络异常'}</div>`,
+                        '系统错误',
+                        { dangerouslyUseHTMLString: true, type: 'error', confirmButtonText: '返回修改' }
+                    );
+                } finally {
+                    loading.value = false;
+                }
+            };
+
+            const goToList = () => window.location.href = 'list.html';
+
+            return {
+                form, filesToUpload, drag, isMultipleUpload, loading, uploadProgressMsg,
+                mention, mentionItems, mentionEmptyText, mentionTitle, handlePromptInput, insertMention,
+                totalMultiShotDuration, getMaxDurationForShot, triggerUpload, handleFileSelected, handleDrop, removeSeeImage, submit,
+                addKlingShot, removeKlingShot, addKlingElement, removeKlingElement, removeKlingElementImage,
+                goToList, estimatedCost,
+                showVideoDialog, currentPreviewVideo, previewVideo
+            };
+        }
+    });
+    for (const [key, component] of Object.entries(ElementPlusIconsVue)) { app.component(key, component); }
+    app.use(ElementPlus).mount('#app');
+</script>
+</body>
+</html>

@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>AI 换色/场景/视频任务管理大盘</title>
+    <link rel="stylesheet" href="css/variables.css">
+    <link rel="stylesheet" href="css/shared.css">
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css"/>
+    <script src="https://unpkg.com/element-plus"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js"></script>
+    <script src="auth.js"></script>
+    <script src="js/sidebar.js"></script>
+
+    <style>
+        body { margin: 0; font-family: var(--app-font-family); }
+        .thumbnail { width: 55px; height: 55px; border-radius: 6px; border: 1px solid #ddd; cursor: pointer; object-fit: cover; }
+        .empty-img { width: 55px; height: 55px; background: #eee; color: #999; font-size: 10px; display: flex; align-items: center; justify-content: center; border-radius: 6px; border: 1px dashed #ccc; }
+        .prompt-text { font-size: 12px; color: #666; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.4; }
+        .image-grid { display: grid; grid-template-columns: repeat(2, 40px); grid-gap: 4px; justify-content: center; padding: 5px 0; }
+        .grid-thumb { width: 40px; height: 40px; border-radius: 4px; border: 1px solid #ebeef5; transition: transform 0.2s; }
+        .grid-thumb:hover { transform: scale(1.1); z-index: 10; }
+    </style>
+</head>
+<body>
+<div class="app-layout">
+<div class="app-main">
+<div id="app">
+    <div class="app-card">
+        <div class="app-card__header app-card__header--module-manage">
+            <span>📊 AI 任务管理大盘 (换色 / 场景 / 视频)</span>
+            <div style="display: flex; gap: 10px; align-items: center;">
+                <el-tooltip effect="dark" content="处理中、生成失败或暂无结果的任务不支持勾选下载" placement="bottom">
+                    <el-button color="#8a2be2" :disabled="selectedRows.length === 0" @click="batchDownload">
+                        📦 批量下载 ({{ selectedRows.length }})
+                    </el-button>
+                </el-tooltip>
+                <el-button type="primary" @click="exportLinks" :disabled="selectedRows.length === 0"
+                           style="font-weight: bold; border: 2px solid white;">
+                    📄 导出链接 (备用)
+                </el-button>
+                <el-button type="warning" @click="goToStats" plain style="font-weight: bold;">
+                    💰 费用统计
+                </el-button>
+                <el-tooltip content="系统已开启后台自动同步（3分钟/次）" placement="bottom" effect="light">
+                    <el-button type="warning" disabled style="cursor: not-allowed;">⚡ 自动同步运行中...</el-button>
+                </el-tooltip>
+                <el-button @click="goToColor" plain>🎨 换色提交</el-button>
+                <el-button @click="goToScene" plain>🖼️ 场景提交</el-button>
+                <el-button @click="goToVideo" plain>🎬 视频生成</el-button>
+                <el-button type="primary" @click="handleSearch" :loading="loading">刷新大盘</el-button>
+            </div>
+        </div>
+
+        <div class="app-card__body">
+            <div class="app-filter-bar">
+                <el-input v-model="filters.spu" placeholder="输入款号 (SPU) 搜索" clearable style="width: 160px"
+                          @keyup.enter="handleSearch"></el-input>
+
+                <el-select v-model="filters.taskType" placeholder="任务类型" clearable style="width: 140px"
+                           @change="handleSearch">
+                    <el-option label="🎨 换色任务" :value="1"></el-option>
+                    <el-option label="🖼️ 场景生成" :value="2"></el-option>
+                    <el-option label="🎬 视频生成" :value="3"></el-option>
+                </el-select>
+
+                <el-select v-model="filters.status" placeholder="状态" clearable style="width: 120px"
+                           @change="handleSearch">
+                    <el-option label="SUCCESS" value="SUCCESS"></el-option>
+                    <el-option label="PROCESSING" value="PROCESSING"></el-option>
+                    <el-option label="FAILED" value="FAILED"></el-option>
+                </el-select>
+
+                <el-input v-model="filters.taskId" placeholder="搜索任务 ID" clearable style="width: 180px"
+                          @keyup.enter="handleSearch"></el-input>
+
+                <el-date-picker v-model="filters.timeRange" type="datetimerange" range-separator="至"
+                                start-placeholder="开始" end-placeholder="结束" value-format="YYYY-MM-DD HH:mm:ss"
+                                style="width: 320px"></el-date-picker>
+
+                <el-button type="primary" @click="handleSearch">搜索</el-button>
+                <el-button @click="resetFilters">重置</el-button>
+            </div>
+
+            <div style="margin-bottom: 15px;">
+                <el-alert
+                        title="⚠️ 资产清理提醒：为优化系统性能，所有生成的临时结果图片将在 5 天后自动销毁！"
+                        description="💡 强烈建议：如果您遇到了非常满意的生图效果与提示词，请务必及时点击表格中的【💡 存入动作库】按钮，系统将自动把该图片跨桶转存为「永久数字资产」，不再过期。"
+                        type="warning"
+                        show-icon
+                        :closable="false"
+                        style="border: 1px solid #faecd8; border-radius: 8px;">
+                </el-alert>
+            </div>
+
+            <el-table :data="rawData" v-loading="loading" @selection-change="handleSelectionChange" border stripe
+                      style="width: 100%" height="65vh">
+                <el-table-column type="selection" width="50" align="center" :selectable="canSelectRow"></el-table-column>
+                <el-table-column prop="id" label="ID" width="70" align="center"></el-table-column>
+                <el-table-column prop="spu" label="SPU" width="100" align="center"></el-table-column>
+                <el-table-column prop="resolution" label="分辨率" width="80" align="center">
+                    <template #default="scope">
+                        <el-tag size="small" type="info" effect="plain">{{ scope.row.resolution || '默认' }}</el-tag>
+                    </template>
+                </el-table-column>
+
+                <el-table-column prop="model" label="AI 模型" min-width="140" align="center" show-overflow-tooltip>
+                    <template #default="scope">
+                        <el-tag size="small" type="info" effect="light">
+                            {{ scope.row.model || '未知模型' }}
+                        </el-tag>
+                    </template>
+                </el-table-column>
+
+                <el-table-column label="任务类型" width="110" align="center">
+                    <template #default="scope">
+                        <el-tag v-if="scope.row.taskType === 1" type="primary" effect="plain">🎨 换色</el-tag>
+                        <el-tag v-else-if="scope.row.taskType === 2" type="success" effect="plain">🖼️ 场景</el-tag>
+                        <el-tag v-else-if="scope.row.taskType === 3" color="#673AB7"
+                                style="color: white; border: none;">🎬 视频</el-tag>
+                    </template>
+                </el-table-column>
+
+                <el-table-column label="任务状态" width="100" align="center">
+                    <template #default="scope">
+                        <el-tooltip v-if="scope.row.status === 'FAILED' && scope.row.errorMessage" placement="top"
+                                    effect="dark">
+                            <template #content>
+                                <div style="max-width: 300px; line-height: 1.5; word-wrap: break-word;">
+                                    ⚠️ 失败原因：<br/>{{ scope.row.errorMessage }}
+                                </div>
+                            </template>
+                            <el-tag :type="getStatusType(scope.row.status)" effect="dark" style="cursor: pointer;">
+                                {{ scope.row.status }}
+                            </el-tag>
+                        </el-tooltip>
+                        <el-tag v-else :type="getStatusType(scope.row.status)" effect="dark">{{ scope.row.status }}</el-tag>
+                    </template>
+                </el-table-column>
+                <el-table-column label="主图/原图" width="120" align="center">
+                    <template #default="scope">
+                        <div v-if="scope.row.inputImageUrl">
+                            <div class="image-grid">
+                                <template v-for="(url, idx) in scope.row.inputImageUrl.split(',')" :key="idx">
+                                    <video v-if="isVideo(url)" :src="url" class="grid-thumb" controls
+                                           style="background: #000; object-fit: cover;"></video>
+                                    <el-image v-else class="grid-thumb" :src="url + '?x-oss-process=image/resize,w_100'"
+                                              :preview-src-list="scope.row.inputImageUrl.split(',')"
+                                              :initial-index="idx" preview-teleported fit="cover"></el-image>
+                                </template>
+                            </div>
+                        </div>
+                        <div v-else class="empty-img">无素材</div>
+                    </template>
+                </el-table-column>
+
+                <el-table-column label="参考素材" width="95" align="center">
+                    <template #default="scope">
+                        <el-tooltip :content="scope.row.taskType === 3 ? '动作参考/场景视频' : (scope.row.taskType === 2 ? '场景参考图' : '颜色参考图')" placement="top">
+                            <div v-if="scope.row.colorImageUrl">
+                                <div v-if="isVideo(scope.row.colorImageUrl)" style="position: relative; width: 55px; height: 55px; cursor: pointer; border-radius: 6px; overflow: hidden; border: 1px solid #ddd;" @click="openVideoPreview(scope.row.colorImageUrl)">
+                                    <el-image style="width: 100%; height: 100%;" :src="scope.row.colorImageUrl + '?x-oss-process=video/snapshot,t_1000,f_jpg,w_100,h_100,m_fast'" fit="cover"></el-image>
+                                    <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; font-size: 20px; opacity: 0.8; text-shadow: 0 1px 3px rgba(0,0,0,0.8);">▶</div>
+                                </div>
+                                <el-image v-else class="thumbnail" :src="scope.row.colorImageUrl" :preview-src-list="[scope.row.colorImageUrl]" preview-teleported fit="cover"></el-image>
+                            </div>
+                            <div v-else class="empty-img">无素材</div>
+                        </el-tooltip>
+                    </template>
+                </el-table-column>
+
+                <el-table-column label="生成结果" width="130" align="center">
+                    <template #default="scope">
+                        <template
+                                v-if="scope.row.status === 'SUCCESS' && (scope.row.resultOssUrl || scope.row.resultTempUrl)">
+                            <el-button
+                                    v-if="scope.row.taskType === 3 || isVideo(scope.row.resultOssUrl || scope.row.resultTempUrl)"
+                                    type="primary" color="#673AB7" size="small" plain
+                                    @click.stop="openVideoPreview(scope.row.resultOssUrl || scope.row.resultTempUrl)">
+                                🎬 预览视频
+                            </el-button>
+                            <el-button v-else
+                                       type="success" size="small" plain
+                                       @click.stop="openImagePreview(scope.row.resultOssUrl || scope.row.resultTempUrl)">
+                                🖼️ 预览图片
+                            </el-button>
+                        </template>
+                        <div v-else>
+                            <el-tag v-if="scope.row.status === 'PROCESSING' || scope.row.status === 'GENERATING'"
+                                    type="warning" effect="plain" size="small">⏳ 正在生成</el-tag>
+                            <el-tag v-else-if="scope.row.status === 'FAILED'" type="danger" effect="plain" size="small">
+                                ❌ 生成失败
+                            </el-tag>
+                            <el-tag v-else type="info" effect="plain" size="small">暂无结果</el-tag>
+                        </div>
+                    </template>
+                </el-table-column>
+
+                <el-table-column label="提示词" min-width="260">
+                    <template #default="scope">
+                        <div style="display: flex; flex-direction: column; gap: 5px;">
+                            <el-popover placement="top-start" title="完整提示词" :width="400" trigger="hover">
+                                <div style="word-break: break-all; max-height: 300px; overflow-y: auto; line-height: 1.5; color: #606266;">
+                                    {{ scope.row.prompt }}
+                                </div>
+                                <template #reference>
+                                    <div class="prompt-text" style="flex: 1; cursor: pointer;">
+                                        {{ scope.row.prompt || '-' }}
+                                    </div>
+                                </template>
+                            </el-popover>
+                            <div style="display: flex; gap: 8px;">
+                                <el-button v-if="scope.row.prompt" size="small" plain
+                                           @click="copyText(scope.row.prompt)" title="一键复制到剪贴板">📄 复制</el-button>
+
+                                <el-button
+                                        v-if="scope.row.taskType === 2 && scope.row.status === 'SUCCESS' && scope.row.prompt"
+                                        size="small" type="success" plain
+                                        @click="saveToTemplateLibrary(scope.row)">
+                                    💡 存入动作库
+                                </el-button>
+                            </div>
+                        </div>
+                    </template>
+                </el-table-column>
+
+                <el-table-column label="任务ID" min-width="130" align="center">
+                    <template #default="scope">
+                        <div style="display: flex; flex-direction: column; align-items: center; gap: 8px;">
+                            <el-tooltip v-if="scope.row.taskId" :content="`点击复制完整ID: ${scope.row.taskId}`"
+                                        placement="top">
+                                <span style="font-size: 13px; color: #303133; cursor: pointer; font-family: monospace;"
+                                      @click="copyText(scope.row.taskId)">{{ formatTaskId(scope.row.taskId) }}</span>
+                            </el-tooltip>
+                            <span v-else style="color: #909399; font-size: 12px;">-</span>
+                            <el-button v-if="scope.row.taskId" size="small" type="primary" plain
+                                       @click="fetchKieRaw(scope.row.taskId)">🔍 KIE 详情</el-button>
+                        </div>
+                    </template>
+                </el-table-column>
+
+                <el-table-column label="完成时间" width="160" align="center">
+                    <template #default="scope">{{ formatTime(scope.row.completeTime) }}</template>
+                </el-table-column>
+
+                <el-table-column label="创建时间" width="160" align="center">
+                    <template #default="scope">{{ formatTime(scope.row.createdAt) }}</template>
+                </el-table-column>
+
+                <el-table-column label="预估费用" width="120" align="center">
+                    <template #header>
+                        <div style="display: flex; align-items: center; justify-content: center;">
+                            预估费用
+                            <el-tooltip effect="dark" content="只有状态为 SUCCESS 的任务会计入实际费用，FAILED（失败）的任务不会产生任何扣费。" placement="top">
+                                <el-icon style="margin-left: 4px; cursor: help; color: #909399;"><svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg"><path fill="currentColor" d="M512 64a448 448 0 1 1 0 896 448 448 0 0 1 0-896zm0 192a58.432 58.432 0 0 0-58.24 63.744l23.36 256.384a35.072 35.072 0 0 0 69.76 0l23.296-256.384A58.432 58.432 0 0 0 512 256zm0 512a51.2 51.2 0 1 0 0-102.4 51.2 51.2 0 0 0 0 102.4z"></path></svg></el-icon>
+                            </el-tooltip>
+                        </div>
+                    </template>
+                    <template #default="scope">
+                        <span v-if="scope.row.status === 'FAILED'" style="color: #909399; text-decoration: line-through;" title="失败任务不扣费">
+                            ￥{{ Number(scope.row.cost).toFixed(2) }}
+                        </span>
+                        <span v-else-if="scope.row.cost !== undefined && scope.row.cost !== null" style="color: #f56c6c; font-weight: bold;">
+                            ￥{{ Number(scope.row.cost).toFixed(2) }}
+                        </span>
+                        <span v-else style="color: #909399;">-</span>
+                    </template>
+                </el-table-column>
+
+            </el-table>
+
+            <div style="margin-top: 20px; display: flex; justify-content: flex-end;">
+                <el-pagination v-model:current-page="currentPage" v-model:page-size="pageSize"
+                               :page-sizes="[10, 20, 50, 100]" background
+                               layout="total, sizes, prev, pager, next, jumper" :total="total"
+                               @size-change="handleSizeChange" @current-change="handleCurrentChange"/>
+            </div>
+        </div>
+    </div>
+
+    <el-image-viewer v-if="showImageViewer" :url-list="previewImageUrlList" @close="showImageViewer = false"
+                     hide-on-click-modal/>
+</div>
+</div>
+</div>
+
+<script>
+    const {createApp, ref, reactive, onMounted, nextTick} = Vue;
+    createApp({
+        setup() {
+            const currentUserName = ref(localStorage.getItem("user_name") || '未知用户');
+            const currentShopName = ref(localStorage.getItem("shop_name") || '未知店铺');
+
+            const handleLogout = () => {
+                ElementPlus.ElMessageBox.confirm('确定要退出登录吗？', '提示', {type: 'warning'}).then(() => {
+                    localStorage.removeItem("user_token");
+                    localStorage.removeItem("user_name");
+                    localStorage.removeItem("shop_name");
+                    window.location.href = 'login.html';
+                }).catch(() => {
+                });
+            };
+
+            const rawData = ref([]);
+            const selectedRows = ref([]);
+            const loading = ref(false);
+            const isBatchRefreshing = ref(false);
+
+            const showImageViewer = ref(false);
+            const previewImageUrlList = ref([]);
+            const showVideoDialog = ref(false);
+            const previewVideoUrl = ref('');
+
+            const canSelectRow = (row) => {
+                return row.status === 'SUCCESS' && (row.resultOssUrl || row.resultTempUrl);
+            };
+
+            const isVideo = (url) => {
+                if (!url) return false;
+                const lower = url.toLowerCase();
+                return lower.includes('.mp4') || lower.includes('.mov');
+            };
+
+            const openImagePreview = (url) => {
+                if (!url || url === 'null') return ElementPlus.ElMessage.warning('暂无图片链接');
+
+                showVideoDialog.value = false;
+                previewVideoUrl.value = '';
+
+                let finalUrl = String(url).split(',')[0].trim();
+                if (finalUrl.startsWith('http://')) finalUrl = finalUrl.replace('http://', 'https://');
+
+                previewImageUrlList.value = [finalUrl];
+                showImageViewer.value = true;
+            };
+
+            const openVideoPreview = (url) => {
+                if (!url || String(url).trim() === '' || String(url).trim().toLowerCase() === 'null') {
+                    return ElementPlus.ElMessage.warning('暂无视频链接');
+                }
+
+                let finalUrl = String(url).split(',')[0].trim();
+                if (finalUrl.startsWith('http://')) {
+                    finalUrl = finalUrl.replace('http://', 'https://');
+                }
+
+                showImageViewer.value = false;
+
+                ElementPlus.ElMessageBox.alert(
+                    `<div style="display: flex; justify-content: center; align-items: center; background: #000; border-radius: 8px; padding: 20px;">
+                        <video src="${finalUrl}" controls autoplay style="max-width: 100%; max-height: 60vh; outline: none; border-radius: 4px; background: #000;"></video>
+                    </div>
+                    <div style="margin-top: 15px; text-align: center;">
+                        <a href="${finalUrl}" target="_blank" style="color: #409EFF; font-size: 14px; text-decoration: none;">👉 若黑屏或无法缓冲，请点击此处外部播放</a>
+                    </div>`,
+                    '🎬 视频预览',
+                    {
+                        dangerouslyUseHTMLString: true,
+                        customStyle: { width: '60%', maxWidth: '1000px', backgroundColor: '#1e1e1e', border: 'none' },
+                        confirmButtonText: '关闭窗口',
+                        center: true
+                    }
+                ).catch(() => {
+                });
+            };
+
+            const handleVideoError = () => {
+                ElementPlus.ElMessage.error('❌ 视频加载失败！可能是链接已失效或存在跨域安全拦截。');
+            };
+
+            const currentPage = ref(1);
+            const pageSize = ref(20);
+            const total = ref(0);
+
+            const filters = reactive({spu: '', status: '', taskType: null, timeRange: null, taskId: ''});
+
+            const fetchData = async () => {
+                loading.value = true;
+                try {
+                    const params = {
+                        page: currentPage.value, size: pageSize.value,
+                        spu: filters.spu || null, status: filters.status || null,
+                        taskType: filters.taskType || null, taskId: filters.taskId || null
+                    };
+                    if (filters.timeRange && filters.timeRange.length === 2) {
+                        params.startTime = filters.timeRange[0];
+                        params.endTime = filters.timeRange[1];
+                    }
+                    const res = await axios.get('/api/tasks/page', {params});
+                    if (res.data.success) {
+                        rawData.value = res.data.data.content;
+                        total.value = res.data.data.totalElements;
+                    }
+                } catch (e) {
+                    ElementPlus.ElMessage.error('获取列表失败');
+                } finally {
+                    loading.value = false;
+                }
+            };
+
+            const handleSearch = () => {
+                currentPage.value = 1;
+                fetchData();
+            };
+            const handleSizeChange = (val) => {
+                pageSize.value = val;
+                fetchData();
+            };
+            const handleCurrentChange = (val) => {
+                currentPage.value = val;
+                fetchData();
+            };
+
+            const refreshRow = async (row) => {
+                if (!row.id) return;
+                row.isRefreshing = true;
+                try {
+                    const res = await axios.post(`/api/tasks/${row.id}/refresh`);
+                    if (res.data.success) Object.assign(row, res.data.data);
+                } catch (e) {
+                    console.error('单行刷新失败', e);
+                } finally {
+                    row.isRefreshing = false;
+                }
+            };
+
+            const syncAllProcessing = async () => {
+                const processingTasks = rawData.value.filter(row => row.status === 'PROCESSING' || row.status === 'GENERATING');
+                if (processingTasks.length === 0) return ElementPlus.ElMessage.info('当前页没有处理中的任务');
+                isBatchRefreshing.value = true;
+                await Promise.allSettled(processingTasks.map(row => refreshRow(row)));
+                isBatchRefreshing.value = false;
+                ElementPlus.ElMessage.success('同步完毕！');
+            };
+
+            const batchDownload = async () => {
+                if (selectedRows.value.length === 0) return ElementPlus.ElMessage.warning('请先勾选需要下载的任务');
+                const validTasks = selectedRows.value.filter(row => row.resultOssUrl || row.resultTempUrl);
+                if (validTasks.length === 0) return ElementPlus.ElMessage.warning('选中的任务尚未生成结果');
+                const ids = validTasks.map(row => row.id);
+
+                const notify = ElementPlus.ElNotification({
+                    title: '📦 正在打包下载',
+                    message: `服务器正在为您将 ${ids.length} 个结果打包成 ZIP，请耐心等待...`,
+                    duration: 0,
+                    type: 'info',
+                    offset: 100
+                });
+
+                try {
+                    const res = await axios.post('/api/tasks/download-zip', {ids: ids}, {
+                        responseType: 'blob',
+                        timeout: 600000
+                    });
+                    const blob = new Blob([res.data], {type: 'application/zip'});
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `AI任务打包_${validTasks.length}个_${Date.now()}.zip`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    window.URL.revokeObjectURL(url);
+                    notify.close();
+                    ElementPlus.ElMessage.success('🎉 打包下载完成！');
+                } catch (error) {
+                    notify.close();
+                    ElementPlus.ElMessage.error('打包下载失败，请检查网络或稍后重试');
+                }
+            };
+
+            const exportLinks = () => {
+                if (selectedRows.value.length === 0) return ElementPlus.ElMessage.warning('请先勾选需要导出的任务');
+                const excelData = selectedRows.value.map(row => ({
+                    '任务ID': row.taskId || '-',
+                    '临时KIE结果URL': row.resultTempUrl || '-',
+                    'OSS URL': row.resultOssUrl || '-'
+                }));
+                try {
+                    const worksheet = XLSX.utils.json_to_sheet(excelData);
+                    worksheet['!cols'] = [{wpx: 250}, {wpx: 400}, {wpx: 400}];
+                    const workbook = XLSX.utils.book_new();
+                    XLSX.utils.book_append_sheet(workbook, worksheet, "任务链接数据");
+                    XLSX.writeFile(workbook, `AI任务链接导出_${excelData.length}条_${new Date().getTime()}.xlsx`);
+                    ElementPlus.ElMessage.success(`🎉 成功导出 ${excelData.length} 条数据到 Excel！`);
+                } catch (error) {
+                    ElementPlus.ElMessage.error('导出失败，请检查浏览器是否拦截了下载');
+                }
+            };
+
+            const resetFilters = () => {
+                filters.spu = '';
+                filters.status = '';
+                filters.taskType = null;
+                filters.timeRange = null;
+                handleSearch();
+            };
+            const formatTaskId = (taskId) => {
+                if (!taskId) return '';
+                return taskId.length <= 12 ? taskId : taskId.substring(0, 6) + '...' + taskId.substring(taskId.length - 6);
+            };
+            const copyText = async (text) => {
+                if (!text) return;
+                try {
+                    await navigator.clipboard.writeText(text);
+                    ElementPlus.ElMessage.success('🎉 已成功复制到剪贴板！');
+                } catch (err) {
+                    const t = document.createElement('textarea');
+                    t.value = text;
+                    document.body.appendChild(t);
+                    t.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(t);
+                    ElementPlus.ElMessage.success('🎉 已成功复制到剪贴板！');
+                }
+            };
+
+            const getStatusType = (status) => {
+                switch (status) {
+                    case 'SUCCESS': return 'success';
+                    case 'PROCESSING': case 'GENERATING': return 'warning';
+                    case 'FAILED': return 'danger';
+                    default: return 'info';
+                }
+            };
+            const formatTime = (t) => {
+                if (!t) return '-';
+                return t.replace('T', ' ').split('.')[0];
+            };
+            const handleSelectionChange = (val) => {
+                selectedRows.value = val;
+            };
+
+            const goToColor = () => { window.location.href = 'index.html'; };
+            const goToScene = () => { window.location.href = 'scene.html'; };
+            const goToVideo = () => { window.location.href = 'video.html'; };
+            const goToStats = () => { window.location.href = 'stats.html'; };
+
+            const fetchKieRaw = async (taskId) => {
+                const loadingInstance = ElementPlus.ElLoading.service({fullscreen: true, text: '正在拉取 KIE 数据...'});
+                try {
+                    const res = await axios.get(`/api/tasks/kie-raw/${taskId}`);
+                    let jsonStr = '';
+                    if (res.data && res.data.success) {
+                        let data = res.data.data;
+                        try {
+                            if (typeof data === 'string') data = JSON.parse(data);
+                            jsonStr = JSON.stringify(data, null, 4);
+                        } catch (e) {
+                            jsonStr = String(data);
+                        }
+                    } else {
+                        jsonStr = '❌ 获取失败：\n' + (res.data ? res.data.message : '未知接口错误');
+                    }
+                    ElementPlus.ElMessageBox.alert(
+                        `<pre style="background: #282c34; color: #abb2bf; padding: 15px; border-radius: 8px; overflow: auto; max-height: 400px; font-size: 13px; white-space: pre-wrap; word-break: break-all; text-align: left; margin: 0;">${jsonStr}</pre>`,
+                        '📡 KIE 厂商原生返回报文', {
+                            dangerouslyUseHTMLString: true,
+                            customStyle: {width: '600px', maxWidth: '90vw'},
+                            confirmButtonText: '关闭'
+                        }
+                    );
+                } catch (e) {
+                    ElementPlus.ElMessage.error('获取 KIE 详情失败，请检查网络');
+                } finally {
+                    loadingInstance.close();
+                }
+            };
+
+            const saveToTemplateLibrary = async (row) => {
+                try {
+                    await ElementPlus.ElMessageBox.confirm(
+                        '确定要将此场景的提示词和结果图存入公共动作库吗？',
+                        '💡 存入动作库',
+                        {confirmButtonText: '确定存入', cancelButtonText: '取消', type: 'info'}
+                    );
+
+                    const targetImageUrl = row.resultOssUrl || row.resultTempUrl;
+                    if (!targetImageUrl) {
+                        return ElementPlus.ElMessage.warning('该任务尚未生成成功的结果图，无法作为参考图存入！');
+                    }
+
+                    const loadingInstance = ElementPlus.ElLoading.service({ fullscreen: true, text: '正在跨桶转存图片为永久资产...' });
+                    let finalPermanentUrl = targetImageUrl;
+                    try {
+                        const copyRes = await axios.post('/api/oss/copy-to-permanent', { url: targetImageUrl });
+                        if (copyRes.data && copyRes.data.success) {
+                            finalPermanentUrl = copyRes.data.data;
+                        } else {
+                            loadingInstance.close();
+                            return ElementPlus.ElMessage.error(copyRes.data.message || '转存永久图片失败，入库中止');
+                        }
+                    } catch (err) {
+                        loadingInstance.close();
+                        return ElementPlus.ElMessage.error('网络请求异常，转存失败');
+                    }
+                    loadingInstance.close();
+
+                    const templateData = {
+                        title: "大盘快捷入库",
+                        category: "通用动作库",
+                        basePrompt: row.prompt,
+                        exampleImageUrl: finalPermanentUrl,
+                        isActive: true
+                    };
+
+                    const res = await axios.post('/api/templates/save', templateData);
+                    if (res.data && res.data.success) {
+                        ElementPlus.ElMessage.success('🎉 已成功沉淀至【通用动作库】！您可在场景生成页面随时套用。');
+                    } else {
+                        ElementPlus.ElMessage.error(res.data.message || '保存失败');
+                    }
+                } catch (e) {
+                    if (e !== 'cancel') {
+                        ElementPlus.ElMessage.error('保存过程中发生异常，请检查网络');
+                    }
+                }
+            };
+
+            onMounted(fetchData);
+
+            return {
+                currentUserName, currentShopName, handleLogout,
+                rawData, filters, loading, isBatchRefreshing, selectedRows,
+                currentPage, pageSize, total, copyText,
+                showImageViewer, previewImageUrlList,
+                showVideoDialog, previewVideoUrl,
+                exportLinks, fetchData, handleSearch, handleSizeChange, handleCurrentChange, resetFilters,
+                getStatusType, formatTime, handleSelectionChange, refreshRow, syncAllProcessing,
+                formatTaskId, fetchKieRaw, batchDownload, handleVideoError,
+                goToColor, goToScene, goToVideo, isVideo, goToStats,
+                openImagePreview, openVideoPreview, saveToTemplateLibrary,
+                canSelectRow
+            };
+        }
+    }).use(ElementPlus).mount('#app');
+</script>
+</body>
+</html>

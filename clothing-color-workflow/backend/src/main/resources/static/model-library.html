@@ -1,0 +1,851 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 模特库 - Model Studio</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css"/>
+    <script src="https://unpkg.com/element-plus"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <link rel="stylesheet" href="css/variables.css">
+    <link rel="stylesheet" href="css/shared.css">
+    <script src="auth.js"></script>
+    <script src="js/sidebar.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f0f2f5;
+            min-height: 100vh;
+            color: #333;
+        }
+
+        /* 统计卡片 */
+        .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 20px; }
+
+        .stat-card {
+            background: #fff; border-radius: 12px; padding: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .stat-card:hover { transform: translateY(-2px); box-shadow: 0 4px 16px rgba(0,0,0,0.08); }
+
+        .stat-icon { font-size: 28px; margin-bottom: 8px; }
+        .stat-value { font-size: 26px; font-weight: 700; }
+        .stat-label { font-size: 12px; color: #999; margin-top: 2px; }
+
+        /* 内容卡片 */
+        .card {
+            background: #fff; border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+            overflow: hidden;
+        }
+
+        .card-head {
+            padding: 16px 20px; border-bottom: 1px solid #f0f0f0;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+
+        .card-head h3 { font-size: 16px; }
+
+        .card-body { padding: 20px; }
+
+        /* 步骤 */
+        .steps { display: flex; gap: 12px; margin-bottom: 24px; }
+
+        .step {
+            flex: 1; display: flex; align-items: center; gap: 10px;
+            padding: 14px; background: #fafafa; border-radius: 10px;
+            cursor: pointer; transition: all 0.2s;
+            border: 2px solid transparent;
+        }
+
+        .step:hover { background: #f0f2ff; }
+        .step.active { background: #fff; border-color: #667eea; box-shadow: 0 2px 8px rgba(102,126,234,0.15); }
+        .step.done { background: #f0f9eb; border-color: #67c23a; }
+
+        .step-num {
+            width: 32px; height: 32px; border-radius: 50%;
+            background: #e0e0e0; color: #666;
+            display: flex; align-items: center; justify-content: center;
+            font-weight: 600; font-size: 13px; flex-shrink: 0;
+        }
+
+        .step.active .step-num { background: linear-gradient(135deg, #667eea, #764ba2); color: #fff; }
+        .step.done .step-num { background: #67c23a; color: #fff; }
+
+        .step-text h4 { font-size: 13px; margin-bottom: 2px; }
+        .step-text p { font-size: 11px; color: #999; }
+
+        /* 类型选择器 */
+        .types { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 16px; }
+
+        .type-card {
+            padding: 14px 8px; border: 2px solid #ebeef5; border-radius: 10px;
+            text-align: center; cursor: pointer; transition: all 0.2s;
+            background: #fff;
+        }
+
+        .type-card:hover { border-color: #c0c4cc; transform: translateY(-1px); }
+        .type-card.selected { border-color: #667eea; background: #f0f2ff; }
+
+        .type-card .icon { font-size: 26px; margin-bottom: 6px; }
+        .type-card .name { font-size: 12px; font-weight: 600; }
+        .type-card .sub { font-size: 10px; color: #999; margin-top: 2px; }
+
+        /* 表单区块 */
+        .form-block {
+            background: #fafbfc; border-radius: 10px;
+            padding: 20px; margin-bottom: 16px;
+        }
+
+        .form-block-title {
+            font-size: 14px; font-weight: 600;
+            margin-bottom: 14px; display: flex; align-items: center; gap: 6px;
+        }
+
+        /* 提示词预览 */
+        .prompt-box {
+            background: linear-gradient(135deg, rgba(102,126,234,0.06), rgba(118,75,162,0.06));
+            border: 1px solid rgba(102,126,234,0.2);
+            border-radius: 10px; padding: 16px;
+            position: relative;
+        }
+
+        .prompt-box .text {
+            font-size: 12px; line-height: 1.8; color: #444;
+            max-height: 140px; overflow-y: auto;
+            white-space: pre-wrap; word-break: break-all;
+            padding-right: 80px;
+        }
+
+        .prompt-box .actions {
+            position: absolute; top: 10px; right: 10px;
+            display: flex; gap: 6px;
+        }
+
+        /* 网格 */
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; }
+
+        .img-card {
+            background: #fff; border-radius: 10px; overflow: hidden;
+            box-shadow: 0 1px 6px rgba(0,0,0,0.05);
+            transition: all 0.2s;
+        }
+
+        .img-card:hover { transform: translateY(-3px); box-shadow: 0 4px 16px rgba(0,0,0,0.1); }
+
+        .img-card .img-wrap {
+            position: relative; padding-top: 130%; background: #f5f7fa;
+        }
+
+        .img-card .img-wrap img {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover;
+        }
+
+        .img-card .img-wrap .placeholder {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            color: #ccc;
+        }
+
+        .img-card .img-wrap .badge {
+            position: absolute; top: 6px; left: 6px;
+        }
+
+        .img-card .info { padding: 10px; }
+
+        .img-card .info .title {
+            font-size: 13px; font-weight: 600;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+            margin-bottom: 4px;
+        }
+
+        .img-card .info .meta { font-size: 11px; color: #999; }
+        .img-card .info .ops { margin-top: 8px; display: flex; gap: 6px; }
+
+        /* 加载遮罩 */
+        .loading-mask {
+            position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(255,255,255,0.92);
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            z-index: 5; border-radius: 10px;
+        }
+
+        .spinner {
+            width: 36px; height: 36px; border-radius: 50%;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            animation: pulse 1.2s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(0.7); opacity: 0.4; }
+            50% { transform: scale(1); opacity: 1; }
+        }
+
+        /* 时间线 */
+        .timeline { position: relative; padding-left: 20px; }
+
+        .timeline::before {
+            content: ''; position: absolute; left: 6px; top: 0; bottom: 0;
+            width: 2px; background: #e4e7ed;
+        }
+
+        .tl-item { position: relative; padding: 12px 0 12px 20px; }
+
+        .tl-dot {
+            position: absolute; left: -17px; top: 16px;
+            width: 10px; height: 10px; border-radius: 50%;
+            background: #667eea; border: 2px solid #fff;
+            box-shadow: 0 0 0 2px #667eea;
+        }
+
+        .tl-content {
+            background: #fff; border-radius: 10px; padding: 14px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+            display: flex; gap: 14px;
+        }
+
+        .tl-content img {
+            width: 70px; height: 90px; object-fit: cover; border-radius: 6px;
+            cursor: pointer;
+        }
+
+        .tl-body { flex: 1; }
+
+        .el-message { z-index: 99999 !important; }
+
+        @media (max-width: 1200px) {
+            .stats { grid-template-columns: repeat(2, 1fr); }
+            .types { grid-template-columns: repeat(3, 1fr); }
+        }
+    </style>
+</head>
+<body>
+<div class="app-layout">
+<div class="app-main">
+<div id="app">
+    <div class="app-card">
+        <div class="app-card__header app-card__header--module-manage">
+            <span style="font-size: 18px; font-weight: bold;">👤 AI 模特库 - Model Studio</span>
+            <div style="display: flex; gap: 10px;">
+                <el-button @click="goToList" color="#f5f7fa" style="color: #606266; font-weight: bold;">📊 任务大盘</el-button>
+            </div>
+        </div>
+        <div class="app-card__body">
+            <!-- 统计 -->
+            <div class="stats">
+                <div class="stat-card"><div class="stat-icon">📊</div><div class="stat-value">{{ stats.total }}</div><div class="stat-label">总模特数</div></div>
+                <div class="stat-card"><div class="stat-icon">✅</div><div class="stat-value">{{ stats.active }}</div><div class="stat-label">已激活</div></div>
+                <div class="stat-card"><div class="stat-icon">⏳</div><div class="stat-value">{{ stats.processing }}</div><div class="stat-label">生成中</div></div>
+                <div class="stat-card"><div class="stat-icon">🎨</div><div class="stat-value">{{ Object.keys(types).length }}</div><div class="stat-label">模特类型</div></div>
+            </div>
+
+            <!-- =========== 生成模特 =========== -->
+            <div class="card" v-if="view==='generate'">
+                <div class="card-head"><h3>🎨 生成新模特</h3></div>
+                <div class="card-body">
+                    <!-- 步骤 -->
+                    <div class="steps">
+                        <div class="step" :class="{active:step===1,done:step>1}" @click="step=1">
+                            <div class="step-num">1</div>
+                            <div class="step-text"><h4>选择类型</h4><p>模特风格与参数</p></div>
+                        </div>
+                        <div class="step" :class="{active:step===2,done:step>2}" @click="generatedPrompt?step=2:null">
+                            <div class="step-num">2</div>
+                            <div class="step-text"><h4>预览提示词</h4><p>确认并调整</p></div>
+                        </div>
+                        <div class="step" :class="{active:step===3}" @click="batchTasks.length?step=3:null">
+                            <div class="step-num">3</div>
+                            <div class="step-text"><h4>生成结果</h4><p>查看并入库</p></div>
+                        </div>
+                    </div>
+
+                    <!-- Step 1 -->
+                    <div v-show="step===1">
+                        <div class="form-block">
+                            <div class="form-block-title">👤 选择模特类型</div>
+                            <div class="types">
+                                <div v-for="(name,key) in types" :key="key"
+                                     class="type-card" :class="{selected:form.modelType===key}"
+                                     @click="form.modelType=key">
+                                    <div class="icon">{{ typeIcon(key) }}</div>
+                                    <div class="name">{{ key }}</div>
+                                    <div class="sub">{{ name.split('/')[0].trim() }}</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="form-block">
+                            <div class="form-block-title">⚙️ 定制参数</div>
+                            <el-form label-width="80px">
+                                <!-- 基础参数 -->
+                                <el-row :gutter="16">
+                                    <el-col :span="8">
+                                        <el-form-item label="族裔">
+                                            <el-select v-model="form.ethnicity" placeholder="可选" clearable style="width:100%">
+                                                <el-option label="Caucasian" value="Caucasian"/>
+                                                <el-option label="African American" value="African American"/>
+                                                <el-option label="Latina" value="Latina"/>
+                                                <el-option label="Asian American" value="Asian American"/>
+                                                <el-option label="Mixed" value="Mixed"/>
+                                            </el-select>
+                                        </el-form-item>
+                                    </el-col>
+                                    <el-col :span="8">
+                                        <el-form-item label="年龄范围">
+                                            <el-input v-model="form.ageRange" placeholder="如：30-38"/>
+                                        </el-form-item>
+                                    </el-col>
+                                    <el-col :span="8">
+                                        <el-form-item label="生成数量">
+                                            <el-input-number v-model="batchCount" :min="1" :max="10" style="width:100%"/>
+                                        </el-form-item>
+                                    </el-col>
+                                </el-row>
+
+                                <!-- 外观参数 -->
+                                <el-row :gutter="16">
+                                    <el-col :span="8">
+                                        <el-form-item label="发型">
+                                            <el-select v-model="form.hairstyle" placeholder="默认" clearable style="width:100%">
+                                                <el-option label="长卷发" value="long_wavy"/>
+                                                <el-option label="长直发" value="long_straight"/>
+                                                <el-option label="短波波头" value="short_bob"/>
+                                                <el-option label="精灵短发" value="pixie"/>
+                                                <el-option label="高马尾" value="ponytail"/>
+                                                <el-option label="低马尾" value="low_ponytail"/>
+                                                <el-option label="编发" value="braids"/>
+                                                <el-option label="丸子头" value="bun"/>
+                                                <el-option label="背头" value="slicked_back"/>
+                                                <el-option label="卷发" value="curly"/>
+                                                <el-option label="爆炸头" value="afro"/>
+                                                <el-option label="盘发" value="updo"/>
+                                            </el-select>
+                                        </el-form-item>
+                                    </el-col>
+                                    <el-col :span="8">
+                                        <el-form-item label="肤色">
+                                            <el-select v-model="form.skinTone" placeholder="默认" clearable style="width:100%">
+                                                <el-option label="白皙" value="fair"/>
+                                                <el-option label="浅色" value="light"/>
+                                                <el-option label="中等" value="medium"/>
+                                                <el-option label="橄榄色" value="olive"/>
+                                                <el-option label="小麦色" value="tan"/>
+                                                <el-option label="棕色" value="brown"/>
+                                                <el-option label="深色" value="dark"/>
+                                            </el-select>
+                                        </el-form-item>
+                                    </el-col>
+                                    <el-col :span="8">
+                                        <el-form-item label="拍摄角度">
+                                    <el-select v-model="form.cameraAngle" placeholder="上半身特写+三视图" clearable style="width:100%">
+                                        <el-option label="上半身特写+三视图（默认）" value="composite_panel"/>
+                                        <el-option label="正面" value="front"/>
+                                        <el-option label="侧面" value="side"/>
+                                        <el-option label="四分之三侧" value="three_quarter"/>
+                                        <el-option label="背面" value="back"/>
+                                        <el-option label="低角度" value="low_angle"/>
+                                        <el-option label="高角度" value="high_angle"/>
+                                        <el-option label="特写" value="close_up"/>
+                                        <el-option label="全身" value="full_body"/>
+                                    </el-select>
+                                        </el-form-item>
+                                    </el-col>
+                                </el-row>
+
+                                <!-- 背景和服装 -->
+                                <el-row :gutter="16">
+                                    <el-col :span="8">
+                                        <el-form-item label="背景">
+                                            <el-select v-model="form.background" placeholder="默认" clearable style="width:100%">
+                                                <el-option label="白色影棚" value="white_studio"/>
+                                                <el-option label="灰色影棚" value="gray_studio"/>
+                                                <el-option label="黑色影棚" value="black_studio"/>
+                                                <el-option label="户外自然" value="outdoor_nature"/>
+                                                <el-option label="城市街拍" value="urban_street"/>
+                                                <el-option label="海滩" value="beach"/>
+                                                <el-option label="咖啡厅" value="cafe"/>
+                                                <el-option label="家居" value="home"/>
+                                                <el-option label="抽象艺术" value="abstract"/>
+                                            </el-select>
+                                        </el-form-item>
+                                    </el-col>
+                                    <el-col :span="16">
+                                        <el-form-item label="服装描述">
+                                            <el-input v-model="form.clothingDescription" placeholder="如：黑色西装外套、白色衬衫、牛仔裤"/>
+                                        </el-form-item>
+                                    </el-col>
+                                </el-row>
+
+                                <el-form-item label="特殊要求">
+                                    <el-input v-model="form.specialRequirements" type="textarea" :rows="2" placeholder="如：需要有雀斑、短发、小麦色皮肤等"/>
+                                </el-form-item>
+                                <el-form-item label="名称前缀">
+                                    <el-input v-model="namePrefix" placeholder="如：Summer_Collection（留空自动生成）"/>
+                                </el-form-item>
+
+                                <!-- AI 引擎 -->
+                                <el-form-item label="AI 引擎">
+                                    <el-radio-group v-model="form.textModel">
+                                        <el-radio-button label="">本地模板</el-radio-button>
+                                        <el-radio-button label="claude">Claude Opus 4.7</el-radio-button>
+                                        <el-radio-button label="gpt">GPT-5.5</el-radio-button>
+                                    </el-radio-group>
+                                    <div style="font-size:11px;color:#999;margin-top:4px">
+                                        本地模板：基于 Skill 配置快速生成 · Claude/GPT：AI 智能生成更自然的提示词
+                                    </div>
+                                </el-form-item>
+                            </el-form>
+                        </div>
+
+                        <!-- 生图参数 -->
+                        <div class="form-block">
+                            <div class="form-block-title">🖼️ 生图参数</div>
+                            <el-form label-width="80px">
+                                <el-row :gutter="16">
+                                    <el-col :span="8">
+                                        <el-form-item label="AI 模型">
+                                            <el-select v-model="form.aiModel" style="width:100%">
+                                                <el-option label="🍌 nano-banana-pro" value="nano-banana-pro"/>
+                                                <el-option label="🤖 gpt-image-2-image" value="gpt-image-2-image-to-image"/>
+                                            </el-select>
+                                        </el-form-item>
+                                    </el-col>
+                                    <el-col :span="8">
+                                        <el-form-item label="分辨率">
+                                            <el-select v-model="form.resolution" style="width:100%">
+                                                <el-option label="1K" value="1K"/>
+                                                <el-option label="2K" value="2K"/>
+                                                <el-option label="4K" value="4K"/>
+                                            </el-select>
+                                        </el-form-item>
+                                    </el-col>
+                                    <el-col :span="8">
+                                        <el-form-item label="画面比例">
+                                            <el-select v-model="form.aspectRatio" style="width:100%">
+                                                <el-option label="⬛ 1:1 (正方形)" value="1:1"/>
+                                                <el-option label="📱 9:16 (竖屏)" value="9:16"/>
+                                                <el-option label="🖥️ 16:9 (横屏)" value="16:9"/>
+                                                <el-option label="📺 4:3" value="4:3"/>
+                                                <el-option label="🖼️ 3:4" value="3:4"/>
+                                                <el-option label="✨ Auto" value="auto"/>
+                                            </el-select>
+                                        </el-form-item>
+                                    </el-col>
+                                </el-row>
+                            </el-form>
+                        </div>
+                        <div style="text-align:center;margin-top:20px">
+                            <el-button type="primary" size="large" @click="genPrompt" :loading="busy.prompt" style="padding:12px 48px">
+                                ✨ 生成提示词
+                            </el-button>
+                        </div>
+                    </div>
+
+                    <!-- Step 2 -->
+                    <div v-show="step===2">
+                        <div class="prompt-box">
+                            <div class="actions">
+                                <el-button size="small" @click="copy(generatedPrompt)">📄 复制</el-button>
+                                <el-button size="small" @click="step=1">✏️ 修改</el-button>
+                            </div>
+                            <div class="text">{{ generatedPrompt }}</div>
+                        </div>
+                        <div v-if="lens" class="form-block" style="margin-top:16px">
+                            <div class="form-block-title">📷 镜头推荐</div>
+                            <el-descriptions :column="2" border size="small">
+                                <el-descriptions-item label="焦段">{{ lens.focalLength||'-' }}</el-descriptions-item>
+                                <el-descriptions-item label="光圈">{{ lens.aperture||'-' }}</el-descriptions-item>
+                                <el-descriptions-item label="镜头类型">{{ lens.lensType||'-' }}</el-descriptions-item>
+                                <el-descriptions-item label="推荐机身">{{ lens.camera||'-' }}</el-descriptions-item>
+                            </el-descriptions>
+                        </div>
+                        <div style="text-align:center;margin-top:20px">
+                            <el-button type="warning" size="large" @click="createTasks" :loading="busy.create" style="padding:12px 48px">
+                                🚀 开始生成 ({{ batchCount }} 个)
+                            </el-button>
+                        </div>
+                    </div>
+
+                    <!-- Step 3 -->
+                    <div v-show="step===3">
+                        <div v-if="batchTasks.length">
+                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+                                <div>
+                                    <h4 style="margin:0">生成进度</h4>
+                                    <p style="font-size:12px;color:#999;margin-top:4px">
+                                        成功 {{ batchTasks.filter(t=>t.taskStatus==='SUCCESS').length }}/{{ batchTasks.length }}
+                                    </p>
+                                </div>
+                                <div style="display:flex;gap:10px">
+                                    <el-button type="success" @click="approveAll" :disabled="!batchTasks.some(t=>t.taskStatus==='SUCCESS'&&t.status!=='ACTIVE')">✅ 全部入库</el-button>
+                                    <el-button @click="retry">🔄 重新生成</el-button>
+                                </div>
+                            </div>
+                            <div class="grid">
+                                <div v-for="t in batchTasks" :key="t.id" class="img-card">
+                                    <div class="img-wrap">
+                                        <div v-if="t.taskStatus==='CREATED'||t.taskStatus==='PROCESSING'" class="loading-mask">
+                                            <div class="spinner"></div>
+                                            <p style="margin-top:8px;color:#888;font-size:12px">生成中...</p>
+                                        </div>
+                                        <img v-if="t.resultUrl" :src="t.resultUrl"/>
+                                        <div v-else class="placeholder"><span style="font-size:32px">🖼️</span><span style="margin-top:6px">等待生成</span></div>
+                                        <el-tag :type="taskType(t.taskStatus)" class="badge" size="small">{{ taskLabel(t.taskStatus) }}</el-tag>
+                                    </div>
+                                    <div class="info">
+                                        <div class="title">{{ t.modelName }}</div>
+                                        <div class="ops">
+                                            <el-button v-if="t.taskStatus==='SUCCESS'" size="small" type="success" @click="approve(t)">入库</el-button>
+                                            <el-button size="small" @click="copy(t.generatedPrompt)">复制</el-button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <el-empty v-else description="暂无生成任务">
+                            <el-button type="primary" @click="step=1">开始生成</el-button>
+                        </el-empty>
+                    </div>
+                </div>
+            </div>
+
+            <!-- =========== 模特库 =========== -->
+            <div class="card" v-if="view==='library'">
+                <div class="card-head">
+                    <h3>📚 模特库</h3>
+                    <div style="display:flex;gap:10px;align-items:center">
+                        <el-input v-model="search.kw" placeholder="搜索模特..." style="width:180px" clearable @keyup.enter="loadModels"/>
+                        <el-select v-model="search.type" placeholder="全部类型" clearable style="width:110px" @change="loadModels">
+                            <el-option v-for="(n,k) in types" :key="k" :label="k" :value="k"/>
+                        </el-select>
+                        <el-select v-model="search.status" placeholder="全部状态" clearable style="width:90px" @change="loadModels">
+                            <el-option label="草稿" value="DRAFT"/><el-option label="已激活" value="ACTIVE"/><el-option label="已停用" value="DISABLED"/>
+                        </el-select>
+                        <el-button type="primary" @click="loadModels">搜索</el-button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="grid" v-loading="busy.load">
+                        <div v-for="m in models" :key="m.id" class="img-card" @click="detail=m;drawer=true">
+                            <div class="img-wrap">
+                                <img v-if="m.coverImageUrl" :src="m.coverImageUrl"/>
+                                <div v-else class="placeholder"><span style="font-size:48px;color:#ddd">👤</span></div>
+                                <el-tag :type="mstatusType(m.status)" size="small" style="position:absolute;top:6px;right:6px">{{ mstatusLabel(m.status) }}</el-tag>
+                            </div>
+                            <div class="info">
+                                <div class="title">{{ m.modelName }}</div>
+                                <div class="meta">{{ m.modelType }} · {{ m.ethnicity||'未指定' }}</div>
+                            </div>
+                        </div>
+                    </div>
+                    <el-empty v-if="!busy.load&&!models.length" description="暂无模特数据"/>
+                    <div style="margin-top:20px;display:flex;justify-content:center">
+                        <el-pagination v-model:current-page="pg.current" v-model:page-size="pg.size" :page-sizes="[12,24,48]" layout="total,sizes,prev,pager,next" :total="pg.total" @size-change="loadModels" @current-change="loadModels"/>
+                    </div>
+                </div>
+            </div>
+
+            <!-- =========== 历史记录 =========== -->
+            <div class="card" v-if="view==='history'">
+                <div class="card-head"><h3>📜 生成历史</h3></div>
+                <div class="card-body">
+                    <div class="timeline" v-loading="busy.hist">
+                        <div v-for="h in history" :key="h.id" class="tl-item">
+                            <div class="tl-dot"></div>
+                            <div class="tl-content">
+                                <img v-if="h.coverImageUrl" :src="h.coverImageUrl" @click="detail=h;drawer=true"/>
+                                <div v-else style="width:70px;height:90px;background:#f5f7fa;border-radius:6px;display:flex;align-items:center;justify-content:center"><span style="font-size:28px;color:#ddd">👤</span></div>
+                                <div class="tl-body">
+                                    <div style="display:flex;justify-content:space-between;align-items:center">
+                                        <h4 style="margin:0;cursor:pointer" @click="detail=h;drawer=true">{{ h.modelName }}</h4>
+                                        <span style="font-size:11px;color:#999">{{ fmtDate(h.createdAt) }}</span>
+                                    </div>
+                                    <p style="margin:6px 0;font-size:12px;color:#666">{{ h.modelType }} · {{ h.ethnicity||'未指定' }} · {{ h.ageRange||'默认' }}</p>
+                                    <div style="display:flex;gap:6px;margin-top:4px">
+                                        <el-tag :type="mstatusType(h.status)" size="small">{{ mstatusLabel(h.status) }}</el-tag>
+                                        <el-tag :type="taskType(h.taskStatus)" size="small">{{ taskLabel(h.taskStatus) }}</el-tag>
+                                    </div>
+                                    <div style="margin-top:6px;display:flex;gap:6px">
+                                        <el-button size="small" @click="copy(h.generatedPrompt)">📄 复制提示词</el-button>
+                                        <el-button size="small" @click="detail=h;drawer=true">查看详情</el-button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <el-empty v-if="!busy.hist&&!history.length" description="暂无历史记录"/>
+                    <div style="margin-top:20px;display:flex;justify-content:center">
+                        <el-pagination v-model:current-page="hpg.current" v-model:page-size="hpg.size" :page-sizes="[10,20,50]" layout="total,sizes,prev,pager,next" :total="hpg.total" @size-change="loadHistory" @current-change="loadHistory"/>
+                    </div>
+                </div>
+            </div>
+
+            <!-- =========== 批量任务 =========== -->
+            <div class="card" v-if="view==='batch'">
+                <div class="card-head">
+                    <h3>⚡ 批量任务</h3>
+                    <el-button @click="refreshProc">🔄 刷新</el-button>
+                </div>
+                <div class="card-body">
+                    <el-empty v-if="!processing.length" description="暂无处理中的任务"/>
+                    <div class="grid">
+                        <div v-for="t in processing" :key="t.id" class="img-card">
+                            <div class="img-wrap">
+                                <div v-if="t.taskStatus==='CREATED'||t.taskStatus==='PROCESSING'" class="loading-mask">
+                                    <div class="spinner"></div><p style="margin-top:8px;color:#888;font-size:12px">生成中...</p>
+                                </div>
+                                <img v-if="t.resultUrl" :src="t.resultUrl"/>
+                                <div v-else class="placeholder"><span style="font-size:32px">⏳</span></div>
+                                <el-tag :type="taskType(t.taskStatus)" class="badge" size="small">{{ taskLabel(t.taskStatus) }}</el-tag>
+                            </div>
+                            <div class="info">
+                                <div class="title">{{ t.modelName }}</div>
+                                <div class="ops">
+                                    <el-button v-if="t.taskStatus==='SUCCESS'" size="small" type="success" @click="approve(t)">入库</el-button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 详情抽屉 -->
+    <el-drawer v-model="drawer" title="模特详情" size="460px" v-if="detail">
+        <div style="text-align:center;margin-bottom:20px">
+            <img v-if="detail.coverImageUrl" :src="detail.coverImageUrl" style="max-width:100%;max-height:360px;border-radius:10px"/>
+            <div v-else style="width:180px;height:240px;background:#f5f7fa;border-radius:10px;display:inline-flex;align-items:center;justify-content:center"><span style="font-size:56px;color:#ddd">👤</span></div>
+        </div>
+        <el-descriptions :column="1" border size="small">
+            <el-descriptions-item label="名称">{{ detail.modelName||'-' }}</el-descriptions-item>
+            <el-descriptions-item label="类型">{{ detail.modelType||'-' }}</el-descriptions-item>
+            <el-descriptions-item label="族裔">{{ detail.ethnicity||'未指定' }}</el-descriptions-item>
+            <el-descriptions-item label="年龄">{{ detail.ageRange||'默认' }}</el-descriptions-item>
+            <el-descriptions-item label="状态"><el-tag :type="mstatusType(detail.status)" size="small">{{ mstatusLabel(detail.status) }}</el-tag></el-descriptions-item>
+            <el-descriptions-item label="创建时间">{{ fmtDate(detail.createdAt)||'-' }}</el-descriptions-item>
+        </el-descriptions>
+        <div style="margin-top:16px">
+            <h4 style="margin-bottom:8px">生成提示词</h4>
+            <div class="prompt-box" style="background:#f8f9fa;border-color:#e9ecef">
+                <div class="text" style="max-height:180px;padding-right:10px">{{ detail.generatedPrompt }}</div>
+            </div>
+            <el-button type="primary" size="small" @click="copy(detail.generatedPrompt)" style="margin-top:8px">📄 复制提示词</el-button>
+        </div>
+        <div style="margin-top:16px;display:flex;gap:10px">
+            <el-button v-if="detail.status==='DRAFT'" type="success" @click="approve(detail)">✅ 启用</el-button>
+            <el-button v-if="detail.status==='ACTIVE'" type="warning" @click="disableM(detail)">⏸️ 停用</el-button>
+            <el-button type="danger" plain @click="deleteM(detail)">🗑️ 删除</el-button>
+        </div>
+    </el-drawer>
+        </div>
+    </div>
+</div>
+</div>
+</div>
+
+<script>
+const {createApp,ref,reactive,onMounted,onUnmounted,computed} = Vue;
+
+createApp({
+    setup(){
+        // 从 URL 参数读取初始视图
+        const urlParams = new URLSearchParams(window.location.search);
+        const validViews = ['generate','library','history','batch'];
+        const initView = validViews.includes(urlParams.get('view')) ? urlParams.get('view') : 'generate';
+        const view = ref(initView);
+        const step = ref(1);
+        const drawer = ref(false);
+        const detail = ref(null);
+
+        const busy = reactive({prompt:false,create:false,load:false,hist:false});
+        const form = reactive({
+            modelType:'Commercial',ethnicity:'',ageRange:'',specialRequirements:'',textModel:'',
+            hairstyle:'',skinTone:'',cameraAngle:'',background:'',clothingDescription:'',
+            aiModel:'nano-banana-pro',resolution:'4K',aspectRatio:'16:9'
+        });
+        const batchCount = ref(1);
+        const namePrefix = ref('');
+        const generatedPrompt = ref('');
+        const batchTasks = ref([]);
+        const lens = ref(null);
+        const types = ref({});
+
+        const models = ref([]);
+        const search = reactive({kw:'',type:'',status:''});
+        const pg = reactive({current:1,size:12,total:0});
+
+        const history = ref([]);
+        const hpg = reactive({current:1,size:20,total:0});
+
+        const stats = reactive({total:0,active:0,processing:0});
+        const processing = ref([]);
+
+        let timer = null;
+
+        // 导航（同步 URL 参数）
+        const go = (v) => {
+            view.value = v;
+            history.replaceState(null, '', '?view=' + v);
+            if(v==='library') loadModels();
+            if(v==='history') loadHistory();
+            if(v==='batch') refreshProc();
+        };
+        const goToList = () => { window.location.href = 'list.html'; };
+
+        // 获取类型
+        const loadTypes = async () => {
+            try{const r=await axios.get('/api/models/types');if(r.data.success)types.value=r.data.data;}catch(e){console.error(e);}
+        };
+
+        // 获取统计
+        const loadStats = async () => {
+            try{
+                const [sr,pr] = await Promise.all([axios.get('/api/models/stats'),axios.get('/api/models/processing')]);
+                if(sr.data.success) stats.active = Object.values(sr.data.data).reduce((a,b)=>a+b,0);
+                if(pr.data.success){processing.value=pr.data.data;stats.processing=pr.data.data.length;}
+            }catch(e){console.error(e);}
+        };
+
+        const typeIcon = (t) => ({'High Fashion':'👗','Commercial':'👚','Curve':'💃','Athletic':'🏃‍♀️','Natural':'🌿','Mature':'👩‍💼','Street':'😎','Romantic':'🧚‍♀️','Minimalist':'🖤','Glamour':'💋'}[t]||'👤');
+
+        // 生成提示词
+        const genPrompt = async () => {
+            if(!form.modelType){ElementPlus.ElMessage.warning('请选择模特类型');return;}
+            busy.prompt=true;
+            try{
+                const r=await axios.post('/api/models/generate-prompt',form);
+                if(r.data.success){
+                    generatedPrompt.value=r.data.data;
+                    step.value=2;
+                    ElementPlus.ElMessage.success('提示词生成成功！');
+                    try{const lr=await axios.get('/api/models/lens-recommendation/'+encodeURIComponent(form.modelType));if(lr.data.success)lens.value=lr.data.data;}catch(e){}
+                }
+            }catch(e){ElementPlus.ElMessage.error('生成失败：'+(e.response?.data?.message||e.message));}
+            finally{busy.prompt=false;}
+        };
+
+        // 创建任务
+        const createTasks = async () => {
+            if(!generatedPrompt.value){ElementPlus.ElMessage.warning('请先生成提示词');return;}
+            busy.create=true;batchTasks.value=[];
+            try{
+                const reqs=[];
+                for(let i=0;i<batchCount.value;i++){
+                    reqs.push({
+                        prompt:generatedPrompt.value,
+                        model:form.aiModel||'nano-banana-pro',
+                        resolution:form.resolution||'2K',
+                        aspectRatio:form.aspectRatio||'1:1',
+                        modelName:namePrefix.value?namePrefix.value+'_'+(i+1):'Model_'+Date.now()+'_'+(i+1),
+                        modelType:form.modelType,ethnicity:form.ethnicity,ageRange:form.ageRange
+                    });
+                }
+                const r=await axios.post('/api/models/batch-create-tasks',reqs);
+                if(r.data.success){batchTasks.value=r.data.data;step.value=3;ElementPlus.ElMessage.success('已创建 '+batchTasks.value.length+' 个任务');startPoll();}
+            }catch(e){ElementPlus.ElMessage.error('创建失败：'+(e.response?.data?.message||e.message));}
+            finally{busy.create=false;}
+        };
+
+        // 轮询
+        const startPoll = () => {
+            stopPoll();
+            timer=setInterval(async()=>{
+                if(batchTasks.value.every(t=>t.taskStatus==='SUCCESS'||t.taskStatus==='FAILED')){
+                    stopPoll();
+                    const ok=batchTasks.value.filter(t=>t.taskStatus==='SUCCESS').length;
+                    ElementPlus.ElMessage.success('🎉 完成！成功 '+ok+'/'+batchTasks.value.length);
+                    loadStats();return;
+                }
+                try{
+                    await axios.post('/api/models/refresh-tasks');
+                    for(let i=0;i<batchTasks.value.length;i++){
+                        if(batchTasks.value[i].taskStatus==='CREATED'||batchTasks.value[i].taskStatus==='PROCESSING'){
+                            const r=await axios.get('/api/models/'+batchTasks.value[i].id);
+                            if(r.data.success)batchTasks.value[i]=r.data.data;
+                        }
+                    }
+                }catch(e){console.error(e);}
+            },3000);
+        };
+
+        const stopPoll=()=>{if(timer){clearInterval(timer);timer=null;}};
+
+        // 审核
+        const approve = async (m) => {
+            try{const r=await axios.put('/api/models/'+m.id+'/approve');if(r.data.success){ElementPlus.ElMessage.success('✅ 已入库！');m.status='ACTIVE';loadStats();}}catch(e){ElementPlus.ElMessage.error('失败：'+(e.response?.data?.message||e.message));}
+        };
+
+        const approveAll = async () => {
+            const ok=batchTasks.value.filter(t=>t.taskStatus==='SUCCESS'&&t.status!=='ACTIVE');
+            if(!ok.length){ElementPlus.ElMessage.warning('没有可入库的任务');return;}
+            try{const r=await axios.post('/api/models/batch-approve',ok.map(t=>t.id));if(r.data.success){ElementPlus.ElMessage.success('✅ 入库 '+r.data.data.length+' 个');ok.forEach(t=>t.status='ACTIVE');loadStats();}}catch(e){ElementPlus.ElMessage.error('失败');}
+        };
+
+        const disableM = async (m) => {
+            try{const r=await axios.put('/api/models/'+m.id+'/disable');if(r.data.success){ElementPlus.ElMessage.warning('已停用');m.status='DISABLED';loadStats();}}catch(e){ElementPlus.ElMessage.error('失败');}
+        };
+
+        const deleteM = async (m) => {
+            try{await ElementPlus.ElMessageBox.confirm('确认删除?','警告',{type:'warning'});const r=await axios.delete('/api/models/'+m.id);if(r.data.success){ElementPlus.ElMessage.success('已删除');drawer.value=false;loadModels();loadStats();}}catch(e){if(e!=='cancel')ElementPlus.ElMessage.error('删除失败');}
+        };
+
+        const retry=()=>{batchTasks.value=[];step.value=1;};
+
+        // 列表
+        const loadModels = async () => {
+            busy.load=true;
+            try{const r=await axios.get('/api/models/page',{params:{current:pg.current,size:pg.size,type:search.type||undefined,keyword:search.kw||undefined,status:search.status||undefined}});
+            if(r.data.success){models.value=r.data.data.content;pg.total=r.data.data.totalElements;}}catch(e){ElementPlus.ElMessage.error('获取失败');}
+            finally{busy.load=false;}
+        };
+
+        const loadHistory = async () => {
+            busy.hist=true;
+            try{const r=await axios.get('/api/models/history',{params:{current:hpg.current,size:hpg.size}});
+            if(r.data.success){history.value=r.data.data.content;hpg.total=r.data.data.totalElements;}}catch(e){ElementPlus.ElMessage.error('获取失败');}
+            finally{busy.hist=false;}
+        };
+
+        const refreshProc = async () => {
+            try{await axios.post('/api/models/refresh-tasks');const r=await axios.get('/api/models/processing');if(r.data.success){processing.value=r.data.data;stats.processing=r.data.data.length;}}catch(e){console.error(e);}
+        };
+
+        // 工具
+        const copy = async (t) => {
+            if(!t)return;
+            try{await navigator.clipboard.writeText(t);ElementPlus.ElMessage.success('🎉 复制成功！');}
+            catch(e){const ta=document.createElement('textarea');ta.value=t;document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);ElementPlus.ElMessage.success('🎉 复制成功！');}
+        };
+
+        const fmtDate=(d)=>d?new Date(d).toLocaleString('zh-CN'):'';
+        const taskType=(s)=>({CREATED:'info',PROCESSING:'warning',SUCCESS:'success',FAILED:'danger'}[s]||'info');
+        const taskLabel=(s)=>({CREATED:'已创建',PROCESSING:'生成中',SUCCESS:'已完成',FAILED:'失败'}[s]||s);
+        const mstatusType=(s)=>({DRAFT:'info',ACTIVE:'success',DISABLED:'warning'}[s]||'info');
+        const mstatusLabel=(s)=>({DRAFT:'草稿',ACTIVE:'已激活',DISABLED:'已停用'}[s]||s);
+
+        onMounted(()=>{
+            loadTypes();loadStats();
+            // 根据初始视图加载对应数据
+            if(view.value==='library') loadModels();
+            if(view.value==='history') loadHistory();
+            if(view.value==='batch') refreshProc();
+        });
+        onUnmounted(()=>stopPoll());
+
+        return {
+            view,step,drawer,detail,busy,form,batchCount,namePrefix,
+            generatedPrompt,batchTasks,lens,types,
+            models,search,pg,history,hpg,stats,processing,
+            go,goToList,typeIcon,genPrompt,createTasks,approve,approveAll,disableM,deleteM,retry,
+            loadModels,loadHistory,refreshProc,copy,fmtDate,taskType,taskLabel,mstatusType,mstatusLabel
+        };
+    }
+}).use(ElementPlus).mount('#app');
+</script>
+</body>
+</html>

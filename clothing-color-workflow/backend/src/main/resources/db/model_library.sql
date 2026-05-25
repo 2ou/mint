@@ -1,0 +1,26 @@
+-- 模特库表
+CREATE TABLE IF NOT EXISTS `model_library` (
+    `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+    `model_name` VARCHAR(100) NOT NULL COMMENT '模特名称/编号',
+    `model_type` VARCHAR(50) NOT NULL COMMENT '模特类型：High Fashion/Commercial/Curve/Athletic/Natural/Mature/Street/Romantic/Minimalist/Glamour',
+    `ethnicity` VARCHAR(50) COMMENT '族裔：Caucasian/African American/Latina/Asian American/Mixed',
+    `age_range` VARCHAR(20) COMMENT '年龄段：如 30-38',
+    `body_type` VARCHAR(200) COMMENT '体型描述',
+    `style_tags` VARCHAR(500) COMMENT '风格标签，逗号分隔',
+    `prompt_template` TEXT COMMENT '提示词模板',
+    `generated_prompt` TEXT COMMENT '生成的完整提示词',
+    `cover_image_url` VARCHAR(500) COMMENT '封面图 OSS 链接',
+    `sample_images` TEXT COMMENT '样本图 JSON 数组',
+    `status` VARCHAR(20) DEFAULT 'DRAFT' COMMENT '状态：DRAFT/ACTIVE/DISABLED',
+    `usage_count` INT DEFAULT 0 COMMENT '使用次数',
+    `task_id` VARCHAR(128) COMMENT 'KIE 任务 ID',
+    `task_status` VARCHAR(20) COMMENT '任务状态：CREATED/PROCESSING/SUCCESS/FAILED',
+    `result_url` VARCHAR(500) COMMENT '生成结果 URL',
+    `created_by` VARCHAR(50) COMMENT '创建人',
+    `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX `idx_type` (`model_type`),
+    INDEX `idx_status` (`status`),
+    INDEX `idx_task_status` (`task_status`),
+    INDEX `idx_tags` (`style_tags`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='模特库';

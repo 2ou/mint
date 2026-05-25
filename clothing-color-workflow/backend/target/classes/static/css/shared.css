@@ -1,0 +1,141 @@
+/* ===== AI 时尚视觉设计平台 - 共享布局样式 ===== */
+
+/* ---- 页面整体布局 ---- */
+.app-layout {
+    display: flex;
+    min-height: 100vh;
+    background: var(--app-bg-page);
+}
+
+.app-main {
+    flex: 1;
+    margin-left: 220px;  /* 侧边栏宽度 */
+    padding: 24px;
+    min-width: 0;
+}
+
+/* ---- 卡片容器 ---- */
+.app-card {
+    background: var(--app-bg-card);
+    border-radius: var(--app-radius-lg);
+    box-shadow: var(--app-shadow-card);
+    overflow: visible;
+    margin-bottom: 24px;
+}
+
+.app-card__header {
+    padding: 16px var(--app-space-xl);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--app-border-light);
+    font-size: 16px;
+    font-weight: 600;
+}
+
+/* 各模块卡片头部色调 */
+.app-card__header--module-color {
+    background: linear-gradient(90deg, rgba(30, 136, 229, 0.06), transparent);
+    border-left: 4px solid #1e88e5;
+}
+
+.app-card__header--module-scene {
+    background: linear-gradient(90deg, rgba(64, 158, 255, 0.06), transparent);
+    border-left: 4px solid #409EFF;
+}
+
+.app-card__header--module-video {
+    background: linear-gradient(90deg, rgba(156, 39, 176, 0.06), transparent);
+    border-left: 4px solid #9c27b0;
+}
+
+.app-card__header--module-manage {
+    background: linear-gradient(90deg, rgba(138, 43, 226, 0.06), transparent);
+    border-left: 4px solid #8a2be2;
+}
+
+.app-card__body {
+    padding: var(--app-space-xl);
+}
+
+/* ---- 区块标题 ---- */
+.app-section-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: #303133;
+    margin-bottom: 16px;
+    padding-left: 12px;
+    border-left: 3px solid var(--app-brand-primary);
+    line-height: 1.4;
+}
+
+/* ---- 上传区域 ---- */
+.app-upload-zone {
+    flex: 1;
+    border: 2px dashed #dcdfe6;
+    border-radius: var(--app-radius-md);
+    padding: 25px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.3s;
+    background: #fafafa;
+    color: #909399;
+}
+
+.app-upload-zone:hover {
+    border-color: var(--app-brand-primary);
+    color: var(--app-brand-primary);
+    background: #f0f7ff;
+}
+
+.app-upload-zone.is-dragover {
+    border-color: var(--app-brand-success);
+    background: #f0f9eb;
+    color: var(--app-brand-success);
+}
+
+/* ---- 空状态 ---- */
+.app-empty-state {
+    text-align: center;
+    padding: 48px 20px;
+    color: #909399;
+    background: #fafafa;
+    border-radius: var(--app-radius-md);
+    border: 2px dashed #e4e7ed;
+}
+
+/* ---- 提交按钮 ---- */
+.app-btn-submit {
+    width: 100%;
+    height: 48px;
+    font-size: 16px;
+    font-weight: 600;
+    margin-top: 20px;
+    border-radius: var(--app-radius-md);
+    letter-spacing: 1px;
+}
+
+/* ---- 筛选栏 ---- */
+.app-filter-bar {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+    align-items: center;
+    background: var(--app-bg-section);
+    padding: 12px 16px;
+    border-radius: var(--app-radius-md);
+}
+
+/* ---- 响应式 ---- */
+@media (max-width: 900px) {
+    .app-main {
+        margin-left: 0;
+        padding: 16px;
+    }
+
+    .app-card__header {
+        flex-direction: column;
+        gap: 12px;
+    }
+}

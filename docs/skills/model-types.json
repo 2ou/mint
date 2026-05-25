@@ -1,0 +1,198 @@
+{
+  "modelTypes": {
+    "High Fashion": {
+      "typeName": "High Fashion / Editorial",
+      "defaultAgeRange": "30-38",
+      "bodyDescription": "tall and extremely slender American woman, androgynous silhouette, prominent high cheekbones, sharp angular jawline",
+      "faceDescription": "deep-set eyes with slight hollow underneath, strong brow bone, narrow straight nose, thin lips, natural facial asymmetry",
+      "hairDescription": "wet look slicked back / messy short crop / sleek low ponytail, natural hair texture with flyaways",
+      "expressionDescription": "cool detached gaze slightly away from camera, no smile, editorial model presence, high fashion attitude",
+      "suitableClothing": "解构主义剪裁、oversized 西装、极简线条、高定礼服、实验性廓形、暗黑先锋、建筑感设计",
+      "notSuitableClothing": "甜美碎花、蕾丝花边、过度装饰、紧身性感、粉嫩色系",
+      "promptFragment": "tall and extremely slender American woman, androgynous silhouette, prominent high cheekbones, sharp angular jawline, deep-set eyes with slight hollow underneath, strong brow bone, narrow straight nose, thin lips, natural facial asymmetry, subtle early signs of maturity in expression, cool detached gaze slightly away from camera, no smile, editorial model presence, high fashion attitude",
+      "lensRecommendation": {
+        "focalLength": "85mm 或 135mm",
+        "aperture": "f/2.8 - f/4",
+        "lensType": "标准人像 / 变形宽银幕",
+        "camera": "Hasselblad"
+      }
+    },
+    "Commercial": {
+      "typeName": "Commercial / Catalog",
+      "defaultAgeRange": "30-40",
+      "bodyDescription": "healthy athletic-lean American build, subtle natural curves, visible collarbones",
+      "faceDescription": "naturally proportioned face with slight asymmetry, faint natural fine lines at eye corners, almond-shaped eyes with natural crease, straight natural nose, medium-full lips in natural tone",
+      "hairDescription": "natural loose waves / lazy low ponytail / beach waves, natural shine but not overly polished",
+      "expressionDescription": "warm genuine expression of lived confidence, relaxed knowing smile, effortless American elegance with life experience, approachable warmth",
+      "suitableClothing": "日常通勤装、牛仔裤、针织衫、连衣裙、休闲西装、基本款、轻奢品牌、运动休闲",
+      "notSuitableClothing": "过于前卫的解构设计、极端性感暴露、暗黑风格",
+      "promptFragment": "healthy athletic-lean American build, subtle natural curves, visible collarbones, naturally proportioned face with slight asymmetry, faint natural fine lines at eye corners, almond-shaped eyes with natural crease, straight natural nose, medium-full lips in natural tone, warm genuine expression of lived confidence, relaxed knowing smile, effortless American elegance with life experience, approachable warmth",
+      "lensRecommendation": {
+        "focalLength": "50mm 或 85mm",
+        "aperture": "f/2.8 - f/5.6",
+        "lensType": "标准人像",
+        "camera": "Canon EOS R5"
+      }
+    },
+    "Curve": {
+      "typeName": "Curve / Plus-Size",
+      "defaultAgeRange": "30-42",
+      "bodyDescription": "full-figured and curvaceous American woman, clearly defined hourglass silhouette, natural fullness in arms and thighs",
+      "faceDescription": "round face with defined jawline, bright confident eyes, full shapely lips",
+      "hairDescription": "voluminous curls / confident short hair / high ponytail, full and dynamic hair",
+      "expressionDescription": "powerful body-positive presence, direct confident gaze, radiant genuine smile, celebrating her curves naturally",
+      "suitableClothing": "裹身裙、弹力针织、高腰牛仔裤、V领设计、垂坠面料、印花长裙、bodysuit",
+      "notSuitableClothing": "过于紧窄的剪裁、横向条纹图案、oversized 但无腰线设计",
+      "promptFragment": "full-figured and curvaceous American woman, clearly defined hourglass silhouette, natural fullness in arms and thighs, round face with defined jawline, bright confident eyes, full shapely lips, powerful body-positive presence, direct confident gaze, radiant genuine smile, celebrating her curves naturally, confidence that comes with maturity",
+      "lensRecommendation": {
+        "focalLength": "50mm",
+        "aperture": "f/2.8 - f/4",
+        "lensType": "标准人像",
+        "camera": "Canon EOS R5"
+      }
+    },
+    "Athletic": {
+      "typeName": "Athletic / Fit",
+      "defaultAgeRange": "30-38",
+      "bodyDescription": "athletic toned American physique, defined shoulder and arm muscles, visible abdominal definition, strong lean legs",
+      "faceDescription": "prominent bone structure, sun-kissed skin tone, intense focused eyes, straight nose",
+      "hairDescription": "high ponytail / boxing braids / sleek short hair, hair tight to scalp for clean look",
+      "expressionDescription": "disciplined powerful presence, intense focused gaze, active lifestyle energy of a woman in her prime",
+      "suitableClothing": "运动内衣、leggings、骑行裤、运动套装、功能性外套、泳装、athleisure",
+      "notSuitableClothing": "过于柔美飘逸的面料、繁复层叠设计、紧身晚礼服",
+      "promptFragment": "athletic toned American physique, defined shoulder and arm muscles, visible abdominal definition, strong lean legs, broad shoulders with narrow waist, sun-kissed skin tone, prominent bone structure, intense focused gaze, disciplined powerful presence, high ponytail tight to scalp, active lifestyle energy of a woman in her prime",
+      "lensRecommendation": {
+        "focalLength": "35mm 或 50mm",
+        "aperture": "f/4 - f/8",
+        "lensType": "标准 / 鱼眼",
+        "camera": "Sony A7R"
+      }
+    },
+    "Natural": {
+      "typeName": "Natural / Organic",
+      "defaultAgeRange": "30-40",
+      "bodyDescription": "natural unretouched American body, soft unfitness look",
+      "faceDescription": "visible freckles across nose bridge and cheeks, subtle uneven skin tone, untrimmed natural eyebrows, slight lip dryness, fine lines at eye corners, tiny mole beside nose bridge",
+      "hairDescription": "slightly frizzy natural curls / messy bun / undone loose hair, natural flyaways visible",
+      "expressionDescription": "relaxed unposed presence, gentle unfocused gaze catching light, caught mid-laugh not studio smile, a woman comfortable in her own skin",
+      "suitableClothing": "棉麻天然面料、宽松衬衫、手工编织、素色亚麻裙、禅意风格、环保品牌、boho 风",
+      "notSuitableClothing": "亮片面料、紧身晚装、过于结构化剪裁、人造皮革",
+      "promptFragment": "natural unretouched American body, soft unfitness look, visible freckles across nose bridge and cheeks, subtle uneven skin tone, untrimmed natural eyebrows, slight lip dryness, fine lines at eye corners, tiny mole beside nose bridge, relaxed unposed presence, gentle unfocused gaze catching light, caught mid-laugh not studio smile, messy undone hair with natural flyaways, a woman comfortable in her own skin",
+      "lensRecommendation": {
+        "focalLength": "35mm",
+        "aperture": "f/2.8 - f/4",
+        "lensType": "徕卡风格",
+        "camera": "Leica"
+      }
+    },
+    "Mature": {
+      "typeName": "Mature / Sophisticated",
+      "defaultAgeRange": "40-55",
+      "bodyDescription": "gracefully aging American woman, elegant posture, visible natural smile lines around eyes",
+      "faceDescription": "subtle neck texture, skin with natural glow and visible texture, refined bone structure becoming more defined with age",
+      "hairDescription": "elegant low chignon / silver-gray natural hair / sleek bob, silver sheen in hair",
+      "expressionDescription": "deep knowing gaze, restrained sophisticated smile, wisdom in expression, timeless American elegance",
+      "suitableClothing": "精裁西装、羊绒大衣、真丝衬衫、珍珠配饰、极简奢华、质感优先的设计师品牌",
+      "notSuitableClothing": "过于少女的蝴蝶结装饰、荧光色系、街头潮流、超短裙",
+      "promptFragment": "gracefully aging American woman, elegant posture, visible natural smile lines around eyes, subtle neck texture, skin with natural glow and visible texture, refined bone structure becoming more defined with age, deep knowing gaze, restrained sophisticated smile, silver-gray natural hair color in elegant low chignon, timeless American elegance, wisdom in expression",
+      "lensRecommendation": {
+        "focalLength": "85mm",
+        "aperture": "f/2.8 - f/4",
+        "lensType": "标准人像",
+        "camera": "Fuji GFX"
+      }
+    },
+    "Street": {
+      "typeName": "Street Style / Edgy",
+      "defaultAgeRange": "30-38",
+      "bodyDescription": "slightly rebellious American attitude, not trying to please the camera",
+      "faceDescription": "visible small tooth gap, partly shaved eyebrow with bleached tint, subtle nose ring, edgy smoky eye makeup",
+      "hairDescription": "brightly dyed hair with grown-out roots / asymmetric cut / messy undercut, distressed texture in hair",
+      "expressionDescription": "defiant or completely ignoring gaze, urban American street presence, anti-mainstream coolness",
+      "suitableClothing": "oversized 卫衣、工装裤、解构牛仔、金属配件、涂鸦印花、叠穿混搭、vintage",
+      "notSuitableClothing": "甜美名媛风、蕾丝公主裙、商务正装、经典珍珠配饰",
+      "promptFragment": "slightly rebellious American attitude, not trying to please the camera, visible small tooth gap, partly shaved eyebrow with bleached tint, subtle nose ring, edgy smoky eye makeup, defiant or completely ignoring gaze, brightly dyed hair with grown-out roots visible, distressed texture in hair, urban American street presence, anti-mainstream coolness, mature edge without trying too hard",
+      "lensRecommendation": {
+        "focalLength": "35mm 或鱼眼",
+        "aperture": "f/4 - f/8",
+        "lensType": "鱼眼 / 变形宽银幕",
+        "camera": "Leica / Sony"
+      }
+    },
+    "Romantic": {
+      "typeName": "Romantic / Ethereal",
+      "defaultAgeRange": "30-38",
+      "bodyDescription": "soft feminine American silhouette, slender without sharp angles, gentle shoulder line, delicate wrists and ankles",
+      "faceDescription": "heart-shaped face with rounded contours, soft non-aggressive features, faint fine lines at corners adding gentle character, clear dreamy eyes",
+      "hairDescription": "loose romantic waves / half-up princess style / soft flowing hair, soft sheen in hair",
+      "expressionDescription": "gaze into distance, slightly parted lips, timeless ethereal elegance, ageless rather than youthful",
+      "suitableClothing": "蕾丝连衣裙、薄纱长裙、荷叶边、缎面吊带、花卉印花、褶皱设计、维多利亚风",
+      "notSuitableClothing": "硬朗西装、运动街头、暗黑风格、金属铆钉",
+      "promptFragment": "soft feminine American silhouette, slender without sharp angles, gentle shoulder line, delicate wrists and ankles, heart-shaped face with rounded contours, soft non-aggressive features, faint fine lines at corners adding gentle character, clear dreamy eyes gazing into distance, natural light lashes, slightly parted lips in natural rose tone, fair translucent skin with visible texture, loose romantic waves with soft sheen, timeless ethereal elegance, ageless rather than youthful",
+      "lensRecommendation": {
+        "focalLength": "85mm",
+        "aperture": "f/1.4 - f/2",
+        "lensType": "标准人像(大光圈)",
+        "camera": "Fuji GFX"
+      }
+    },
+    "Minimalist": {
+      "typeName": "Sophisticated Minimalist",
+      "defaultAgeRange": "32-42",
+      "bodyDescription": "clean sophisticated American silhouette, tall lean H-frame with subtle feminine curve, poised upright posture",
+      "faceDescription": "defined cheekbones and jaw softened at edges, narrow straight nose, naturally arched brows, subtle nasolabial lines adding character, clear-shaped lips",
+      "hairDescription": "sleek lob / clean low ponytail / natural straight medium-length hair, healthy natural sheen, no frizz",
+      "expressionDescription": "calm knowing gaze that occasionally drifts past the camera, faint assured smile barely touching the lips, effortless American urban confidence",
+      "suitableClothing": "精裁西装马甲、直筒阔腿裤、极简衬衫裙、羊绒针织、建筑感半裙、同色系叠穿、质感优先的基本款",
+      "notSuitableClothing": "过度甜美碎花、夸张荷叶边、荧光色系、大面积亮片、低俗暴露",
+      "promptFragment": "clean sophisticated American silhouette, tall lean H-frame with subtle feminine curve, poised upright posture, defined cheekbones and jaw softened at edges, narrow straight nose, naturally arched brows, subtle nasolabial lines adding character, clear-shaped lips, healthy neutral-to-cool skin tone, calm knowing gaze that occasionally drifts past the camera, faint assured smile barely touching the lips, sleek lob or clean blunt bob with healthy natural sheen, effortless American urban confidence, quality over quantity aesthetic, the polish of a woman who knows herself",
+      "lensRecommendation": {
+        "focalLength": "50mm 或 85mm",
+        "aperture": "f/4 - f/8",
+        "lensType": "标准人像",
+        "camera": "Hasselblad"
+      }
+    },
+    "Glamour": {
+      "typeName": "Glamour / Bombshell",
+      "defaultAgeRange": "30-42",
+      "bodyDescription": "hourglass American silhouette, full bust with defined waist-hip ratio, legs with natural curve and fullness",
+      "faceDescription": "full shapely lips in classic red, deep-set large eyes with subtle smokey shadow, high arched brows, heart-shaped face, warm olive skin tone",
+      "hairDescription": "voluminous old Hollywood waves / high volume blowout, silk sheen in hair",
+      "expressionDescription": "sultry half-lidded gaze, slightly parted red lips, classic American bombshell presence, the magnetism of a woman who owns her allure",
+      "suitableClothing": "裹身裙、深V晚装、缎面礼服、高开叉、紧身针织、皮草、红毯礼服",
+      "notSuitableClothing": "过于宽松无型、运动休闲、中性剪裁、暗黑风格",
+      "promptFragment": "hourglass American silhouette, full bust with defined waist-hip ratio, legs with natural curve and fullness, full shapely lips in classic red, deep-set large eyes with subtle smokey shadow, high arched brows, heart-shaped face, warm olive skin tone, sultry half-lidded gaze, slightly parted red lips, voluminous old Hollywood waves with silk sheen, classic American bombshell presence, the magnetism of a woman who owns her allure",
+      "lensRecommendation": {
+        "focalLength": "85mm",
+        "aperture": "f/2.8",
+        "lensType": "变形宽银幕",
+        "camera": "Hasselblad / Canon"
+      }
+    }
+  },
+  "ethnicityMap": {
+    "Caucasian": "Caucasian American woman",
+    "African American": "African American woman",
+    "Latina": "Latina American woman",
+    "Asian American": "Asian American woman",
+    "Mixed": "Mixed heritage American woman"
+  },
+  "fabricMap": {
+    "真丝": "liquid-like silk drape, elongated satin highlights along folds, subtle weave texture visible",
+    "丝绸": "liquid-like silk drape, elongated satin highlights along folds, subtle weave texture visible",
+    "亚麻": "matte linen surface, visible coarse fibers, natural crease lines, relaxed unstructured drape",
+    "纯棉": "soft cotton with slight weave pattern, natural matte finish, soft wrinkles at joints",
+    "棉": "soft cotton with slight weave pattern, natural matte finish, soft wrinkles at joints",
+    "羊毛": "dense wool texture, soft brushed surface, substantial structured drape, subtle fiber halo",
+    "羊绒": "dense wool texture, soft brushed surface, substantial structured drape, subtle fiber halo",
+    "薄纱": "sheer diaphanous chiffon, translucent edge softening, layered ethereal lightness",
+    "蕾丝": "delicate floral lace pattern, semi-transparent with skin showing through, intricate thread detail",
+    "皮革": "genuine matte leather with natural grain, subtle creasing at joints, not shiny patent",
+    "缎面": "satin with directional sheen, smooth surface catching light, deep rich color saturation",
+    "针织": "fine-gauge knit with visible stitch texture, body-skimming fit, soft ribbing detail",
+    "牛仔": "rigid raw denim with visible twill line, natural fading at stress points, structured hold",
+    "天鹅绒": "crushed velvet with directional pile, deep light-absorbing texture, subtle color shift"
+  },
+  "antiPlasticConstraints": "Avoid plastic skin, avoid over-retouching, avoid perfect symmetry, avoid exaggerated features, avoid网红style, avoid CG rendering look, avoid standard网红face, avoid plastic skin texture. Natural skin texture with visible pores, slight film grain, real camera quality."
+}

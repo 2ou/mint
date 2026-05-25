@@ -1,0 +1,407 @@
+{
+  "version": "1.0",
+  "description": "亚马逊女装场景图生成 - 场景库配置",
+  "styleGuide": {
+    "coreStyle": "American lifestyle, natural and authentic",
+    "mustEmphasize": [
+      "American lifestyle, natural and authentic",
+      "suburban home, modern apartment",
+      "California vibes, East Coast style",
+      "confident and empowering, body positive",
+      "realistic skin texture, no airbrushing"
+    ],
+    "forbiddenElements": [
+      "Chinese architecture, Chinese furniture, Chinese garden",
+      "Over-retouching, porcelain white skin",
+      "Influencer style, overly posed, stiff posture",
+      "Overly saturated colors, heavy filters"
+    ],
+    "colorPalette": {
+      "earthTones": "beige, tan, olive, rust, terracotta",
+      "neutrals": "white, cream, gray, navy, black",
+      "softPastels": "blush, sage, lavender, sky blue",
+      "warmMetallics": "gold, brass, copper"
+    }
+  },
+  "categories": [
+    {
+      "id": "home",
+      "name": "家庭场景",
+      "icon": "🏠",
+      "description": "美式家庭住宅，温馨舒适",
+      "scenes": [
+        {
+          "id": "living_room",
+          "name": "客厅",
+          "category": "home",
+          "atmosphere": "温馨、舒适、放松、美式家庭",
+          "lighting": "自然光从落地窗洒入，柔和温暖",
+          "props": "布艺沙发、抱枕、地毯、绿植、咖啡杯、壁炉",
+          "suitableClothing": "家居服、休闲装、针织衫、睡衣",
+          "clothingTypes": ["casual", "knitwear", "loungewear", "sweater"],
+          "promptTemplate": "American suburban home living room with soft natural light from large windows, woman relaxing on comfortable sectional sofa wearing {clothing_desc}, warm and inviting atmosphere, plush textures, fireplace in background, family photos on wall, peaceful morning mood, authentic American lifestyle, realistic and relatable",
+          "keywords": ["home", "cozy", "relaxed", "natural light", "fireplace"]
+        },
+        {
+          "id": "bedroom",
+          "name": "卧室",
+          "category": "home",
+          "atmosphere": "私密、舒适、浪漫、美式主卧",
+          "lighting": "柔和的晨光或黄昏光",
+          "props": "King-size床、地毯、窗帘、梳妆台、床头灯",
+          "suitableClothing": "睡衣、内衣、晨袍、家居服",
+          "clothingTypes": ["pajamas", "robe", "loungewear", "intimate"],
+          "promptTemplate": "American master bedroom with soft morning light filtering through curtains, woman sitting on king-size bed wearing {clothing_desc}, intimate and relaxed atmosphere, plush bedding and pillows, dresser mirror reflection, gentle and peaceful mood, authentic American home, natural and inviting",
+          "keywords": ["bedroom", "intimate", "morning light", "relaxed"]
+        },
+        {
+          "id": "walk_in_closet",
+          "name": "衣帽间",
+          "category": "home",
+          "atmosphere": "时尚、有序、奢华",
+          "lighting": "均匀的室内光，重点照明",
+          "props": "衣架、鞋架、包包、配饰",
+          "suitableClothing": "各类服装展示、搭配展示",
+          "clothingTypes": ["all"],
+          "promptTemplate": "Organized walk-in closet with elegant lighting, woman selecting outfit surrounded by neatly arranged clothes, fashion-forward atmosphere, mirror reflection, luxurious and stylish mood",
+          "keywords": ["closet", "organized", "fashion", "mirror"]
+        },
+        {
+          "id": "kitchen",
+          "name": "厨房",
+          "category": "home",
+          "atmosphere": "温馨、生活化、活力",
+          "lighting": "自然光从窗户洒入，暖色调",
+          "props": "大理石台面、厨具、鲜花、水果",
+          "suitableClothing": "家居服、休闲装、围裙搭配",
+          "clothingTypes": ["casual", "loungewear", "apron"],
+          "promptTemplate": "Bright modern kitchen with marble countertops and natural light, woman preparing food wearing {clothing_desc}, warm and inviting atmosphere, fresh flowers and fruit, lifestyle photography, authentic and relatable mood",
+          "keywords": ["kitchen", "bright", "lifestyle", "cooking"]
+        },
+        {
+          "id": "garden",
+          "name": "花园庭院",
+          "category": "home",
+          "atmosphere": "自然、浪漫、休闲",
+          "lighting": "自然光，斑驳树影",
+          "props": "花卉、藤椅、喷泉、石径",
+          "suitableClothing": "度假装、连衣裙、休闲装",
+          "clothingTypes": ["dress", "casual", "resort"],
+          "promptTemplate": "Beautiful garden courtyard with blooming flowers and stone path, woman enjoying sunshine wearing {clothing_desc}, romantic and natural atmosphere, dappled sunlight, peaceful and serene mood, outdoor lifestyle photography",
+          "keywords": ["garden", "flowers", "outdoor", "sunshine"]
+        }
+      ]
+    },
+    {
+      "id": "office",
+      "name": "办公场景",
+      "icon": "💼",
+      "description": "现代办公环境，专业自信",
+      "scenes": [
+        {
+          "id": "open_office",
+          "name": "开放式办公区",
+          "category": "office",
+          "atmosphere": "现代、专业、活力",
+          "lighting": "均匀的室内照明，自然光补充",
+          "props": "办公桌、电脑、绿植、文件",
+          "suitableClothing": "通勤装、商务休闲、衬衫、西装",
+          "clothingTypes": ["blazer", "shirt", "business", "commute"],
+          "promptTemplate": "Modern open-plan office with natural light, professional woman working at desk wearing {clothing_desc}, focused yet approachable expression, contemporary workspace, plants and minimal decor, productive atmosphere",
+          "keywords": ["office", "professional", "modern", "workspace"]
+        },
+        {
+          "id": "conference",
+          "name": "会议室",
+          "category": "office",
+          "atmosphere": "专业、正式、自信",
+          "lighting": "柔和的室内光，投影仪光",
+          "props": "会议桌、白板、笔记本电脑",
+          "suitableClothing": "商务正装、西装套装、衬衫",
+          "clothingTypes": ["suit", "blazer", "formal"],
+          "promptTemplate": "Professional meeting room with soft lighting, confident woman presenting at whiteboard wearing {clothing_desc}, authoritative yet approachable expression, modern conference room, professional and empowering atmosphere",
+          "keywords": ["meeting", "professional", "confident", "formal"]
+        },
+        {
+          "id": "lobby",
+          "name": "前台接待大堂",
+          "category": "office",
+          "atmosphere": "高端、专业、现代",
+          "lighting": "明亮的室内照明，自然光",
+          "props": "接待台、沙发、绿植、艺术品",
+          "suitableClothing": "商务正装、通勤装、西装",
+          "clothingTypes": ["suit", "business", "formal"],
+          "promptTemplate": "Sleek corporate lobby with modern design and high ceilings, professional woman standing confidently wearing {clothing_desc}, bright and sophisticated atmosphere, contemporary art and plants, executive and polished mood",
+          "keywords": ["lobby", "corporate", "sophisticated", "modern"]
+        }
+      ]
+    },
+    {
+      "id": "city",
+      "name": "城市场景",
+      "icon": "🏙️",
+      "description": "美式都市街头，时尚活力",
+      "scenes": [
+        {
+          "id": "nyc_street",
+          "name": "纽约街头",
+          "category": "city",
+          "atmosphere": "时尚、活力、纽约都市感",
+          "lighting": "自然光，城市光影，黄色出租车",
+          "props": "纽约建筑、人行道、咖啡杯、购物袋",
+          "suitableClothing": "街头时尚、休闲装、牛仔、外套",
+          "clothingTypes": ["streetwear", "denim", "jacket", "casual"],
+          "promptTemplate": "New York City street with classic brownstone buildings, stylish woman walking confidently wearing {clothing_desc}, urban NYC energy, natural movement, yellow taxi in background, fashion-forward and dynamic mood, Manhattan vibes",
+          "keywords": ["NYC", "street", "urban", "fashion", "dynamic"]
+        },
+        {
+          "id": "la_street",
+          "name": "洛杉矶街头",
+          "category": "city",
+          "atmosphere": "阳光、时尚、加州活力",
+          "lighting": "强烈的加州阳光，棕榈树影",
+          "props": "棕榈树、复古汽车、涂鸦墙",
+          "suitableClothing": "休闲装、运动风、波西米亚",
+          "clothingTypes": ["casual", "athletic", "bohemian"],
+          "promptTemplate": "Los Angeles street with palm trees and sunshine, stylish woman walking confidently wearing {clothing_desc}, sunny LA vibes, natural movement, palm tree shadows, laid-back and fashion-forward mood, West Coast style",
+          "keywords": ["LA", "California", "palm trees", "sunny", "casual"]
+        },
+        {
+          "id": "coffee_shop",
+          "name": "咖啡店",
+          "category": "city",
+          "atmosphere": "休闲、文艺、社交",
+          "lighting": "温暖的室内光，窗户自然光",
+          "props": "咖啡杯、书本、笔记本、绿植",
+          "suitableClothing": "休闲装、针织衫、连衣裙",
+          "clothingTypes": ["casual", "knitwear", "dress"],
+          "promptTemplate": "Cozy coffee shop with warm ambient lighting, woman enjoying coffee wearing {clothing_desc}, relaxed and artistic atmosphere, books and plants, soft background blur, intimate and inviting mood",
+          "keywords": ["coffee", "cozy", "artistic", "relaxed"]
+        },
+        {
+          "id": "restaurant",
+          "name": "餐厅",
+          "category": "city",
+          "atmosphere": "精致、浪漫、社交",
+          "lighting": "柔和的烛光，暖色调",
+          "props": "餐桌、餐具、酒杯、鲜花",
+          "suitableClothing": "晚装、小礼服、时尚休闲装",
+          "clothingTypes": ["evening", "cocktail", "elegant"],
+          "promptTemplate": "Upscale restaurant with elegant decor and soft candlelight, woman dining wearing {clothing_desc}, romantic and luxurious atmosphere, wine glasses and flowers, fine dining and glamorous mood",
+          "keywords": ["restaurant", "elegant", "romantic", "dining"]
+        },
+        {
+          "id": "bookstore",
+          "name": "书店",
+          "category": "city",
+          "atmosphere": "文艺、知性、安静",
+          "lighting": "温暖的室内光，阅读灯",
+          "props": "书架、书籍、阅读角、绿植",
+          "suitableClothing": "休闲装、针织衫、文艺风连衣裙",
+          "clothingTypes": ["casual", "knitwear", "dress"],
+          "promptTemplate": "Charming bookstore with warm lighting and floor-to-ceiling shelves, woman browsing books wearing {clothing_desc}, cozy and artistic atmosphere, books and reading nook, literary and refined mood",
+          "keywords": ["bookstore", "literary", "cozy", "intellectual"]
+        },
+        {
+          "id": "gym",
+          "name": "健身房",
+          "category": "city",
+          "atmosphere": "活力、健康、运动",
+          "lighting": "明亮的室内照明",
+          "props": "健身器材、瑜伽垫、镜子",
+          "suitableClothing": "运动装、瑜伽服、运动休闲装",
+          "clothingTypes": ["activewear", "yoga", "sportswear"],
+          "promptTemplate": "Modern fitness studio with natural light and mirrors, woman exercising wearing {clothing_desc}, energetic and healthy atmosphere, gym equipment, motivational and empowering mood",
+          "keywords": ["gym", "fitness", "active", "healthy"]
+        }
+      ]
+    },
+    {
+      "id": "outdoor",
+      "name": "户外场景",
+      "icon": "🌿",
+      "description": "美式自然风光，开阔大气",
+      "scenes": [
+        {
+          "id": "central_park",
+          "name": "中央公园",
+          "category": "outdoor",
+          "atmosphere": "自然、都市绿洲、纽约经典",
+          "lighting": "自然光，树荫，城市天际线",
+          "props": "长椅、湖泊、树木、慢跑者",
+          "suitableClothing": "休闲装、运动装、连衣裙",
+          "clothingTypes": ["casual", "athletic", "dress"],
+          "promptTemplate": "Central Park New York with dappled sunlight through trees, woman enjoying leisure time wearing {clothing_desc}, natural and refreshing atmosphere, NYC skyline in background, peaceful and relaxed mood, golden hour lighting, iconic American park",
+          "keywords": ["park", "nature", "NYC", "trees", "golden hour"]
+        },
+        {
+          "id": "california_beach",
+          "name": "加州海滩",
+          "category": "outdoor",
+          "atmosphere": "度假、浪漫、加州自由",
+          "lighting": "强烈的加州阳光，黄金时刻",
+          "props": "沙滩、海浪、冲浪板、棕榈树",
+          "suitableClothing": "泳装、度假装、波西米亚风",
+          "clothingTypes": ["swimwear", "resort", "bohemian"],
+          "promptTemplate": "California beach at golden hour, woman walking along shoreline wearing {clothing_desc}, romantic and carefree atmosphere, Pacific Ocean waves, warm sunset light, palm trees silhouette, dreamy and serene mood, SoCal vibes",
+          "keywords": ["beach", "California", "sunset", "ocean", "relaxed"]
+        },
+        {
+          "id": "resort",
+          "name": "度假村",
+          "category": "outdoor",
+          "atmosphere": "奢华、放松、享受",
+          "lighting": "柔和的自然光，热带光线",
+          "props": "泳池、躺椅、热带植物、鸡尾酒",
+          "suitableClothing": "度假装、泳装、晚装",
+          "clothingTypes": ["resort", "swimwear", "evening"],
+          "promptTemplate": "Luxurious resort setting with tropical plants and pool, woman relaxing on lounge chair wearing {clothing_desc}, indulgent and serene atmosphere, soft tropical light, cocktail in hand, vacation and luxury mood",
+          "keywords": ["resort", "luxury", "pool", "tropical", "vacation"]
+        },
+        {
+          "id": "countryside",
+          "name": "乡村田园",
+          "category": "outdoor",
+          "atmosphere": "质朴、自然、田园",
+          "lighting": "自然光，金色阳光",
+          "props": "木栅栏、花草、谷仓、田野",
+          "suitableClothing": "波西米亚风、棉麻装、碎花连衣裙",
+          "clothingTypes": ["bohemian", "linen", "floral_dress"],
+          "promptTemplate": "Rustic countryside with rolling hills and wooden fences, woman walking through wildflowers wearing {clothing_desc}, natural and pastoral atmosphere, golden sunlight, peaceful and authentic mood",
+          "keywords": ["countryside", "rustic", "nature", "pastoral"]
+        },
+        {
+          "id": "lavender_field",
+          "name": "薰衣草田",
+          "category": "outdoor",
+          "atmosphere": "浪漫、梦幻、法式",
+          "lighting": "黄金时刻，暖紫色调",
+          "props": "薰衣草花田、远处农庄、蓝天",
+          "suitableClothing": "连衣裙、度假装、波西米亚风",
+          "clothingTypes": ["dress", "resort", "bohemian"],
+          "promptTemplate": "Beautiful lavender field at golden hour with purple flowers stretching to horizon, woman walking through lavender wearing {clothing_desc}, romantic and dreamy atmosphere, warm purple and gold tones, French countryside and magical mood",
+          "keywords": ["lavender", "romantic", "golden hour", "purple", "dreamy"]
+        },
+        {
+          "id": "vineyard",
+          "name": "葡萄园",
+          "category": "outdoor",
+          "atmosphere": "优雅、丰收、田园",
+          "lighting": "午后阳光，金色调",
+          "props": "葡萄藤、酒庄、木桶、阳光",
+          "suitableClothing": "休闲装、度假装、连衣裙",
+          "clothingTypes": ["casual", "resort", "dress"],
+          "promptTemplate": "Picturesque vineyard with grapevines and rustic winery, woman strolling through vines wearing {clothing_desc}, warm afternoon light, golden and green tones, sophisticated and pastoral mood",
+          "keywords": ["vineyard", "wine", "elegant", "pastoral"]
+        },
+        {
+          "id": "mountain",
+          "name": "山区",
+          "category": "outdoor",
+          "atmosphere": "壮丽、清新、冒险",
+          "lighting": "高山光线，云层",
+          "props": "山峰、松林、木屋、小径",
+          "suitableClothing": "户外装、休闲装、针织衫",
+          "clothingTypes": ["outdoor", "casual", "knitwear"],
+          "promptTemplate": "Majestic mountain landscape with pine forests and clear sky, woman standing on scenic overlook wearing {clothing_desc}, fresh and adventurous atmosphere, mountain views, inspiring and serene mood",
+          "keywords": ["mountain", "nature", "adventure", "fresh"]
+        }
+      ]
+    },
+    {
+      "id": "special",
+      "name": "特殊场景",
+      "icon": "✨",
+      "description": "特殊场合，高端精致",
+      "scenes": [
+        {
+          "id": "wedding",
+          "name": "婚礼现场",
+          "category": "special",
+          "atmosphere": "浪漫、温馨、庄重",
+          "lighting": "柔和的自然光，暖色调",
+          "props": "鲜花拱门、白色椅子、丝带、蜡烛",
+          "suitableClothing": "礼服、伴娘装、优雅连衣裙",
+          "clothingTypes": ["formal", "bridesmaid", "elegant_dress"],
+          "promptTemplate": "Elegant wedding venue with floral arch and white chairs, woman attending ceremony wearing {clothing_desc}, romantic and heartfelt atmosphere, soft natural light, celebration and love mood",
+          "keywords": ["wedding", "elegant", "romantic", "ceremony"]
+        },
+        {
+          "id": "yacht",
+          "name": "游艇",
+          "category": "special",
+          "atmosphere": "奢华、自由、海洋",
+          "lighting": "强烈阳光，海面反射",
+          "props": "游艇甲板、大海、夕阳、香槟",
+          "suitableClothing": "度假装、泳装、白色连衣裙",
+          "clothingTypes": ["resort", "swimwear", "white_dress"],
+          "promptTemplate": "Luxury yacht on calm ocean waters at sunset, woman relaxing on deck wearing {clothing_desc}, glamorous and free atmosphere, golden sunset light, nautical and luxurious mood",
+          "keywords": ["yacht", "luxury", "ocean", "sunset", "glamorous"]
+        },
+        {
+          "id": "art_gallery",
+          "name": "美术馆",
+          "category": "special",
+          "atmosphere": "艺术、现代、文化",
+          "lighting": "均匀的展览灯光，白色空间",
+          "props": "艺术品、画作、雕塑",
+          "suitableClothing": "时尚装、设计师款式、简约风",
+          "clothingTypes": ["fashion", "designer", "minimalist"],
+          "promptTemplate": "Contemporary art gallery with white walls and exhibition lighting, woman admiring artwork wearing {clothing_desc}, artistic and intellectual atmosphere, modern sculptures and paintings, cultured and sophisticated mood",
+          "keywords": ["gallery", "art", "modern", "sophisticated"]
+        },
+        {
+          "id": "cocktail_bar",
+          "name": "酒吧",
+          "category": "special",
+          "atmosphere": "时尚、夜生活、放松",
+          "lighting": "霓虹灯、调酒灯光、暗色调",
+          "props": "吧台、酒杯、灯光装置",
+          "suitableClothing": "派对装、时尚晚装、小黑裙",
+          "clothingTypes": ["party", "evening", "cocktail"],
+          "promptTemplate": "Stylish cocktail bar with ambient lighting and modern decor, woman enjoying evening drink wearing {clothing_desc}, sophisticated nightlife atmosphere, neon accents and cocktails, glamorous and social mood",
+          "keywords": ["bar", "nightlife", "cocktail", "glamorous"]
+        }
+      ]
+    }
+  ],
+  "clothingTypeMapping": {
+    "blazer": ["office", "city"],
+    "suit": ["office"],
+    "dress": ["outdoor", "city", "special"],
+    "casual": ["home", "city", "outdoor"],
+    "knitwear": ["home", "city"],
+    "activewear": ["city", "outdoor"],
+    "swimwear": ["outdoor", "special"],
+    "evening": ["city", "special"],
+    "resort": ["outdoor", "special"],
+    "bohemian": ["outdoor", "city"],
+    "streetwear": ["city"],
+    "loungewear": ["home"],
+    "pajamas": ["home"],
+    "formal": ["office", "special"]
+  },
+  "atmosphereKeywords": {
+    "lighting": [
+      {"id": "natural_light", "name": "自然光", "en": "Natural light", "desc": "真实、亲切、柔和"},
+      {"id": "golden_hour", "name": "黄金时刻", "en": "Golden hour", "desc": "温暖、浪漫、高端"},
+      {"id": "soft_diffused", "name": "柔和漫射光", "en": "Soft diffused light", "desc": "均匀、舒适、无阴影"},
+      {"id": "dramatic", "name": "戏剧性光线", "en": "Dramatic lighting", "desc": "强烈对比、艺术感、时尚"},
+      {"id": "backlight", "name": "逆光", "en": "Backlight", "desc": "轮廓光、梦幻、浪漫"}
+    ],
+    "space": [
+      {"id": "minimalist", "name": "极简", "en": "Minimalist", "desc": "干净、现代、高级"},
+      {"id": "cozy", "name": "温馨", "en": "Cozy", "desc": "舒适、亲切、放松"},
+      {"id": "urban", "name": "都市", "en": "Urban", "desc": "时尚、活力、现代"},
+      {"id": "rustic", "name": "乡村", "en": "Rustic", "desc": "自然、质朴、温馨"},
+      {"id": "luxurious", "name": "奢华", "en": "Luxurious", "desc": "高端、精致、品质"}
+    ],
+    "emotion": [
+      {"id": "confident", "name": "自信", "en": "Confident", "desc": "力量、专业、有魅力"},
+      {"id": "relaxed", "name": "放松", "en": "Relaxed", "desc": "舒适、自然、无压力"},
+      {"id": "romantic", "name": "浪漫", "en": "Romantic", "desc": "温柔、梦幻、有情感"},
+      {"id": "playful", "name": "俏皮", "en": "Playful", "desc": "活力、有趣、年轻"},
+      {"id": "elegant", "name": "优雅", "en": "Elegant", "desc": "高贵、精致、有品位"}
+    ]
+  }
+}
