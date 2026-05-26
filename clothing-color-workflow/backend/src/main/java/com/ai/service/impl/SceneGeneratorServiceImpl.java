@@ -16,14 +16,17 @@ import com.ai.config.AppProperties;
 import lombok.RequiredArgsConstructor;
 
 import jakarta.annotation.PostConstruct;
-import java.io.*;
-import java.nio.file.*;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
 
 /**
  * 场景生成服务实现
+ * 场景由 AI 文本模型自由生成，场景库 (skill) 作为提示词辅助知识
  */
 @Service
 @RequiredArgsConstructor
@@ -33,9 +36,23 @@ public class SceneGeneratorServiceImpl implements SceneGeneratorService {
     private final AppProperties appProperties;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    private Map<String, Object> config = new LinkedHashMap<>();
-    private List<Map<String, Object>> categories = new ArrayList<>();
-    private Map<String, Map<String, Object>> sceneMap = new LinkedHashMap<>();
+    /**
+     * 场景库辅助知识（线程安全 Holder）
+     * 用于增强提示词质量，不用于场景匹配/推荐
+     */
+    private static class SkillKnowledge {
+        final Map<String, Object> styleGuide;
+        final List<String> promptTemplates;
+        final Map<String, Object> atmosphereKeywords;
+
+        SkillKnowledge(Map<String, Object> styleGuide, List<String> promptTemplates, Map<String, Object> atmosphereKeywords) {
+            this.styleGuide = styleGuide != null ? styleGuide : new LinkedHashMap<>();
+            this.promptTemplates = promptTemplates != null ? promptTemplates : new ArrayList<>();
+            this.atmosphereKeywords = atmosphereKeywords != null ? atmosphereKeywords : new LinkedHashMap<>();
+        }
+    }
+
+    private volatile SkillKnowledge skillKnowledge = new SkillKnowledge(null, null, null);
 
     private final OkHttpClient httpClient = new OkHttpClient.Builder()
             .connectTimeout(60, TimeUnit.SECONDS)
@@ -46,14 +63,19 @@ public class SceneGeneratorServiceImpl implements SceneGeneratorService {
     private static final String CLAUDE_API_URL = "https://api.kie.ai/claude/v1/messages";
     private static final String GPT_API_URL = "https://api.kie.ai/codex/v1/responses";
 
+    /**
+     * 启动时加载场景库 skill
+     */
     @PostConstruct
     public void init() {
-        reloadConfig();
+        loadSkillKnowledge();
     }
 
-    @Override
+    /**
+     * 加载场景库辅助知识（styleGuide + promptTemplates + atmosphereKeywords）
+     */
     @SuppressWarnings("unchecked")
-    public void reloadConfig() {
+    private void loadSkillKnowledge() {
         try {
             InputStream is = null;
 
@@ -62,7 +84,7 @@ public class SceneGeneratorServiceImpl implements SceneGeneratorService {
             Path filePath = Paths.get(configPath);
             if (Files.exists(filePath)) {
                 is = Files.newInputStream(filePath);
-                log.info("从文件系统加载场景库配置: {}", filePath.toAbsolutePath());
+                log.info("从文件系统加载场景库 skill: {}", filePath.toAbsolutePath());
             }
 
             // 2. 尝试从 classpath 加载
@@ -70,48 +92,59 @@ public class SceneGeneratorServiceImpl implements SceneGeneratorService {
                 ClassPathResource resource = new ClassPathResource("skills/scene-library.json");
                 if (resource.exists()) {
                     is = resource.getInputStream();
-                    log.info("从 classpath 加载场景库配置");
+                    log.info("从 classpath 加载场景库 skill");
                 }
             }
 
-            if (is != null) {
-                config = objectMapper.readValue(is, new TypeReference<Map<String, Object>>() {});
-                is.close();
-            } else {
-                log.warn("未找到场景库配置文件，使用空配置");
-                config = new LinkedHashMap<>();
+            if (is == null) {
+                log.warn("未找到场景库配置文件，提示词生成将不包含 skill 辅助知识");
                 return;
             }
 
-            // 解析分类和场景
-            categories = new ArrayList<>();
-            sceneMap = new LinkedHashMap<>();
+            Map<String, Object> config = objectMapper.readValue(is, new TypeReference<Map<String, Object>>() {});
+            is.close();
 
-            List<Map<String, Object>> cats = (List<Map<String, Object>>) config.get("categories");
-            if (cats != null) {
-                for (Map<String, Object> cat : cats) {
-                    Map<String, Object> catInfo = new LinkedHashMap<>();
-                    catInfo.put("id", cat.get("id"));
-                    catInfo.put("name", cat.get("name"));
-                    catInfo.put("icon", cat.get("icon"));
-                    catInfo.put("description", cat.get("description"));
-                    categories.add(catInfo);
+            // 提取 styleGuide
+            Map<String, Object> styleGuide = (Map<String, Object>) config.get("styleGuide");
 
+            // 提取所有场景的 promptTemplate 作为参考
+            List<String> templates = new ArrayList<>();
+            List<Map<String, Object>> categories = (List<Map<String, Object>>) config.get("categories");
+            if (categories != null) {
+                for (Map<String, Object> cat : categories) {
                     List<Map<String, Object>> scenes = (List<Map<String, Object>>) cat.get("scenes");
                     if (scenes != null) {
                         for (Map<String, Object> scene : scenes) {
-                            scene.put("category", cat.get("id"));
-                            sceneMap.put((String) scene.get("id"), scene);
+                            Object tpl = scene.get("promptTemplate");
+                            if (tpl != null) {
+                                templates.add(tpl.toString());
+                            }
                         }
                     }
                 }
             }
 
-            log.info("场景库配置加载成功：{} 个分类，{} 个场景", categories.size(), sceneMap.size());
+            // 提取 atmosphereKeywords
+            Map<String, Object> atmosphereKeywords = (Map<String, Object>) config.get("atmosphereKeywords");
+
+            // 一次性原子替换
+            this.skillKnowledge = new SkillKnowledge(styleGuide, templates, atmosphereKeywords);
+
+            log.info("场景库 skill 加载成功：styleGuide={}, promptTemplates={}, atmosphereKeys={}",
+                    styleGuide != null ? "已加载" : "无",
+                    templates.size(),
+                    atmosphereKeywords != null ? atmosphereKeywords.keySet() : "无");
 
         } catch (Exception e) {
-            log.error("加载场景库配置失败: {}", e.getMessage(), e);
+            log.error("加载场景库 skill 失败: {}", e.getMessage(), e);
         }
+    }
+
+    /**
+     * 重新加载场景库 skill
+     */
+    public void reloadSkillKnowledge() {
+        loadSkillKnowledge();
     }
 
     @Override
@@ -126,7 +159,7 @@ public class SceneGeneratorServiceImpl implements SceneGeneratorService {
         }
 
         String systemPrompt = buildRecommendSystemPrompt();
-        String userPrompt = "服装描述：" + clothingDesc + "\n\n请从场景库中推荐 " + count + " 个最适合的场景，并为每个场景生成1条完整的英文场景图提示词（放在prompts数组中）。\n\n直接返回JSON对象，不要任何其他文字。";
+        String userPrompt = "服装描述：" + clothingDesc + "\n\n请推荐 " + count + " 个最适合该服装的拍摄场景，并为每个场景生成1条完整的英文场景图提示词（放在prompts数组中）。\n\n直接返回JSON对象，不要任何其他文字。";
 
         try {
             if ("claude".equalsIgnoreCase(textModel)) {
@@ -145,11 +178,14 @@ public class SceneGeneratorServiceImpl implements SceneGeneratorService {
     }
 
     @Override
-    public String generatePrompt(String sceneId, String customScene, String clothingDesc, int count, String textModel) {
+    public String generatePrompt(String sceneDesc, String clothingDesc, int count, String textModel) {
         if (count < 1) count = 1;
         if (count > 10) count = 10;
         if (clothingDesc == null || clothingDesc.trim().isEmpty()) {
             clothingDesc = "fashion clothing";
+        }
+        if (sceneDesc == null || sceneDesc.trim().isEmpty()) {
+            throw new BusinessException("请提供场景描述");
         }
         if (textModel == null || textModel.isEmpty()) {
             textModel = "claude";
@@ -158,25 +194,7 @@ public class SceneGeneratorServiceImpl implements SceneGeneratorService {
         String systemPrompt = buildGenerateSystemPrompt();
 
         StringBuilder userPb = new StringBuilder();
-
-        // 判断是场景库场景还是自定义场景
-        if (customScene != null && !customScene.trim().isEmpty()) {
-            userPb.append("## 场景描述\n").append(customScene).append("\n\n");
-        } else if (sceneId != null && !sceneId.isEmpty()) {
-            Map<String, Object> scene = sceneMap.get(sceneId);
-            if (scene == null) {
-                throw new BusinessException("未找到场景: " + sceneId);
-            }
-            userPb.append("## 选中的场景\n");
-            userPb.append("- 场景名称：").append(scene.get("name")).append("\n");
-            userPb.append("- 场景描述：").append(scene.get("atmosphere")).append("\n");
-            userPb.append("- 光线：").append(scene.get("lighting")).append("\n");
-            userPb.append("- 道具：").append(scene.get("props")).append("\n");
-            userPb.append("- 提示词模板：").append(scene.get("promptTemplate")).append("\n\n");
-        } else {
-            throw new BusinessException("请提供场景ID或自定义场景描述");
-        }
-
+        userPb.append("## 场景描述\n").append(sceneDesc).append("\n\n");
         userPb.append("## 服装描述\n").append(clothingDesc).append("\n\n");
 
         if (count > 1) {
@@ -207,46 +225,75 @@ public class SceneGeneratorServiceImpl implements SceneGeneratorService {
     // ========== 私有方法 ==========
 
     /**
-     * 构建推荐场景的系统提示词
+     * 构建推荐场景的系统提示词（场景由 AI 自由创意生成，skill 辅助提升质量）
      */
     @SuppressWarnings("unchecked")
     private String buildRecommendSystemPrompt() {
+        SkillKnowledge skill = this.skillKnowledge;
         StringBuilder sb = new StringBuilder();
 
         sb.append("You are an expert fashion e-commerce scene advisor for Amazon US market.\n\n");
-        sb.append("Your task: Based on the clothing description, recommend the 3-5 BEST scenes from the scene library below.\n\n");
+        sb.append("Your task: Based on the clothing description, recommend 3-5 BEST shooting scenes. You should creatively generate scenes that best showcase the clothing, considering location, lighting, atmosphere, props, and model poses.\n\n");
 
-        // 注入风格指南
-        Map<String, Object> styleGuide = (Map<String, Object>) config.get("styleGuide");
-        if (styleGuide != null) {
-            sb.append("## Style Guide\n");
-            sb.append("- Core style: ").append(styleGuide.get("coreStyle")).append("\n");
-            List<String> mustEmphasize = (List<String>) styleGuide.get("mustEmphasize");
-            if (mustEmphasize != null) {
+        // 注入 skill: styleGuide
+        if (skill.styleGuide != null && !skill.styleGuide.isEmpty()) {
+            sb.append("## Style Guide (from professional skill library)\n");
+
+            Object coreStyle = skill.styleGuide.get("coreStyle");
+            if (coreStyle != null) {
+                sb.append("- Core style: ").append(coreStyle).append("\n");
+            }
+
+            List<String> mustEmphasize = (List<String>) skill.styleGuide.get("mustEmphasize");
+            if (mustEmphasize != null && !mustEmphasize.isEmpty()) {
                 sb.append("- Must emphasize: ").append(String.join(", ", mustEmphasize)).append("\n");
             }
-            List<String> forbidden = (List<String>) styleGuide.get("forbiddenElements");
-            if (forbidden != null) {
-                sb.append("- Forbidden: ").append(String.join(", ", forbidden)).append("\n");
+
+            List<String> forbiddenElements = (List<String>) skill.styleGuide.get("forbiddenElements");
+            if (forbiddenElements != null && !forbiddenElements.isEmpty()) {
+                sb.append("- Forbidden elements: ").append(String.join(", ", forbiddenElements)).append("\n");
+            }
+
+            Map<String, String> colorPalette = (Map<String, String>) skill.styleGuide.get("colorPalette");
+            if (colorPalette != null && !colorPalette.isEmpty()) {
+                sb.append("- Color palette: ");
+                List<String> palettes = new ArrayList<>();
+                colorPalette.forEach((k, v) -> palettes.add(k + " (" + v + ")"));
+                sb.append(String.join("; ", palettes)).append("\n");
             }
             sb.append("\n");
         }
 
-        // 注入完整场景库
-        sb.append("## Scene Library\n\n");
-        for (Map<String, Object> cat : categories) {
-            sb.append("### ").append(cat.get("icon")).append(" ").append(cat.get("name")).append("\n");
-            String catId = (String) cat.get("id");
-            for (Map<String, Object> scene : sceneMap.values()) {
-                if (catId.equals(scene.get("category"))) {
-                    sb.append("- **").append(scene.get("name")).append("** (ID: ").append(scene.get("id")).append(")\n");
-                    sb.append("  氛围: ").append(scene.get("atmosphere")).append("\n");
-                    sb.append("  光线: ").append(scene.get("lighting")).append("\n");
-                    sb.append("  道具: ").append(scene.get("props")).append("\n");
-                    sb.append("  适用服装: ").append(scene.get("suitableClothing")).append("\n\n");
+        // 注入 skill: atmosphereKeywords（精选参考）
+        if (skill.atmosphereKeywords != null && !skill.atmosphereKeywords.isEmpty()) {
+            sb.append("## Atmosphere Reference Keywords\n");
+            skill.atmosphereKeywords.forEach((category, items) -> {
+                sb.append("- ").append(category).append(": ");
+                if (items instanceof List) {
+                    List<Map<String, String>> kwList = (List<Map<String, String>>) items;
+                    List<String> enNames = new ArrayList<>();
+                    for (Map<String, String> kw : kwList) {
+                        enNames.add(kw.get("en"));
+                    }
+                    sb.append(String.join(", ", enNames));
                 }
-            }
+                sb.append("\n");
+            });
+            sb.append("\n");
         }
+
+        // 注入 skill: promptTemplate 示例（精选 5 个）
+        if (skill.promptTemplates != null && !skill.promptTemplates.isEmpty()) {
+            sb.append("## Prompt Template Examples (reference only, be creative)\n");
+            int sampleCount = Math.min(5, skill.promptTemplates.size());
+            for (int i = 0; i < sampleCount; i++) {
+                sb.append(i + 1).append(". ").append(skill.promptTemplates.get(i)).append("\n");
+            }
+            sb.append("\n");
+        }
+
+        sb.append("## Anti-Plastic Constraints (always include)\n");
+        sb.append("Natural skin texture, visible pores, realistic lighting, no airbrushing, authentic feel\n\n");
 
         // 输出格式要求
         sb.append("## Output Format (CRITICAL: return EXACTLY this JSON structure)\n");
@@ -280,21 +327,72 @@ public class SceneGeneratorServiceImpl implements SceneGeneratorService {
     }
 
     /**
-     * 构建生成提示词的系统提示词
+     * 构建生成提示词的系统提示词（skill 辅助提升提示词质量）
      */
+    @SuppressWarnings("unchecked")
     private String buildGenerateSystemPrompt() {
+        SkillKnowledge skill = this.skillKnowledge;
         StringBuilder sb = new StringBuilder();
 
         sb.append("You are an expert AI fashion photographer prompt engineer specializing in Amazon product scene images.\n\n");
         sb.append("Your task: Generate a professional, detailed English prompt for AI image generation to create a scene photo.\n\n");
 
-        // 风格指南
-        sb.append("## Core Style Requirements\n");
-        sb.append("- ALL prompts MUST be American style, targeting US market\n");
-        sb.append("- American lifestyle, natural and authentic\n");
-        sb.append("- Avoid Chinese elements, over-retouching, influencer style\n");
-        sb.append("- Include: American lifestyle, natural and authentic, confident and empowering\n");
-        sb.append("- Include: realistic skin texture, no airbrushing\n\n");
+        // 注入 skill: styleGuide
+        if (skill.styleGuide != null && !skill.styleGuide.isEmpty()) {
+            sb.append("## Style Guide (from professional skill library)\n");
+
+            Object coreStyle = skill.styleGuide.get("coreStyle");
+            if (coreStyle != null) {
+                sb.append("- Core style: ").append(coreStyle).append("\n");
+            }
+
+            List<String> mustEmphasize = (List<String>) skill.styleGuide.get("mustEmphasize");
+            if (mustEmphasize != null && !mustEmphasize.isEmpty()) {
+                sb.append("- Must emphasize: ").append(String.join(", ", mustEmphasize)).append("\n");
+            }
+
+            List<String> forbiddenElements = (List<String>) skill.styleGuide.get("forbiddenElements");
+            if (forbiddenElements != null && !forbiddenElements.isEmpty()) {
+                sb.append("- Forbidden elements: ").append(String.join(", ", forbiddenElements)).append("\n");
+            }
+
+            Map<String, String> colorPalette = (Map<String, String>) skill.styleGuide.get("colorPalette");
+            if (colorPalette != null && !colorPalette.isEmpty()) {
+                sb.append("- Color palette: ");
+                List<String> palettes = new ArrayList<>();
+                colorPalette.forEach((k, v) -> palettes.add(k + " (" + v + ")"));
+                sb.append(String.join("; ", palettes)).append("\n");
+            }
+            sb.append("\n");
+        }
+
+        // 注入 skill: promptTemplate 示例（精选 5 个作为结构参考）
+        if (skill.promptTemplates != null && !skill.promptTemplates.isEmpty()) {
+            sb.append("## Prompt Template Examples (reference structure, adapt to the specific scene)\n");
+            int sampleCount = Math.min(5, skill.promptTemplates.size());
+            for (int i = 0; i < sampleCount; i++) {
+                sb.append(i + 1).append(". ").append(skill.promptTemplates.get(i)).append("\n");
+            }
+            sb.append("\n");
+        }
+
+        // 注入 skill: atmosphereKeywords
+        if (skill.atmosphereKeywords != null && !skill.atmosphereKeywords.isEmpty()) {
+            sb.append("## Atmosphere Keywords (use to enhance prompt quality)\n");
+            skill.atmosphereKeywords.forEach((category, items) -> {
+                sb.append("- ").append(category).append(": ");
+                if (items instanceof List) {
+                    List<Map<String, String>> kwList = (List<Map<String, String>>) items;
+                    List<String> enNames = new ArrayList<>();
+                    for (Map<String, String> kw : kwList) {
+                        enNames.add(kw.get("en"));
+                    }
+                    sb.append(String.join(", ", enNames));
+                }
+                sb.append("\n");
+            });
+            sb.append("\n");
+        }
 
         // 提示词结构
         sb.append("## Prompt Structure\n");
@@ -389,6 +487,7 @@ public class SceneGeneratorServiceImpl implements SceneGeneratorService {
                 return root.get("text").asText().trim();
             }
 
+            log.warn("Claude API 响应无法解析：content 数组和 text 字段均未找到。响应: {}", responseBody.substring(0, Math.min(500, responseBody.length())));
             throw new RuntimeException("无法解析 Claude 响应");
         }
     }
@@ -399,7 +498,7 @@ public class SceneGeneratorServiceImpl implements SceneGeneratorService {
     private String callGpt(String systemPrompt, String userPrompt) throws IOException {
         ObjectMapper om = objectMapper;
         ObjectNode rootNode = om.createObjectNode();
-        rootNode.put("model", "gpt-5-5");
+        rootNode.put("model", "gpt-5-5");  // kie.ai 模型别名，请确认是否正确
         rootNode.put("stream", false);
 
         ObjectNode reasoning = om.createObjectNode();

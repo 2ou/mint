@@ -1,11 +1,8 @@
 package com.ai.service;
 
-import java.util.List;
-import java.util.Map;
-
 /**
  * 场景生成服务
- * 基于场景库配置，调用文本模型推荐场景并生成提示词
+ * 场景由 AI 文本模型生成，场景库 skill 辅助提升提示词质量
  */
 public interface SceneGeneratorService {
 
@@ -19,18 +16,17 @@ public interface SceneGeneratorService {
     String recommendScenes(String clothingDesc, int count, String textModel);
 
     /**
-     * 生成场景提示词（支持场景库ID或自定义场景描述）
-     * @param sceneId 场景 ID（与 customScene 二选一）
-     * @param customScene 自定义场景描述（与 sceneId 二选一）
+     * 根据场景描述生成场景提示词
+     * @param sceneDesc 场景描述（AI推荐场景的description或用户自定义输入）
      * @param clothingDesc 服装描述
      * @param count 生成提示词数量
      * @param textModel 使用的文本模型: claude / gpt
-     * @return 生成的提示词（多条用换行分隔）
+     * @return 生成的提示词 JSON
      */
-    String generatePrompt(String sceneId, String customScene, String clothingDesc, int count, String textModel);
+    String generatePrompt(String sceneDesc, String clothingDesc, int count, String textModel);
 
     /**
-     * 热更新场景库配置
+     * 重新加载场景库 skill 辅助知识
      */
-    void reloadConfig();
+    void reloadSkillKnowledge();
 }

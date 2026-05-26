@@ -161,8 +161,18 @@
         .result-item img { width: 100%; aspect-ratio: 1; object-fit: cover; background: #fafafa; }
         .result-item .ri-footer {
             padding: 10px 14px; font-size: 12px; color: #909399;
-            display: flex; justify-content: space-between; align-items: center;
+            display: flex; flex-direction: column; gap: 8px;
             border-top: 1px solid #f5f5f5;
+        }
+        .result-item .ri-footer .ri-status-row {
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .result-item .ri-footer .ri-action-row {
+            padding-top: 6px; border-top: 1px solid #f5f5f5;
+            display: flex; justify-content: center;
+        }
+        .result-item .ri-footer .ri-action-row .el-button {
+            width: 100%;
         }
 
         /* ---- Action bar ---- */
@@ -177,6 +187,9 @@
         /* ---- Override body for this page only ---- */
         .app-card { margin-bottom: 0; }
         .el-message { z-index: 99999 !important; top: 80px !important; }
+
+        /* ---- Responsive: allow two-row config ---- */
+        .config-row + .config-row { margin-top: 12px; }
     </style>
 </head>
 <body>
@@ -186,8 +199,8 @@
             <div class="app-card">
                 <div class="app-card__header app-card__header--module-scene">
                     <div>
-                        <span style="font-size: 18px; font-weight: bold;">✨ Scene Studio</span>
-                        <span style="margin-left: 12px; font-size: 13px; color: #909399;">AI 驱动场景生成 · Amazon US Market</span>
+                        <span style="font-size: 18px; font-weight: bold;">✨ 场景工作室</span>
+                        <span style="margin-left: 12px; font-size: 13px; color: #909399;">AI 驱动场景生成 · 美亚市场</span>
                     </div>
                     <el-button @click="goToList" size="small" style="font-weight: 600;">📊 任务大盘 →</el-button>
                 </div>
@@ -212,13 +225,25 @@
                     <div v-if="step <= 2">
                         <div class="app-section-title">全局配置</div>
                         <el-form label-width="90px" style="padding: 0 10px; margin-bottom: 8px;">
-                            <el-row :gutter="20">
-                                <el-col :span="5">
+                            <!-- 第一行：SPU / 文本模型 -->
+                            <el-row :gutter="20" class="config-row">
+                                <el-col :span="12">
                                     <el-form-item label="SPU 款号" required>
                                         <el-input v-model="spu" size="small" placeholder="输入款号"/>
                                     </el-form-item>
                                 </el-col>
-                                <el-col :span="5">
+                                <el-col :span="12">
+                                    <el-form-item label="文本模型">
+                                        <el-select v-model="textModel" size="small" style="width: 100%;">
+                                            <el-option label="Claude" value="claude"></el-option>
+                                            <el-option label="GPT" value="gpt"></el-option>
+                                        </el-select>
+                                    </el-form-item>
+                                </el-col>
+                            </el-row>
+                            <!-- 第二行：生图模型 / 分辨率 / 画面比例 -->
+                            <el-row :gutter="20" class="config-row">
+                                <el-col :span="8">
                                     <el-form-item label="生图模型">
                                         <el-select v-model="genModel" size="small" style="width: 100%;">
                                             <el-option label="🍌 nano-banana-pro" value="nano-banana-pro"></el-option>
@@ -226,7 +251,7 @@
                                         </el-select>
                                     </el-form-item>
                                 </el-col>
-                                <el-col :span="4">
+                                <el-col :span="8">
                                     <el-form-item label="分辨率">
                                         <el-select v-model="genResolution" size="small" style="width: 100%;">
                                             <el-option label="1K" value="1K"></el-option>
@@ -235,7 +260,7 @@
                                         </el-select>
                                     </el-form-item>
                                 </el-col>
-                                <el-col :span="5">
+                                <el-col :span="8">
                                     <el-form-item label="画面比例">
                                         <el-select v-model="genAspectRatio" size="small" style="width: 100%;">
                                             <el-option label="⬛ 1:1 (正方形)" value="1:1"></el-option>
@@ -244,14 +269,6 @@
                                             <el-option label="📺 4:3 (经典)" value="4:3"></el-option>
                                             <el-option label="🖼️ 3:4 (肖像)" value="3:4"></el-option>
                                             <el-option label="✨ Auto (自动)" value="auto"></el-option>
-                                        </el-select>
-                                    </el-form-item>
-                                </el-col>
-                                <el-col :span="5">
-                                    <el-form-item label="文本模型">
-                                        <el-select v-model="textModel" size="small" style="width: 100%;">
-                                            <el-option label="Claude" value="claude"></el-option>
-                                            <el-option label="GPT" value="gpt"></el-option>
                                         </el-select>
                                     </el-form-item>
                                 </el-col>
@@ -268,28 +285,31 @@
                         <div class="app-section-title">场景创建</div>
 
                         <div style="display: flex; gap: 28px; align-items: flex-start; padding: 0 10px;">
-                            <div style="width: 280px; flex-shrink: 0;">
+                            <!-- 左侧：上传区 -->
+                            <div style="width: 260px; flex-shrink: 0;">
                                 <div class="upload-area" :class="{filled: uploadedImage}"
                                      @click="$refs.fileInput.click()"
                                      @dragover.prevent @dragenter.prevent @drop.prevent="handleDrop">
                                     <template v-if="!uploadedImage">
                                         <div class="placeholder">
                                             <span class="icon">📷</span>
-                                            <div style="font-size: 14px; font-weight: 600; color: #606266; margin-bottom: 2px;">Drop image here</div>
-                                            <div style="font-size: 11px; color: #909399;">or click to browse</div>
+                                            <div style="font-size: 14px; font-weight: 600; color: #606266; margin-bottom: 2px;">将图片拖拽到此处</div>
+                                            <div style="font-size: 11px; color: #909399;">或点击浏览文件</div>
                                         </div>
                                     </template>
                                     <template v-else>
                                         <img :src="uploadedImage.url" alt="Uploaded"/>
-                                        <button class="remove-btn" @click.stop="clearImage" title="Remove">×</button>
+                                        <button class="remove-btn" @click.stop="clearImage" title="移除">×</button>
                                     </template>
                                     <input type="file" ref="fileInput" style="display:none" accept="image/*" @change="handleFileSelect"/>
                                 </div>
                                 <div class="upload-meta">JPG/PNG · ≤ 10MB</div>
                             </div>
 
-                            <div style="flex: 1; min-width: 0;">
-                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                            <!-- 右侧：场景配置区 -->
+                            <div style="flex: 1; min-width: 0; background: #fafbfc; border: 1px solid #ebeef5; border-radius: 10px; padding: 18px 20px;">
+                                <!-- 场景方式切换 -->
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
                                     <span style="font-weight: 600; font-size: 14px; color: #303133;">场景方式</span>
                                     <div class="mode-toggle">
                                         <button :class="{active: sceneMode === 'ai'}" @click="sceneMode = 'ai'">AI 智能推荐</button>
@@ -297,6 +317,7 @@
                                     </div>
                                 </div>
 
+                                <!-- 输入区域 -->
                                 <div style="display: flex; gap: 12px; align-items: flex-end;">
                                     <div style="flex: 1;" v-if="sceneMode === 'custom'">
                                         <el-input type="textarea" v-model="customScene" :rows="3" placeholder="描述你想要的场景：位置、光线、氛围、道具……"/>
@@ -322,7 +343,7 @@
 
                         <div style="padding: 0 10px; margin-top: 24px;">
                             <el-button type="primary" size="large" class="app-btn-submit" @click="handleGenerate" :loading="loadingGenerate" :disabled="!uploadedImage">
-                                {{ loadingGenerate ? 'Generating…' : 'Generate scene prompts  →' }}
+                                {{ loadingGenerate ? '生成中…' : '生成场景提示词 →' }}
                             </el-button>
                             <div v-if="!uploadedImage" style="text-align: center; margin-top: 8px; font-size: 12px; color: #C0C4CC;">
                                 请先上传一张服装图片
@@ -370,8 +391,8 @@
                                 </div>
                                 <div v-for="(p, idx) in scene.prompts" :key="idx" class="prompt-slate">
                                     <div class="ps-header">
-                                        <span>Prompt #{{ idx + 1 }}</span>
-                                        <el-button size="small" @click="copyText(p)" style="border: none; background: none; color: #409EFF;">📋 Copy</el-button>
+                                        <span>提示词 #{{ idx + 1 }}</span>
+                                        <el-button size="small" @click="copyText(p)" style="border: none; background: none; color: #409EFF;">📋 复制</el-button>
                                     </div>
                                     <div class="ps-body">
                                         <el-input type="textarea" v-model="scene.prompts[idx]" :rows="4"
@@ -389,7 +410,7 @@
                                 {{ selectedScenes.length }} 个选中场景 · 共计 {{ totalGenCount }} 张图 · ≈ ￥{{ estimatedCost }}
                             </div>
                             <el-button type="primary" size="large" @click="submitTask" :loading="loadingSubmit" style="padding: 0 32px; height: 46px; font-size: 15px; font-weight: 700;">
-                                Submit to queue
+                                提交到任务队列
                             </el-button>
                         </div>
                     </div>
@@ -397,17 +418,17 @@
                     <div v-if="step === 3">
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding: 0 10px;">
                             <div>
-                                <div style="font-size: 16px; font-weight: 700; color: #303133;">Results</div>
-                                <div style="font-size: 12px; color: #909399; margin-top: 2px;">{{ submittedTasks.length }} tasks submitted</div>
+                                <div style="font-size: 16px; font-weight: 700; color: #303133;">生成结果</div>
+                                <div style="font-size: 12px; color: #909399; margin-top: 2px;">已提交 {{ submittedTasks.length }} 个任务</div>
                             </div>
                             <div style="display: flex; gap: 10px;">
                                 <el-button @click="goToList" size="small">📊 任务大盘</el-button>
-                                <el-button type="primary" @click="resetAll" size="small">+ New</el-button>
+                                <el-button type="primary" @click="resetAll" size="small">+ 新建</el-button>
                             </div>
                         </div>
 
                         <el-alert type="info" :closable="false" style="margin: 0 10px 20px;">
-                            <span style="font-size: 13px; color: #606266;">任务生成中，预计 15-30 秒 / 张，完成后自动刷新显示</span>
+                            <span style="font-size: 13px; color: #606266;">任务生成中，预计 1-2 分钟 / 张，完成后自动刷新显示</span>
                         </el-alert>
 
                         <div v-if="submittedTasks.length === 0" class="app-empty-state" style="margin: 0 10px; min-height: 200px;">
@@ -426,8 +447,20 @@
                                     </div>
                                 </template>
                                 <div class="ri-footer">
-                                    <el-tag :type="taskStatusType(task.status)" size="small">{{ taskStatusLabel(task.status) }}</el-tag>
-                                    <span style="font-size: 11px;">{{ genModel === 'nano-banana-pro' ? 'nano' : 'gpt-img' }}</span>
+                                    <div class="ri-status-row">
+                                        <el-tag :type="taskStatusType(task.status)" size="small">{{ taskStatusLabel(task.status) }}</el-tag>
+                                        <span style="font-size: 11px;">{{ genModel === 'nano-banana-pro' ? 'nano' : 'gpt-img' }}</span>
+                                    </div>
+                                    <div v-if="task.status === 'SUCCESS' && (task.resultOssUrl || task.resultTempUrl)" class="ri-action-row">
+                                        <el-button
+                                            size="small"
+                                            type="success"
+                                            :loading="task._addingToLib"
+                                            :disabled="task.addedToLib"
+                                            @click="addToPromptLib(task)">
+                                            {{ task.addedToLib ? '已添加 ✓' : '📚 入提示词库' }}
+                                        </el-button>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -518,7 +551,7 @@
                     } else {
                         if (!customScene.value.trim()) { ElementPlus.ElMessage.warning('请输入场景描述'); loadingGenerate.value = false; return; }
                         const res = await axios.post('/api/scene-generator/generate-prompt', {
-                            customScene: customScene.value, clothingDesc: clothingDesc.value || 'fashion clothing', count: promptCount.value, textModel: textModel.value
+                            sceneDesc: customScene.value, clothingDesc: clothingDesc.value || 'fashion clothing', count: promptCount.value, textModel: textModel.value
                         });
                         if (!res.data.success) throw new Error('生成提示词失败');
                         rawData = res.data.data;
@@ -548,7 +581,7 @@
                     }
 
                     step.value = 2;
-                    ElementPlus.ElMessage.success('✨ Prompt 生成完成');
+                    ElementPlus.ElMessage.success('✨ 提示词生成完成');
                 } catch (e) {
                     ElementPlus.ElMessage.error('生成失败: ' + (e.response?.data?.message || e.message));
                 } finally { loadingGenerate.value = false; }
@@ -587,6 +620,7 @@
                     const url = `${pd.host}/${key}`;
 
                     const reqs = [];
+                    const promptMap = []; // 跟踪每个请求对应的 prompt
                     // 🔴 循环选中的场景，再循环其内部的 prompts，最后循环设定的数量
                     for (const scene of selectedScenes.value) {
                         const runCount = sceneCounts[scene.id] || 1;
@@ -598,27 +632,33 @@
                                         resolution: genResolution.value, aspect_ratio: genAspectRatio.value,
                                         taskType: 2, pairs: [{ inputUrl: url, colorUrl: '' }], cost: pricePerImage.value
                                     }));
+                                    promptMap.push(p);
                                 }
                             }
                         }
                     }
                     const results = await Promise.all(reqs);
 
-                    // 🔴 修复：将单纯的 taskId 字符串包装为带有状态的 Object
-                    const okTaskIds = results.filter(r => r.data?.success).flatMap(r => {
+                    // 🔴 修复：保留 TaskCreateResponse 完整对象（含数据库 id 和 taskId）
+                    const okTasks = results.filter(r => r.data?.success).flatMap(r => {
                         const data = r.data.data;
                         return Array.isArray(data) ? data : [data];
                     });
 
-                    if (okTaskIds.length > 0) {
-                        submittedTasks.value = okTaskIds.map(id => ({
-                            taskId: id,
-                            status: 'PROCESSING',
-                            resultOssUrl: null,
-                            resultTempUrl: null
+                    if (okTasks.length > 0) {
+                        submittedTasks.value = okTasks.map((taskResp, idx) => ({
+                            taskId: taskResp.taskId,
+                            dbId: taskResp.id,
+                            status: taskResp.status || 'PROCESSING',
+                            resultOssUrl: taskResp.resultOssUrl || null,
+                            resultTempUrl: taskResp.resultTempUrl || null,
+                            prompt: taskResp.prompt || promptMap[idx] || '',
+                            model: taskResp.model || '',
+                            addedToLib: false,
+                            _addingToLib: false
                         }));
                         step.value = 3;
-                        ElementPlus.ElMessage.success(`🚀 已提交 ${okTaskIds.length} 个任务`);
+                        ElementPlus.ElMessage.success(`🚀 已提交 ${okTasks.length} 个任务`);
                         startPolling();
                     } else { ElementPlus.ElMessage.error('提交失败'); }
                 } catch (e) { ElementPlus.ElMessage.error('错误: ' + (e.message || 'Unknown'));
@@ -639,28 +679,86 @@
                         for (let i = 0; i < submittedTasks.value.length; i++) {
                             const t = submittedTasks.value[i];
                             if (t.status === 'CREATED' || t.status === 'PROCESSING' || t.status === 'GENERATING') {
-                                // 🔴 修复：调用分页查询接口以使用 taskId 换取完整记录
-                                const r = await axios.get('/api/tasks/page', { params: { taskId: t.taskId } });
-                                if (r.data?.success && r.data.data.content.length > 0) {
-                                    const dbTask = r.data.data.content[0];
-
-                                    // 尝试触发刷新以加速结果返回
-                                    if (dbTask.id && (dbTask.status === 'PROCESSING' || dbTask.status === 'GENERATING')) {
-                                        axios.post(`/api/tasks/${dbTask.id}/refresh`).catch(e=>e);
+                                // 🔴 修复：用数据库 id 精确查询，避免 LIKE 模糊匹配串任务
+                                if (t.dbId) {
+                                    const r = await axios.get(`/api/tasks/${t.dbId}`);
+                                    if (r.data?.success && r.data.data) {
+                                        const dbTask = r.data.data;
+                                        submittedTasks.value[i] = { ...t, ...dbTask, dbId: t.dbId, addedToLib: t.addedToLib, _addingToLib: t._addingToLib };
                                     }
-                                    submittedTasks.value[i] = { ...t, ...dbTask };
+                                } else {
+                                    // 兜底：无 dbId 时用分页接口
+                                    const r = await axios.get('/api/tasks/page', { params: { taskId: t.taskId, size: 1 } });
+                                    if (r.data?.success && r.data.data.content.length > 0) {
+                                        const dbTask = r.data.data.content[0];
+                                        if (dbTask.taskId === t.taskId) {
+                                            submittedTasks.value[i] = { ...t, ...dbTask, addedToLib: t.addedToLib, _addingToLib: t._addingToLib };
+                                        }
+                                    }
+                                }
+
+                                // 尝试触发刷新以加速结果返回
+                                const current = submittedTasks.value[i];
+                                if (current.dbId && (current.status === 'PROCESSING' || current.status === 'GENERATING')) {
+                                    axios.post(`/api/tasks/${current.dbId}/refresh`).catch(e=>e);
                                 }
                             }
                         }
                     } catch (e) {}
-                }, 3000);
+                }, 15000);
             };
 
             const stopPolling = () => { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } };
 
             const taskStatusType = (s) => ({ CREATED:'info', PROCESSING:'warning', GENERATING:'warning', SUCCESS:'success', FAILED:'danger' }[s] || 'info');
-            const taskStatusLabel = (s) => ({ CREATED:'Pending', PROCESSING:'Generating', GENERATING:'Generating', SUCCESS:'Done', FAILED:'Failed' }[s] || s);
+            const taskStatusLabel = (s) => ({ CREATED:'等待中', PROCESSING:'生成中', GENERATING:'生成中', SUCCESS:'已完成', FAILED:'失败' }[s] || s);
             const copyText = async (t) => { try { await navigator.clipboard.writeText(t); ElementPlus.ElMessage.success('已复制'); } catch(e) {} };
+
+            const addToPromptLib = async (task) => {
+                if (task.addedToLib || task._addingToLib) return;
+                task._addingToLib = true;
+
+                try {
+                    // Step 1: 尝试将图片从临时桶转存到永久桶
+                    const originalUrl = task.resultOssUrl || task.resultTempUrl;
+                    let permanentUrl = originalUrl;
+
+                    try {
+                        const copyRes = await axios.post('/api/oss/copy-to-permanent', { url: originalUrl });
+                        if (copyRes.data?.success && copyRes.data.data) {
+                            permanentUrl = copyRes.data.data;
+                        }
+                    } catch (copyErr) {
+                        // 转存失败时降级用原始URL，不阻塞入库
+                        console.warn('转存永久桶失败，使用原始URL降级:', copyErr);
+                    }
+
+                    // Step 2: 调用保存接口入库
+                    try {
+                        const saveRes = await axios.post('/api/templates/save', {
+                            category: '通用动作库',
+                            title: 'AI场景导入',
+                            basePrompt: task.prompt || '',
+                            exampleImageUrl: permanentUrl,
+                            isActive: true
+                        });
+                        if (!saveRes.data?.success) {
+                            throw new Error(saveRes.data?.message || '入库失败');
+                        }
+                    } catch (saveErr) {
+                        ElementPlus.ElMessage.error('添加到提示词库失败: ' + (saveErr.response?.data?.message || saveErr.message));
+                        task._addingToLib = false;
+                        return;
+                    }
+
+                    task.addedToLib = true;
+                    ElementPlus.ElMessage.success('已添加到提示词库');
+                } catch (e) {
+                    ElementPlus.ElMessage.error('操作失败: ' + (e.message || '未知错误'));
+                } finally {
+                    task._addingToLib = false;
+                }
+            };
             const resetAll = () => {
                 step.value = 1;
                 selectedScenes.value = [];
@@ -679,7 +777,7 @@
                 sceneMode, aiRecommendCount, customScene, promptCount, loadingGenerate,
                 handleGenerate, aiScenes, selectedScenes, sceneCounts, isSelected, toggleSelection, totalGenCount, estimatedCost,
                 loadingSubmit, submittedTasks, submitTask,
-                taskStatusType, taskStatusLabel, copyText, resetAll, goToList
+                taskStatusType, taskStatusLabel, copyText, addToPromptLib, resetAll, goToList
             };
         }
     }).use(ElementPlus).mount('#app');

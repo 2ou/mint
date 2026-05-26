@@ -24,33 +24,49 @@ public class SceneGeneratorController {
     @PostMapping("/recommend")
     public ApiResponse<String> recommendScenes(@RequestBody Map<String, Object> request) {
         String clothingDesc = (String) request.getOrDefault("clothingDesc", "fashion clothing");
-        int count = request.containsKey("count") ? Integer.parseInt(request.get("count").toString()) : 3;
+        int count = 3;
+        if (request.containsKey("count")) {
+            try {
+                count = Integer.parseInt(request.get("count").toString());
+            } catch (NumberFormatException ignored) {
+                // 使用默认值
+            }
+        }
         String textModel = (String) request.getOrDefault("textModel", "claude");
         String result = sceneGeneratorService.recommendScenes(clothingDesc, count, textModel);
         return ApiResponse.ok("推荐成功", result);
     }
 
     /**
-     * 生成场景提示词（支持场景库ID或自定义场景）
+     * 生成场景提示词（根据场景描述，AI 生成）
      */
     @PostMapping("/generate-prompt")
     public ApiResponse<String> generatePrompt(@RequestBody Map<String, Object> request) {
-        String sceneId = (String) request.get("sceneId");
-        String customScene = (String) request.get("customScene");
+        String sceneDesc = (String) request.get("sceneDesc");
+        if (sceneDesc == null || sceneDesc.trim().isEmpty()) {
+            return ApiResponse.fail("请提供场景描述");
+        }
         String clothingDesc = (String) request.getOrDefault("clothingDesc", "fashion clothing");
-        int count = request.containsKey("count") ? Integer.parseInt(request.get("count").toString()) : 1;
+        int count = 1;
+        if (request.containsKey("count")) {
+            try {
+                count = Integer.parseInt(request.get("count").toString());
+            } catch (NumberFormatException ignored) {
+                // 使用默认值
+            }
+        }
         String textModel = (String) request.getOrDefault("textModel", "claude");
 
-        String prompt = sceneGeneratorService.generatePrompt(sceneId, customScene, clothingDesc, count, textModel);
+        String prompt = sceneGeneratorService.generatePrompt(sceneDesc, clothingDesc, count, textModel);
         return ApiResponse.ok("提示词生成成功", prompt);
     }
 
     /**
-     * 热更新场景库配置
+     * 重新加载场景库 skill 辅助知识
      */
-    @PostMapping("/reload-config")
-    public ApiResponse<String> reloadConfig() {
-        sceneGeneratorService.reloadConfig();
-        return ApiResponse.ok("场景库配置已重新加载", null);
+    @PostMapping("/reload-skill")
+    public ApiResponse<String> reloadSkill() {
+        sceneGeneratorService.reloadSkillKnowledge();
+        return ApiResponse.ok("场景库 skill 重新加载成功", null);
     }
 }
