@@ -104,4 +104,11 @@ public interface ModelLibraryService {
      * 获取最近生成的模特
      */
     List<ModelLibrary> getRecentModels(int limit);
+
+    /**
+     * 统一生成流程：文本模型生提示词 → 生图模型创建任务
+     * @param request 生成请求（包含所有参数）
+     * @return 创建的任务列表
+     */
+    List<ModelLibrary> generateModels(ModelGenerateRequest request);
 }

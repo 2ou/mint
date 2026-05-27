@@ -175,6 +175,30 @@
             width: 100%;
         }
 
+        /* ---- 场景生成加载动画 ---- */
+        .scene-loading-spinner {
+            width: 40px; height: 40px; border-radius: 50%;
+            border: 3px solid #e4e7ed;
+            border-top-color: #409EFF;
+            animation: scene-spin 1s linear infinite;
+        }
+        @keyframes scene-spin {
+            to { transform: rotate(360deg); }
+        }
+        .scene-loading-bar {
+            width: 60%; height: 4px; background: #e4e7ed; border-radius: 2px; overflow: hidden;
+        }
+        .scene-loading-bar-inner {
+            width: 40%; height: 100%; background: linear-gradient(90deg, #409EFF, #79bbff);
+            border-radius: 2px;
+            animation: scene-bar-slide 1.8s ease-in-out infinite;
+        }
+        @keyframes scene-bar-slide {
+            0% { transform: translateX(-100%); }
+            50% { transform: translateX(150%); }
+            100% { transform: translateX(-100%); }
+        }
+
         /* ---- Action bar ---- */
         .action-bar {
             display: flex; gap: 12px; align-items: center; margin-top: 20px;
@@ -427,8 +451,16 @@
                             </div>
                         </div>
 
-                        <el-alert type="info" :closable="false" style="margin: 0 10px 20px;">
-                            <span style="font-size: 13px; color: #606266;">任务生成中，预计 1-2 分钟 / 张，完成后自动刷新显示</span>
+                        <el-alert type="info" :closable="false" style="margin: 0 10px 20px;" v-if="submittedTasks.some(t => t.status !== 'SUCCESS' && t.status !== 'FAILED')">
+                            <span style="font-size: 13px; color: #606266;">
+                                <i class="el-icon-loading" style="margin-right: 6px;"></i>
+                                任务生成中，预计 1-2 分钟 / 张，完成后自动刷新显示
+                            </span>
+                        </el-alert>
+                        <el-alert type="success" :closable="false" style="margin: 0 10px 20px;" v-else-if="submittedTasks.length > 0">
+                            <span style="font-size: 13px; color: #67c23a;">
+                                ✓ 全部任务已完成，成功 {{ submittedTasks.filter(t=>t.status==='SUCCESS').length }}/{{ submittedTasks.length }} 张
+                            </span>
                         </el-alert>
 
                         <div v-if="submittedTasks.length === 0" class="app-empty-state" style="margin: 0 10px; min-height: 200px;">
@@ -442,8 +474,16 @@
                                     <el-image :src="task.resultOssUrl || task.resultTempUrl" fit="cover" style="width:100%;aspect-ratio:1;" :preview-src-list="[task.resultOssUrl || task.resultTempUrl]" preview-teleported/>
                                 </template>
                                 <template v-else>
-                                    <div style="width:100%;aspect-ratio:1;background:#fafafa;display:flex;align-items:center;justify-content:center;">
-                                        <span style="font-size:2rem;opacity:0.2;">{{ task.status === 'FAILED' ? '✕' : '◌' }}</span>
+                                    <div style="width:100%;aspect-ratio:1;background:#fafafa;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;">
+                                        <template v-if="task.status === 'FAILED'">
+                                            <span style="font-size:2rem;color:#F56C6C;">✕</span>
+                                            <span style="font-size:12px;color:#F56C6C;">生成失败</span>
+                                        </template>
+                                        <template v-else>
+                                            <div class="scene-loading-spinner"></div>
+                                            <span style="font-size:12px;color:#909399;">{{ task.status === 'CREATED' ? '排队中...' : '生图中...' }}</span>
+                                            <div class="scene-loading-bar"><div class="scene-loading-bar-inner"></div></div>
+                                        </template>
                                     </div>
                                 </template>
                                 <div class="ri-footer">
@@ -711,7 +751,7 @@
             const stopPolling = () => { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } };
 
             const taskStatusType = (s) => ({ CREATED:'info', PROCESSING:'warning', GENERATING:'warning', SUCCESS:'success', FAILED:'danger' }[s] || 'info');
-            const taskStatusLabel = (s) => ({ CREATED:'等待中', PROCESSING:'生成中', GENERATING:'生成中', SUCCESS:'已完成', FAILED:'失败' }[s] || s);
+            const taskStatusLabel = (s) => ({ CREATED:'⏳ 排队中', PROCESSING:'🔄 生图中', GENERATING:'🔄 生图中', SUCCESS:'✅ 已完成', FAILED:'❌ 失败' }[s] || s);
             const copyText = async (t) => { try { await navigator.clipboard.writeText(t); ElementPlus.ElMessage.success('已复制'); } catch(e) {} };
 
             const addToPromptLib = async (task) => {

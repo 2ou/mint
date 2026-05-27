@@ -201,4 +201,13 @@ public class ModelLibraryController {
         modelPromptGenerator.reloadConfig();
         return ApiResponse.ok("配置已重新加载", null);
     }
+
+    /**
+     * 统一生成流程：参数提交 → 文本模型生提示词 → 生图模型创建任务 → 返回任务列表
+     */
+    @PostMapping("/generate")
+    public ApiResponse<List<ModelLibrary>> generateModels(@RequestBody ModelGenerateRequest request) {
+        List<ModelLibrary> results = modelLibraryService.generateModels(request);
+        return ApiResponse.ok("生成任务已创建，共 " + results.size() + " 个", results);
+    }
 }

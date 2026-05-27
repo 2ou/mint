@@ -178,6 +178,12 @@ public class TextModelServiceImpl implements TextModelService {
             sb.append("- Clothing: ").append(request.getClothingDescription()).append("\n");
         }
 
+        // 服装图 URL（参考图）
+        if (request.getClothingImageUrl() != null && !request.getClothingImageUrl().isEmpty()) {
+            sb.append("- Clothing image URL (reference): ").append(request.getClothingImageUrl()).append("\n");
+            sb.append("Note: If an image-to-image model is used, this image should be used as reference input.\n");
+        }
+
         // 特殊要求
         if (request.getSpecialRequirements() != null && !request.getSpecialRequirements().isEmpty()) {
             sb.append("- Special requirements: ").append(request.getSpecialRequirements()).append("\n");

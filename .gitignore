@@ -1,0 +1,76 @@
+# ==============================================
+# 1. IDEA 编辑器相关文件（全部忽略，团队通用）
+# ==============================================
+# 忽略整个IDEA配置目录（个人配置，不提交）
+/.idea/
+# 忽略IDEA项目文件
+*.iml
+*.iws
+*.ipr
+# 原IDEA自带的细分规则（兜底）
+/shelf/
+/workspace.xml
+/httpRequests/
+/mavenHomeManager.xml
+/dataSources/
+/dataSources.local.xml
+
+# ==============================================
+# 2. Java/Maven 编译产物（核心，解决.class和target问题）
+# ==============================================
+# 所有子目录下的target文件夹（关键：去掉开头的/，递归生效）
+target/
+# 所有编译后的class文件（兜底）
+*.class
+# 其他构建输出目录
+build/
+out/
+production/
+test/
+# Maven 本地仓库和包装器
+.mvn/
+mvnw
+mvnw.cmd
+# Gradle 构建产物（兼容备用）
+.gradle/
+gradlew
+gradlew.bat
+
+# ==============================================
+# 3. 本地环境配置文件（防止敏感信息泄露）
+# ==============================================
+# 递归忽略所有子目录下的本地开发配置
+**/application-dev.yml
+**/application-local.yml
+**/application-test.yml
+**/application-uat.yml
+# 兼容properties格式
+**/application-dev.properties
+**/application-local.properties
+**/application-*.properties
+# 主配置文件（含本地数据库连接等敏感信息，不提交）
+**/application.yml
+# 数据库、密钥等敏感配置
+**/application-secret.yml
+**/bootstrap-*.yml
+
+# ==============================================
+# 4. 通用冗余文件（所有项目通用）
+# ==============================================
+# 日志文件
+*.log
+*.log.*
+# 临时文件
+*.tmp
+*.swp
+*.bak
+# 系统文件
+.DS_Store
+Thumbs.db
+# 压缩包
+*.zip
+*.tar.gz
+*.rar
+# 本地临时文档
+*.md.tmp
+*.txt.tmp

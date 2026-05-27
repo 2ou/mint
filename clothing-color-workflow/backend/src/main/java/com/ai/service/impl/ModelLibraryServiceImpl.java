@@ -265,4 +265,67 @@ public class ModelLibraryServiceImpl implements ModelLibraryService {
         Pageable pageable = PageRequest.of(0, limit, Sort.by(Sort.Direction.DESC, "createdAt"));
         return modelLibraryRepository.findAll(pageable).getContent();
     }
+
+    @Override
+    @Transactional
+    public List<ModelLibrary> generateModels(ModelGenerateRequest request) {
+        // 1. 调用文本模型生成提示词（在 Skill 约束下）
+        String prompt = generatePrompt(request);
+
+        // 2. 确定参数（带默认值）
+        String imageModel = request.getImageModel() != null && !request.getImageModel().isEmpty()
+                ? request.getImageModel() : "nano-banana-pro";
+        String resolution = request.getResolution() != null && !request.getResolution().isEmpty()
+                ? request.getResolution() : "2K";
+        String aspectRatio = request.getAspectRatio() != null && !request.getAspectRatio().isEmpty()
+                ? request.getAspectRatio() : "1:1";
+        int count = request.getBatchCount() > 0 ? request.getBatchCount() : 1;
+        String prefix = request.getNamePrefix() != null && !request.getNamePrefix().isEmpty()
+                ? request.getNamePrefix() : "";
+
+        // 3. 批量创建任务
+        List<ModelLibrary> results = new ArrayList<>();
+        for (int i = 0; i < count; i++) {
+            try {
+                ModelLibrary model = new ModelLibrary();
+                String modelName = prefix.isEmpty()
+                        ? "Model_" + System.currentTimeMillis() + "_" + (i + 1)
+                        : prefix + "_" + (i + 1);
+                model.setModelName(modelName);
+                model.setModelType(request.getModelType() != null ? request.getModelType() : "Commercial");
+                model.setEthnicity(request.getEthnicity());
+                model.setAgeRange(request.getAgeRange());
+                model.setGeneratedPrompt(prompt);
+                model.setCreatedBy("system");
+
+                // 调用 KIE API 创建生图任务
+                // createTask(spu, prompt, resolution, aspectRatio, model, inputUrl, colorUrl)
+                String taskId = kieClientService.createTask(
+                        null,                               // spu
+                        prompt,                             // prompt
+                        resolution,                         // resolution
+                        aspectRatio,                        // aspectRatio
+                        imageModel,                         // model
+                        request.getClothingImageUrl(),      // inputUrl（服装参考图）
+                        null                                // colorUrl
+                );
+                model.setTaskId(taskId);
+                model.setTaskStatus("CREATED");
+                model.setStatus("DRAFT");
+
+                results.add(modelLibraryRepository.save(model));
+            } catch (Exception e) {
+                log.error("创建任务失败: {}", e.getMessage(), e);
+                ModelLibrary failed = new ModelLibrary();
+                failed.setModelName("Failed_" + System.currentTimeMillis() + "_" + (i + 1));
+                failed.setModelType(request.getModelType() != null ? request.getModelType() : "Commercial");
+                failed.setGeneratedPrompt(prompt);
+                failed.setTaskStatus("FAILED");
+                failed.setStatus("DRAFT");
+                failed.setCreatedBy("system");
+                results.add(modelLibraryRepository.save(failed));
+            }
+        }
+        return results;
+    }
 }

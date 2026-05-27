@@ -68,4 +68,36 @@ public class ModelGenerateRequest {
      * 服装描述（可选，用于生成带服装的提示词）
      */
     private String clothingDescription;
+
+    // ========== 2步流程新增参数 ==========
+
+    /**
+     * 服装图 OSS URL（选填，作为参考图传入生图模型）
+     */
+    private String clothingImageUrl;
+
+    /**
+     * 生图模型：nano-banana-pro / gpt-image-2-image-to-image
+     */
+    private String imageModel;
+
+    /**
+     * 分辨率：1K / 2K / 4K
+     */
+    private String resolution;
+
+    /**
+     * 画面比例：1:1 / 9:16 / 16:9 / 4:3 / 3:4 / auto
+     */
+    private String aspectRatio;
+
+    /**
+     * 生成数量：1-10，默认 1
+     */
+    private int batchCount = 1;
+
+    /**
+     * 名称前缀（选填，不填则自动生成）
+     */
+    private String namePrefix;
 }
