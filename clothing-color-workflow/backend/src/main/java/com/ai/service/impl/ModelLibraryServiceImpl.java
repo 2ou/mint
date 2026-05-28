@@ -8,6 +8,7 @@ import com.ai.exception.BusinessException;
 import com.ai.repository.ModelLibraryRepository;
 import com.ai.service.KieClientService;
 import com.ai.service.ModelLibraryService;
+import com.ai.service.OssService;
 import com.ai.service.TextModelService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -32,6 +33,7 @@ public class ModelLibraryServiceImpl implements ModelLibraryService {
     private final ModelPromptGenerator modelPromptGenerator;
     private final KieClientService kieClientService;
     private final TextModelService textModelService;
+    private final OssService ossService;
 
     @Override
     public String generatePrompt(ModelGenerateRequest request) {
@@ -137,6 +139,24 @@ public class ModelLibraryServiceImpl implements ModelLibraryService {
             throw new BusinessException("只有生成成功的模特才能审核通过");
         }
 
+        // 入库时转存到永久桶
+        if (model.getResultUrl() != null && !model.getResultUrl().isEmpty()) {
+            try {
+                String ossResult = ossService.uploadResultToOss(
+                    "model-" + model.getId(), model.getResultUrl(), model.getId(), true);
+                if (ossResult != null && ossResult.contains("|")) {
+                    String[] parts = ossResult.split("\\|");
+                    if (parts.length >= 1 && !parts[0].isEmpty()) {
+                        model.setResultUrl(parts[0]);
+                        model.setCoverImageUrl(parts[0]);
+                        log.info("入库时已转存永久桶: {} -> {}", model.getId(), parts[0]);
+                    }
+                }
+            } catch (Exception e) {
+                log.error("入库转存永久桶失败（临时链接仍可用）: {} - {}", model.getId(), e.getMessage());
+            }
+        }
+
         model.setStatus("ACTIVE");
         return modelLibraryRepository.save(model);
     }
@@ -224,6 +244,7 @@ public class ModelLibraryServiceImpl implements ModelLibraryService {
                 if (result.isFinished()) {
                     if (result.isSuccess()) {
                         model.setTaskStatus("SUCCESS");
+                        // 存临时链接
                         model.setResultUrl(result.getResultUrl());
                         model.setCoverImageUrl(result.getResultUrl());
                         log.info("模特生图任务完成: {}", model.getId());
@@ -289,7 +310,7 @@ public class ModelLibraryServiceImpl implements ModelLibraryService {
             try {
                 ModelLibrary model = new ModelLibrary();
                 String modelName = prefix.isEmpty()
-                        ? "Model_" + System.currentTimeMillis() + "_" + (i + 1)
+                        ? randomModelName()
                         : prefix + "_" + (i + 1);
                 model.setModelName(modelName);
                 model.setModelType(request.getModelType() != null ? request.getModelType() : "Commercial");
@@ -317,7 +338,7 @@ public class ModelLibraryServiceImpl implements ModelLibraryService {
             } catch (Exception e) {
                 log.error("创建任务失败: {}", e.getMessage(), e);
                 ModelLibrary failed = new ModelLibrary();
-                failed.setModelName("Failed_" + System.currentTimeMillis() + "_" + (i + 1));
+                failed.setModelName(randomModelName());
                 failed.setModelType(request.getModelType() != null ? request.getModelType() : "Commercial");
                 failed.setGeneratedPrompt(prompt);
                 failed.setTaskStatus("FAILED");
@@ -327,5 +348,16 @@ public class ModelLibraryServiceImpl implements ModelLibraryService {
             }
         }
         return results;
+    }
+
+    /**
+     * 生成随机模特名称（不含时间戳，重名没关系）
+     */
+    private String randomModelName() {
+        String[] prefixes = {"Aria","Bella","Chloe","Diana","Elena","Fiona","Grace","Hannah","Ivy","Jade","Kira","Luna","Mia","Nora","Olive","Piper","Quinn","Ruby","Stella","Tessa","Uma","Vera","Wren","Xena","Yara","Zara"};
+        String[] suffixes = {"Studio","Look","Style","Vogue","Muse","Aura","Bloom","Charm","Dawn","Eve","Flair","Glow","Haze","Iris","Jewel","Kiss","Lush","Mist","Nyx","Opal"};
+        String p = prefixes[new java.util.Random().nextInt(prefixes.length)];
+        String s = suffixes[new java.util.Random().nextInt(suffixes.length)];
+        return p + "_" + s;
     }
 }

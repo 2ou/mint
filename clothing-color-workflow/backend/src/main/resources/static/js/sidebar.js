@@ -47,17 +47,14 @@
             '      <span class="sidebar-arrow">▾</span>',
             '    </div>',
             '    <div class="sidebar-submenu">',
-            '      <a href="model-library.html?view=generate" class="sidebar-link sidebar-sub' + (onModelLib && currentView === 'generate' ? ' active' : '') + '">',
+            '      <a href="model-library.html?view=generate" class="sidebar-link sidebar-sub' + (onModelLib && currentView === 'generate' ? ' active' : '') + '" data-view="generate">',
             '        <span class="sidebar-link-icon">🎨</span><span>生成模特</span>',
             '      </a>',
-            '      <a href="model-library.html?view=library" class="sidebar-link sidebar-sub' + (onModelLib && currentView === 'library' ? ' active' : '') + '">',
+            '      <a href="model-library.html?view=library" class="sidebar-link sidebar-sub' + (onModelLib && currentView === 'library' ? ' active' : '') + '" data-view="library">',
             '        <span class="sidebar-link-icon">📚</span><span>模特库</span>',
             '      </a>',
-            '      <a href="model-library.html?view=history" class="sidebar-link sidebar-sub' + (onModelLib && currentView === 'history' ? ' active' : '') + '">',
-            '        <span class="sidebar-link-icon">📜</span><span>历史记录</span>',
-            '      </a>',
-            '      <a href="model-library.html?view=batch" class="sidebar-link sidebar-sub' + (onModelLib && currentView === 'batch' ? ' active' : '') + '">',
-            '        <span class="sidebar-link-icon">⚡</span><span>批量任务</span>',
+            '      <a href="model-library.html?view=history" class="sidebar-link sidebar-sub' + (onModelLib && currentView === 'history' ? ' active' : '') + '" data-view="history">',
+            '        <span class="sidebar-link-icon">📜</span><span>生成历史</span>',
             '      </a>',
             '    </div>',
             '  </div>',
@@ -85,6 +82,36 @@
         else { layout.appendChild(sidebar); }
 
         injectStyles();
+
+        // 模特库子菜单：当前页内切换 view，不刷新页面
+        if (onModelLib) {
+            sidebar.addEventListener('click', function (e) {
+                var link = e.target.closest('[data-view]');
+                if (!link) return;
+                e.preventDefault();
+                var view = link.getAttribute('data-view');
+
+                // 更新 URL
+                history.replaceState(null, '', '?view=' + view);
+
+                // 更新侧边栏高亮
+                sidebar.querySelectorAll('.sidebar-sub').forEach(function (el) {
+                    el.classList.toggle('active', el.getAttribute('data-view') === view);
+                });
+
+                // 调用 Vue 的 go() 切换视图
+                var app = document.querySelector('#app');
+                if (app && app.__vue_app__) {
+                    var vm = app.__vue_app__._instance.proxy;
+                    if (typeof vm.go === 'function') {
+                        vm.go(view);
+                        return;
+                    }
+                }
+                // 兜底：如果 Vue 实例拿不到，刷新页面
+                window.location.href = 'model-library.html?view=' + view;
+            });
+        }
     }
 
     function esc(str) {

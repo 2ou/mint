@@ -76,17 +76,26 @@ public class OssServiceImpl implements OssService {
 
     @Override
     public String uploadResultToOss(String spu, String resultUrl, Long taskId) {
+        return uploadResultToOss(spu, resultUrl, taskId, false);
+    }
+
+    @Override
+    public String uploadResultToOss(String spu, String resultUrl, Long taskId, boolean permanent) {
         // 🔴 关键修复：防御空指针
         if (resultUrl == null || resultUrl.trim().isEmpty()) {
             log.error("【转存异常】传入的 resultUrl 为空！任务ID: {}", taskId);
-            return null; // 直接返回，中止转存，防止引发系统崩溃
+            return null;
         }
 
         Future<String> future = null;
 
         try {
-            log.info("【双保险转存】开始处理，任务ID: {}, 目标链接: {}", taskId, resultUrl);
+            log.info("【{}转存】开始处理，任务ID: {}, 目标链接: {}", permanent ? "永久桶" : "临时桶", taskId, resultUrl);
             AppProperties.Oss oss = appProperties.getOss();
+
+            // 根据 permanent 选择桶和域名
+            final String targetBucket = permanent ? oss.getResultBucket() : oss.getInputBucket();
+            final String targetHost = permanent ? oss.getResultPublicHost() : oss.getInputPublicHost();
 
             // 1. 确定本地根目录
             String localRootPath = appProperties.getLocalSaveRoot();
@@ -170,11 +179,10 @@ public class OssServiceImpl implements OssService {
                     else if (extension.equals(".mp4")) metadata.setContentType("video/mp4");
                     else if (extension.equals(".mov")) metadata.setContentType("video/quicktime");
 
-                    // 🔴 核心修改 1：将 AI 生成的结果图也放进会被 5 天清理的 InputBucket 中
-                    ossClient.putObject(oss.getInputBucket(), objectName, permanentFile, metadata);
+                    // 默认存临时桶（场景图流程），permanent=true 时存永久桶（模特图流程）
+                    ossClient.putObject(targetBucket, objectName, permanentFile, metadata);
 
-                    // 🔴 核心修改 2：返回的主机域名也要换成 InputBucket 的域名
-                    ossUrl = oss.getInputPublicHost() + "/" + objectName;
+                    ossUrl = targetHost + "/" + objectName;
 
                     log.info("【OSS临时结果上传成功】链接: {}", ossUrl);
                 } catch (Exception ossEx) {
