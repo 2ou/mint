@@ -917,6 +917,10 @@
                 loadTypes();loadStats();
                 if(view.value==='library') loadModels();
                 if(view.value==='history') loadHistory();
+                // 确保模特库默认只显示已入库的
+                if(view.value==='generate' && search.status !== 'ACTIVE') {
+                    search.status = 'ACTIVE';
+                }
             });
             onUnmounted(()=>stopPoll());
 

@@ -19,7 +19,8 @@ public interface ModelLibraryRepository extends JpaRepository<ModelLibrary, Long
     @Query("SELECT m FROM ModelLibrary m WHERE " +
            "(:type IS NULL OR :type = '' OR m.modelType = :type) AND " +
            "(:keyword IS NULL OR :keyword = '' OR m.modelName LIKE CONCAT('%', :keyword, '%') OR m.styleTags LIKE CONCAT('%', :keyword, '%')) AND " +
-           "(:status IS NULL OR :status = '' OR m.status = :status)")
+           "(:status IS NULL OR :status = '' OR m.status = :status) AND " +
+           "(:status IS NOT NULL AND :status != '' OR m.status != 'DRAFT')")
     Page<ModelLibrary> searchModels(@Param("type") String type,
                                     @Param("keyword") String keyword,
                                     @Param("status") String status,
