@@ -237,12 +237,16 @@
             display: flex; gap: 14px;
         }
 
+        /* 🔴 确保历史记录缩略图为 16:9 */
         .tl-content .el-image {
-            width: 180px; height: 101px; border-radius: 6px;
-            cursor: pointer; flex-shrink: 0;
+            width: 180px;
+            height: 101.25px; /* 180 * (9/16) */
+            border-radius: 6px;
+            cursor: pointer;
+            flex-shrink: 0;
         }
 
-        .tl-body { flex: 1; }
+        .tl-body { flex: 1; min-width: 0; }
 
         .el-message { z-index: 99999 !important; }
 
@@ -297,7 +301,7 @@
                                             <div class="sub">{{ key }}</div>
                                         </div>
                                     </div>
-                                    <el-input v-model="form.modelTypeCustom" placeholder="或自定义模特类型（如：Bohemian、Grunge、Preppy）" clearable style="margin-top:4px"/>
+                                    <el-input v-model="form.modelTypeCustom" placeholder="或自定义模特类型（如：Bohemian、Grunge、Preppy）" clearable style="margin-top:4px"></el-input>
                                 </div>
 
                                 <div class="form-block">
@@ -515,7 +519,7 @@
                                                     <div class="spinner"></div>
                                                     <p style="margin-top:8px;color:#888;font-size:12px">生成中...</p>
                                                 </div>
-                                                <el-image v-if="t.resultUrl" :src="thumb(t.resultUrl)" fit="cover" style="width:100%;height:100%" :preview-src-list="[t.resultUrl]" preview-teleported/>
+                                                <el-image v-if="t.resultUrl" :src="thumb(t.resultUrl)" fit="cover" style="width:100%;height:100%" :preview-src-list="[t.resultUrl]" preview-teleported></el-image>
                                                 <div v-else class="placeholder"><span style="font-size:32px">🖼️</span><span style="margin-top:6px">等待生成</span></div>
                                                 <el-tag :type="taskType(t.taskStatus)" class="badge" size="small">{{ taskLabel(t.taskStatus) }}</el-tag>
                                             </div>
@@ -543,7 +547,6 @@
                                     <el-option v-for="(n,k) in types" :key="k" :label="getTypeCn(k)" :value="k"></el-option>
                                 </el-select>
                                 <el-select v-model="search.status" placeholder="全部状态" clearable style="width:120px" @change="loadModels">
-                                    <el-option label="草稿" value="DRAFT"></el-option>
                                     <el-option label="已激活" value="ACTIVE"></el-option>
                                     <el-option label="已停用" value="DISABLED"></el-option>
                                 </el-select>
@@ -554,7 +557,7 @@
                             <div class="grid" v-loading="busy.load">
                                 <div v-for="m in models" :key="m.id" class="img-card" @click="detail=m;drawer=true">
                                     <div class="img-wrap">
-                                        <el-image v-if="m.coverImageUrl" :src="thumb(m.coverImageUrl)" fit="cover" style="width:100%;height:100%" :preview-src-list="[m.coverImageUrl]" preview-teleported/>
+                                        <el-image v-if="m.coverImageUrl" :src="thumb(m.coverImageUrl)" fit="cover" style="width:100%;height:100%" :preview-src-list="[m.coverImageUrl]" preview-teleported></el-image>
                                         <div v-else class="placeholder"><span style="font-size:48px;color:#ddd">👤</span></div>
                                         <el-tag :type="mstatusType(m.status)" size="small" style="position:absolute;top:6px;right:6px">{{ mstatusLabel(m.status) }}</el-tag>
                                     </div>
@@ -585,29 +588,36 @@
                             <div class="timeline" v-loading="busy.hist">
                                 <div v-for="h in filteredHistory" :key="h.id" class="tl-item">
                                     <div class="tl-dot" :style="{background: h.taskStatus==='SUCCESS'?'#67c23a':h.taskStatus==='FAILED'?'#F56C6C':'#E6A23C'}"></div>
-                                    <div class="tl-content" style="align-items:flex-start">
-                                        <el-image v-if="h.coverImageUrl" :src="thumb(h.coverImageUrl, 180, 101)" fit="cover" style="width:180px;height:101px;border-radius:6px;cursor:pointer;flex-shrink:0" :preview-src-list="[h.coverImageUrl]" preview-teleported @click="detail=h;drawer=true"/>
+
+                                    <div class="tl-content" style="align-items: flex-start; display: flex;">
+                                        <el-image v-if="h.coverImageUrl" :src="thumb(h.coverImageUrl, 180, 101)" fit="cover" :preview-src-list="[h.coverImageUrl]" preview-teleported @click="detail=h;drawer=true"></el-image>
                                         <div v-else style="width:180px;height:101px;background:#f5f7fa;border-radius:6px;display:flex;align-items:center;justify-content:center;flex-shrink:0">
                                             <div v-if="h.taskStatus==='CREATED'||h.taskStatus==='PROCESSING'" class="spinner-sm"></div>
                                             <span v-else style="font-size:28px;color:#ddd">👤</span>
                                         </div>
-                                        <div style="flex:1;min-width:0;padding:4px 0">
-                                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-                                                <span style="font-size:15px;font-weight:600;color:#303133;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ h.modelName }}</span>
-                                                <span style="font-size:11px;color:#999;flex-shrink:0;margin-left:12px">{{ fmtDate(h.createdAt) }}</span>
+
+                                        <div class="tl-body" style="padding: 4px 0 4px 16px; display: flex; flex-direction: column; justify-content: space-between;">
+                                            <div>
+                                                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                                                    <span style="font-size:16px;font-weight:600;color:#303133;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="点击查看详情" @click="detail=h;drawer=true; style='cursor:pointer;'">{{ h.modelName }}</span>
+                                                    <span style="font-size:12px;color:#909399;flex-shrink:0;margin-left:12px">{{ fmtDate(h.createdAt) }}</span>
+                                                </div>
+
+                                                <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+                                                    <el-tag :type="taskType(h.taskStatus)" size="small" effect="light">{{ taskLabel(h.taskStatus) }}</el-tag>
+                                                    <el-tag :type="mstatusType(h.status)" size="small" effect="light">{{ mstatusLabel(h.status) }}</el-tag>
+                                                    <span style="font-size:12px;color:#606266;line-height:24px;margin-left: 8px;">{{ getTypeCn(h.modelType) }} · {{ h.ethnicity||'未指定' }}</span>
+                                                </div>
                                             </div>
-                                            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
-                                                <el-tag :type="taskType(h.taskStatus)" size="small">{{ taskLabel(h.taskStatus) }}</el-tag>
-                                                <el-tag :type="mstatusType(h.status)" size="small">{{ mstatusLabel(h.status) }}</el-tag>
-                                                <span style="font-size:12px;color:#666;line-height:24px">{{ getTypeCn(h.modelType) }} · {{ h.ethnicity||'未指定' }}</span>
-                                            </div>
-                                            <div style="display:flex;gap:6px">
-                                                <el-button v-if="h.taskStatus==='SUCCESS'&&h.status!=='ACTIVE'" size="small" type="success" @click="approve(h)">✅ 入库</el-button>
+
+                                            <div style="display:flex;gap:8px;margin-top: 4px;">
+                                                <el-button v-if="h.taskStatus==='SUCCESS'&&h.status!=='ACTIVE'" size="small" type="success" plain @click="approve(h)">✅ 快速入库</el-button>
                                                 <el-button size="small" @click="copy(h.generatedPrompt)">📄 复制提示词</el-button>
-                                                <el-button size="small" @click="detail=h;drawer=true">查看详情</el-button>
+                                                <el-button size="small" @click="detail=h;drawer=true">👀 查看详情</el-button>
                                             </div>
                                         </div>
                                     </div>
+
                                 </div>
                             </div>
                             <el-empty v-if="!busy.hist&&!filteredHistory.length" :description="historyFilter?'该状态下暂无数据':'暂无历史记录'"></el-empty>
@@ -617,43 +627,40 @@
                         </div>
                     </div>
 
+                    <el-drawer v-model="drawer" title="模特详情" size="460px" v-if="detail">
+                        <div style="text-align:center;margin-bottom:20px">
+                            <template v-if="detail.coverImageUrl">
+                                <el-image :src="detail.coverImageUrl" fit="contain" style="max-width:100%;max-height:360px;border-radius:10px" :preview-src-list="[detail.coverImageUrl]" preview-teleported></el-image>
+                            </template>
+                            <template v-else>
+                                <div style="width:180px;height:240px;background:#f5f7fa;border-radius:10px;display:inline-flex;align-items:center;justify-content:center"><span style="font-size:56px;color:#ddd">👤</span></div>
+                            </template>
+                        </div>
+                        <el-descriptions :column="1" border size="small">
+                            <el-descriptions-item label="名称">{{ detail.modelName||'-' }}</el-descriptions-item>
+                            <el-descriptions-item label="类型">{{ getTypeCn(detail.modelType)||'-' }}</el-descriptions-item>
+                            <el-descriptions-item label="族裔">{{ detail.ethnicity||'未指定' }}</el-descriptions-item>
+                            <el-descriptions-item label="年龄">{{ detail.ageRange||'默认' }}</el-descriptions-item>
+                            <el-descriptions-item label="状态"><el-tag :type="mstatusType(detail.status)" size="small">{{ mstatusLabel(detail.status) }}</el-tag></el-descriptions-item>
+                            <el-descriptions-item label="创建时间">{{ fmtDate(detail.createdAt)||'-' }}</el-descriptions-item>
+                        </el-descriptions>
+                        <div style="margin-top:16px">
+                            <h4 style="margin-bottom:8px">生成提示词</h4>
+                            <div class="prompt-box" style="background:#f8f9fa;border-color:#e9ecef">
+                                <div class="text" style="max-height:180px;padding-right:10px">{{ detail.generatedPrompt }}</div>
+                            </div>
+                            <el-button type="primary" size="small" @click="copy(detail.generatedPrompt)" style="margin-top:8px">📄 复制提示词</el-button>
+                        </div>
+                        <div style="margin-top:16px;display:flex;gap:10px">
+                            <el-button v-if="detail.status==='DRAFT'" type="success" @click="approve(detail)">✅ 启用</el-button>
+                            <el-button v-if="detail.status==='ACTIVE'" type="warning" @click="disableM(detail)">⏸️ 停用</el-button>
+                            <el-button type="danger" plain @click="deleteM(detail)">🗑️ 删除</el-button>
+                        </div>
+                    </el-drawer>
                 </div>
             </div>
-
-            <el-drawer v-model="drawer" title="模特详情" size="460px" v-if="detail">
-                <div style="text-align:center;margin-bottom:20px">
-                    <template v-if="detail.coverImageUrl">
-                        <el-image :src="detail.coverImageUrl" fit="contain" style="max-width:100%;max-height:360px;border-radius:10px" :preview-src-list="[detail.coverImageUrl]" preview-teleported/>
-                    </template>
-                    <template v-else>
-                        <div style="width:180px;height:240px;background:#f5f7fa;border-radius:10px;display:inline-flex;align-items:center;justify-content:center"><span style="font-size:56px;color:#ddd">👤</span></div>
-                    </template>
-                </div>
-                <el-descriptions :column="1" border size="small">
-                    <el-descriptions-item label="名称">{{ detail.modelName||'-' }}</el-descriptions-item>
-                    <el-descriptions-item label="类型">{{ getTypeCn(detail.modelType)||'-' }}</el-descriptions-item>
-                    <el-descriptions-item label="族裔">{{ detail.ethnicity||'未指定' }}</el-descriptions-item>
-                    <el-descriptions-item label="年龄">{{ detail.ageRange||'默认' }}</el-descriptions-item>
-                    <el-descriptions-item label="状态"><el-tag :type="mstatusType(detail.status)" size="small">{{ mstatusLabel(detail.status) }}</el-tag></el-descriptions-item>
-                    <el-descriptions-item label="创建时间">{{ fmtDate(detail.createdAt)||'-' }}</el-descriptions-item>
-                </el-descriptions>
-                <div style="margin-top:16px">
-                    <h4 style="margin-bottom:8px">生成提示词</h4>
-                    <div class="prompt-box" style="background:#f8f9fa;border-color:#e9ecef">
-                        <div class="text" style="max-height:180px;padding-right:10px">{{ detail.generatedPrompt }}</div>
-                    </div>
-                    <el-button type="primary" size="small" @click="copy(detail.generatedPrompt)" style="margin-top:8px">📄 复制提示词</el-button>
-                </div>
-                <div style="margin-top:16px;display:flex;gap:10px">
-                    <el-button v-if="detail.status==='DRAFT'" type="success" @click="approve(detail)">✅ 启用</el-button>
-                    <el-button v-if="detail.status==='ACTIVE'" type="warning" @click="disableM(detail)">⏸️ 停用</el-button>
-                    <el-button type="danger" plain @click="deleteM(detail)">🗑️ 删除</el-button>
-                </div>
-            </el-drawer>
         </div>
     </div>
-</div>
-</div>
 </div>
 
 <script>
@@ -673,13 +680,13 @@
             const uploadingClothing = ref(false);
 
             const busy = reactive({submit:false,load:false,hist:false});
-        const form = reactive({
-            modelType:'', modelTypeCustom:'', ethnicity:'', ageRange:'', specialRequirements:'',
-            textModel:'', hairstyle:'', skinTone:'', cameraAngle:'composite_panel', background:'white_studio',
-            clothingDescription:'', clothingImageUrl:'',
-            imageModel:'nano-banana-pro', resolution:'4K', aspectRatio:'16:9',
-            batchCount:1, namePrefix:''
-        });
+            const form = reactive({
+                modelType:'', modelTypeCustom:'', ethnicity:'', ageRange:'', specialRequirements:'',
+                textModel:'', hairstyle:'', skinTone:'', cameraAngle:'composite_panel', background:'white_studio',
+                clothingDescription:'', clothingImageUrl:'',
+                imageModel:'nano-banana-pro', resolution:'4K', aspectRatio:'16:9',
+                batchCount:1, namePrefix:''
+            });
             const batchTasks = ref([]);
             const types = ref({});
 
@@ -899,16 +906,18 @@
                 catch(e){const ta=document.createElement('textarea');ta.value=t;document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);ElementPlus.ElMessage.success('🎉 复制成功！');}
             };
 
-            const fmtDate=(d)=>d?new Date(d).toLocaleString('zh-CN'):'';
-        // OSS 缩略图：列表用小图预加载，点击预览用原图
-        const thumb=(url,w,h)=>{
-            if(!url) return '';
-            w=w||280; h=h||158;
-            if(url.includes('aliyuncs.com') && !url.includes('x-oss-process')){
-                return url+'?x-oss-process=image/resize,m_fill,w_'+w+',h_'+h+'/format,jpg/quality,q_40';
-            }
-            return url;
-        };            const taskType=(s)=>({CREATED:'info',PROCESSING:'warning',SUCCESS:'success',FAILED:'danger'}[s]||'info');
+            const fmtDate=(d)=>d?new Date(d).toLocaleString('zh-CN', { hour12: false }):'';
+
+            // OSS 缩略图：列表用小图预加载，点击预览用原图
+            const thumb=(url,w,h)=>{
+                if(!url) return '';
+                w=w||280; h=h||158;
+                if(url.includes('aliyuncs.com') && !url.includes('x-oss-process')){
+                    return url+'?x-oss-process=image/resize,m_fill,w_'+w+',h_'+h+'/format,jpg/quality,q_40';
+                }
+                return url;
+            };
+            const taskType=(s)=>({CREATED:'info',PROCESSING:'warning',SUCCESS:'success',FAILED:'danger'}[s]||'info');
             const taskLabel=(s)=>({CREATED:'已创建',PROCESSING:'生成中',SUCCESS:'已完成',FAILED:'失败'}[s]||s);
             const mstatusType=(s)=>({DRAFT:'info',ACTIVE:'success',DISABLED:'warning'}[s]||'info');
             const mstatusLabel=(s)=>({DRAFT:'草稿',ACTIVE:'已激活',DISABLED:'已停用'}[s]||s);
