@@ -14,6 +14,7 @@
 
         var onModelLib = isActive('model-library.html');
         var currentView = getViewParam();
+        var onAplus = isActive('aplus.html') || isActive('aplus-templates.html') || isActive('aplus-history.html');
 
         var sidebar = document.createElement('div');
         sidebar.className = 'sidebar-global';
@@ -39,6 +40,27 @@
             '  <a href="buyer-show.html" class="sidebar-link' + (isActive('buyer-show.html') ? ' active' : '') + '">',
             '    <span class="sidebar-link-icon">📸</span><span>AI 买家秀</span>',
             '  </a>',
+            // A+ 套图 - 可折叠父级（仅 PINKSIR 账号可见）
+            isAdmin ? (
+            '  <div class="sidebar-parent' + (onAplus ? ' expanded' : '') + '">' +
+            '    <div class="sidebar-link sidebar-parent-toggle' + (onAplus ? ' active-parent' : '') + '" onclick="this.parentElement.classList.toggle(\'expanded\')">' +
+            '      <span class="sidebar-link-icon">🖼️</span>' +
+            '      <span>A+ 套图</span>' +
+            '      <span class="sidebar-arrow">▾</span>' +
+            '    </div>' +
+            '    <div class="sidebar-submenu">' +
+            '      <a href="aplus.html" class="sidebar-link sidebar-sub' + (isActive('aplus.html') ? ' active' : '') + '">' +
+            '        <span class="sidebar-link-icon">📝</span><span>创建项目</span>' +
+            '      </a>' +
+            '      <a href="aplus-templates.html" class="sidebar-link sidebar-sub' + (isActive('aplus-templates.html') ? ' active' : '') + '">' +
+            '        <span class="sidebar-link-icon">📚</span><span>模板库</span>' +
+            '      </a>' +
+            '      <a href="aplus-history.html" class="sidebar-link sidebar-sub' + (isActive('aplus-history.html') ? ' active' : '') + '">' +
+            '        <span class="sidebar-link-icon">📜</span><span>历史记录</span>' +
+            '      </a>' +
+            '    </div>' +
+            '  </div>'
+            ) : '',
             '  <a href="video.html" class="sidebar-link' + (isActive('video.html') ? ' active' : '') + '">',
             '    <span class="sidebar-link-icon">🎬</span><span>视频生成</span>',
             '  </a>',

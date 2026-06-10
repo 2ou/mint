@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <title>A+ 模板库 — AI 电商视觉平台</title>
+    <link rel="stylesheet" href="css/variables.css">
+    <link rel="stylesheet" href="css/shared.css">
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css"/>
+    <script src="https://unpkg.com/element-plus"></script>
+    <script src="https://unpkg.com/@element-plus/icons-vue"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <script src="auth.js"></script>
+    <script src="js/sidebar.js"></script>
+    <style>
+        body { margin: 0; font-family: var(--app-font-family); }
+        .main-card { background: #fff; border-radius: var(--app-radius-lg); box-shadow: var(--app-shadow-card); padding: 28px; }
+
+        /* 模板卡片 */
+        .template-card {
+            border: 1px solid #ebeef5; border-radius: 12px; padding: 18px;
+            background: #fafbfc; transition: all 0.2s; cursor: pointer; margin-bottom: 12px;
+        }
+        .template-card:hover { border-color: #667eea; background: #f8f9ff; }
+        .template-card.active { border-color: #667eea; background: #f0f2ff; box-shadow: 0 0 0 2px rgba(102,126,234,0.2); }
+        .template-card .tc-name { font-size: 15px; font-weight: 700; color: #303133; margin-bottom: 6px; }
+        .template-card .tc-meta { font-size: 12px; color: #909399; display: flex; gap: 12px; flex-wrap: wrap; }
+        .template-card .tc-modules { margin-top: 10px; display: flex; gap: 6px; flex-wrap: wrap; }
+        .template-card .tc-modules .el-tag { font-size: 11px; }
+
+        /* 详情面板 */
+        .detail-section { margin-bottom: 20px; }
+        .detail-section-title { font-size: 14px; font-weight: 700; color: #303133; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
+        .detail-field { margin-bottom: 8px; }
+        .detail-field .label { font-size: 12px; color: #909399; margin-bottom: 2px; }
+        .detail-field .value { font-size: 14px; color: #303133; }
+
+        /* 空状态 */
+        .empty-state {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            padding: 60px 20px; color: #909399;
+        }
+        .empty-state .icon { font-size: 48px; margin-bottom: 16px; opacity: 0.5; }
+        .empty-state .text { font-size: 14px; }
+    </style>
+</head>
+<body>
+<div id="app">
+    <div class="app-layout">
+        <div class="app-main">
+            <div style="padding: 28px 32px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+                    <div>
+                        <div style="font-size: 20px; font-weight: 700; color: #303133;">A+ 模板库</div>
+                        <div style="font-size: 13px; color: #909399; margin-top: 4px;">管理已保存的 A+ 项目配置模板，快速复用</div>
+                    </div>
+                    <el-button type="primary" @click="goToCreate" style="background: linear-gradient(135deg, #667eea, #764ba2); border: none;">
+                        + 去创建项目
+                    </el-button>
+                </div>
+
+                <div style="display: flex; gap: 24px;">
+                    <!-- 左侧：模板列表 -->
+                    <div style="width: 400px; flex-shrink: 0;">
+                        <div class="main-card" style="padding: 16px;">
+                            <!-- 搜索栏 -->
+                            <div style="display: flex; gap: 8px; margin-bottom: 16px;">
+                                <el-input v-model="searchName" placeholder="搜索模板名称" clearable size="small"
+                                          @clear="loadTemplates" @keyup.enter="loadTemplates"/>
+                                <el-button size="small" @click="loadTemplates" type="primary"
+                                           style="background: linear-gradient(135deg, #667eea, #764ba2); border: none;">搜索</el-button>
+                            </div>
+
+                            <!-- 模板列表 -->
+                            <div v-loading="loading">
+                                <div v-if="templates.length === 0 && !loading" class="empty-state">
+                                    <div class="icon">📚</div>
+                                    <div class="text">暂无模板，在创建项目时可保存为模板</div>
+                                </div>
+                                <div v-for="t in templates" :key="t.id"
+                                     class="template-card" :class="{ active: selectedTemplate && selectedTemplate.id === t.id }"
+                                     @click="selectTemplate(t)">
+                                    <div class="tc-name">{{ t.templateName }}</div>
+                                    <div class="tc-meta">
+                                        <span v-if="t.spu">SPU: {{ t.spu }}</span>
+                                        <span>{{ t.createdAt }}</span>
+                                    </div>
+                                    <div class="tc-modules" v-if="parseModules(t.selectedModules).length">
+                                        <el-tag v-for="m in parseModules(t.selectedModules)" :key="m" size="small" type="info">{{ m }}</el-tag>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 分页 -->
+                            <div style="display: flex; justify-content: center; margin-top: 12px;" v-if="totalTemplates > pageSize">
+                                <el-pagination
+                                    v-model:current-page="currentPage"
+                                    :page-size="pageSize"
+                                    :total="totalTemplates"
+                                    layout="prev, pager, next"
+                                    @current-change="loadTemplates"/>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 右侧：模板详情 -->
+                    <div style="flex: 1; min-width: 0;">
+                        <div v-if="!selectedTemplate" class="main-card">
+                            <div class="empty-state">
+                                <div class="icon">👈</div>
+                                <div class="text">选择左侧模板查看详情</div>
+                            </div>
+                        </div>
+
+                        <div v-else class="main-card">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                                <div style="font-size: 16px; font-weight: 700; color: #303133;">{{ selectedTemplate.templateName }}</div>
+                                <div style="display: flex; gap: 8px;">
+                                    <el-button type="primary" @click="useTemplate" size="small"
+                                               style="background: linear-gradient(135deg, #667eea, #764ba2); border: none;">
+                                        使用此模板
+                                    </el-button>
+                                    <el-button type="danger" @click="deleteTemplate" size="small" plain>删除</el-button>
+                                </div>
+                            </div>
+
+                            <!-- 基本信息 -->
+                            <div class="detail-section">
+                                <div class="detail-section-title">📋 基本信息</div>
+                                <el-row :gutter="16">
+                                    <el-col :span="12">
+                                        <div class="detail-field">
+                                            <div class="label">SPU</div>
+                                            <div class="value">{{ selectedTemplate.spu || '—' }}</div>
+                                        </div>
+                                    </el-col>
+                                    <el-col :span="12">
+                                        <div class="detail-field">
+                                            <div class="label">创建时间</div>
+                                            <div class="value">{{ selectedTemplate.createdAt }}</div>
+                                        </div>
+                                    </el-col>
+                                </el-row>
+                                <div class="detail-field" v-if="selectedTemplate.sellingPoints">
+                                    <div class="label">产品卖点</div>
+                                    <div class="value" style="white-space: pre-wrap;">{{ selectedTemplate.sellingPoints }}</div>
+                                </div>
+                            </div>
+
+                            <!-- 参考图 -->
+                            <div class="detail-section" v-if="selectedTemplate.referenceImageUrl">
+                                <div class="detail-section-title">🖼️ 参考图</div>
+                                <el-image :src="selectedTemplate.referenceImageUrl" fit="contain"
+                                          style="max-height: 300px; border-radius: 8px; border: 1px solid #ebeef5;"
+                                          :preview-src-list="[selectedTemplate.referenceImageUrl]" preview-teleported/>
+                            </div>
+
+                            <!-- 模块配置 -->
+                            <div class="detail-section">
+                                <div class="detail-section-title">🧩 模块配置</div>
+                                <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px;">
+                                    <el-tag v-for="m in parseModules(selectedTemplate.selectedModules)" :key="m"
+                                            :type="moduleTagType(m)" effect="plain">{{ m }} {{ moduleNames[m] || '' }}</el-tag>
+                                </div>
+
+                                <!-- 模块补充信息 -->
+                                <div v-if="extrasList.length > 0" style="margin-top: 12px;">
+                                    <div v-for="ex in extrasList" :key="ex.code"
+                                         style="background: #fafbfc; border-radius: 8px; padding: 14px; margin-bottom: 8px; border: 1px solid #ebeef5;">
+                                        <div style="font-size: 13px; font-weight: 600; color: #303133; margin-bottom: 8px;">
+                                            {{ ex.code }} {{ moduleNames[ex.code] || '' }}
+                                        </div>
+                                        <div v-if="ex.supplementaryImageUrl" style="margin-bottom: 8px;">
+                                            <el-image :src="ex.supplementaryImageUrl" fit="contain"
+                                                      style="max-height: 150px; border-radius: 6px; border: 1px solid #ebeef5;"
+                                                      :preview-src-list="[ex.supplementaryImageUrl]" preview-teleported/>
+                                        </div>
+                                        <div v-if="ex.supplementaryText" style="font-size: 13px; color: #606266; white-space: pre-wrap;">
+                                            {{ ex.supplementaryText }}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const icons = ElementPlusIconsVue;
+    const { createApp, ref, reactive, computed, watch } = Vue;
+
+    const app = createApp({
+        setup() {
+            const moduleNames = {
+                'AD-01': '品牌英雄图', 'AD-02': '印花/面料故事图', 'AD-03': '设计细节图',
+                'AD-04': '多场景穿搭图', 'AD-05': '舒适体验图', 'AD-06': '尺码/版型指南', 'AD-07': '护理/品牌收尾图'
+            };
+
+            const loading = ref(false);
+            const templates = ref([]);
+            const selectedTemplate = ref(null);
+            const currentPage = ref(1);
+            const pageSize = ref(20);
+            const totalTemplates = ref(0);
+            const searchName = ref('');
+
+            // 解析模块列表
+            const parseModules = (json) => {
+                try { return JSON.parse(json || '[]'); } catch { return []; }
+            };
+
+            // 模块标签颜色
+            const moduleTagType = (code) => {
+                const types = { 'AD-01': '', 'AD-02': 'success', 'AD-03': 'warning', 'AD-04': 'danger', 'AD-05': 'info', 'AD-06': '', 'AD-07': 'success' };
+                return types[code] || 'info';
+            };
+
+            // 解析模块补充信息
+            const extrasList = computed(() => {
+                if (!selectedTemplate.value || !selectedTemplate.value.moduleExtras) return [];
+                try {
+                    const extras = JSON.parse(selectedTemplate.value.moduleExtras);
+                    return Object.entries(extras).map(([code, data]) => ({
+                        code,
+                        supplementaryImageUrl: data.supplementaryImageUrl || null,
+                        supplementaryText: data.supplementaryText || null
+                    }));
+                } catch { return []; }
+            });
+
+            // 加载模板列表
+            const loadTemplates = async () => {
+                loading.value = true;
+                try {
+                    const params = { page: currentPage.value, size: pageSize.value };
+                    if (searchName.value) params.templateName = searchName.value;
+                    const r = await axios.get('/api/aplus/templates', { params });
+                    if (r.data.success) {
+                        templates.value = r.data.data.content || [];
+                        totalTemplates.value = r.data.data.totalElements || 0;
+                    }
+                } catch (e) {
+                    ElementPlus.ElMessage.error('加载模板列表失败');
+                } finally {
+                    loading.value = false;
+                }
+            };
+
+            // 选中模板
+            const selectTemplate = (t) => {
+                selectedTemplate.value = t;
+            };
+
+            // 使用模板 → 跳转创建页
+            const useTemplate = () => {
+                if (!selectedTemplate.value) return;
+                window.location.href = 'aplus.html?templateId=' + selectedTemplate.value.id;
+            };
+
+            // 跳转创建页
+            const goToCreate = () => {
+                window.location.href = 'aplus.html';
+            };
+
+            // 删除模板
+            const deleteTemplate = async () => {
+                if (!selectedTemplate.value) return;
+                try {
+                    await ElementPlus.ElMessageBox.confirm(
+                        `确定删除模板「${selectedTemplate.value.templateName}」？`,
+                        '确认删除', { confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning' }
+                    );
+                    const r = await axios.delete(`/api/aplus/templates/${selectedTemplate.value.id}`);
+                    if (r.data.success) {
+                        ElementPlus.ElMessage.success('删除成功');
+                        selectedTemplate.value = null;
+                        await loadTemplates();
+                    } else {
+                        ElementPlus.ElMessage.error(r.data.message || '删除失败');
+                    }
+                } catch (e) {
+                    if (e !== 'cancel') ElementPlus.ElMessage.error('删除失败');
+                }
+            };
+
+            loadTemplates();
+
+            return {
+                moduleNames, loading, templates, selectedTemplate,
+                currentPage, pageSize, totalTemplates, searchName,
+                extrasList, parseModules, moduleTagType,
+                loadTemplates, selectTemplate, useTemplate, goToCreate, deleteTemplate
+            };
+        }
+    });
+
+    for (const [key, component] of Object.entries(icons)) {
+        app.component(key, component);
+    }
+    app.use(ElementPlus);
+    app.mount('#app');
+</script>
+</body>
+</html>

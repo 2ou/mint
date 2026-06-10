@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <title>Buyer Show Studio — AI 买家秀生成</title>
+    <link rel="stylesheet" href="css/variables.css">
+    <link rel="stylesheet" href="css/shared.css">
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css"/>
+    <script src="https://unpkg.com/element-plus"></script>
+    <script src="https://unpkg.com/@element-plus/icons-vue"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <script src="auth.js"></script>
+    <script src="js/sidebar.js"></script>
+    <style>
+        body { margin: 0; font-family: var(--app-font-family); }
+
+        .step-bar { display: flex; gap: 12px; margin-bottom: 24px; }
+        .step-bar .step-item {
+            flex: 1; display: flex; align-items: center; gap: 10px;
+            padding: 14px 16px; background: #fafafa; border-radius: 10px;
+            cursor: default; transition: all 0.25s; border: 2px solid transparent;
+        }
+        .step-bar .step-item.active { background: #fff; border-color: #667eea; box-shadow: 0 2px 8px rgba(102,126,234,0.12); }
+        .step-bar .step-item.done { background: #f0f9eb; border-color: #67c23a; }
+        .step-bar .step-num {
+            width: 32px; height: 32px; border-radius: 50%;
+            background: #e0e0e0; color: #666;
+            display: flex; align-items: center; justify-content: center;
+            font-weight: 700; font-size: 13px; flex-shrink: 0;
+        }
+        .step-bar .step-item.active .step-num { background: linear-gradient(135deg, #667eea, #764ba2); color: #fff; }
+        .step-bar .step-item.done .step-num { background: #67c23a; color: #fff; }
+        .step-bar .step-label { font-size: 13px; font-weight: 600; color: #909399; }
+        .step-bar .step-item.active .step-label { color: #303133; }
+        .step-bar .step-item.done .step-label { color: #67c23a; }
+
+        .main-card { background: #fff; border-radius: var(--app-radius-lg); box-shadow: var(--app-shadow-card); padding: 28px; }
+
+        .form-section { margin-bottom: 24px; }
+        .form-section-title { font-size: 15px; font-weight: 700; color: #303133; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+
+        /* ====== Element Plus Upload Customization ====== */
+        .custom-upload-wrapper {
+            background: #fafbfc; border-radius: 12px; padding: 16px; border: 2px dashed #ebeef5;
+            transition: all 0.2s ease-in-out;
+        }
+        .drag-active {
+            border-color: #667eea !important;
+            background-color: #f0f2ff !important;
+        }
+
+        .custom-upload .el-upload--picture-card {
+            background-color: #fff;
+            border: 2px dashed #dcdfe6;
+            border-radius: 12px;
+            width: 150px;
+            height: 150px;
+            transition: all 0.2s;
+        }
+        .custom-upload .el-upload--picture-card:hover {
+            border-color: #667eea;
+            background-color: #f8f9ff;
+        }
+        .custom-upload .el-upload-list--picture-card .el-upload-list__item {
+            width: 150px;
+            height: 150px;
+            border-radius: 12px;
+            border: 2px solid #e4e7ed;
+            position: relative; /* 确保定位基准 */
+            overflow: visible; /* 允许删除按钮超出边界 */
+        }
+
+        .el-upload-list__item { transition: none !important; }
+
+        .el-upload-list__item-thumbnail-wrapper {
+            position: relative; height: 100%; width: 100%;
+            border-radius: 10px; overflow: hidden; /* 图片圆角 */
+        }
+
+        .color-dot-overlay {
+            position: absolute; bottom: 6px; left: 50%; transform: translateX(-50%);
+            font-size: 11px; color: #303133; background: rgba(255, 255, 255, 0.85);
+            padding: 2px 10px; border-radius: 4px; pointer-events: none;
+            font-weight: 600; box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            z-index: 5;
+        }
+
+        /* 🔴 优化：固定在右上角的删除按钮 */
+        .custom-remove-btn {
+            position: absolute;
+            top: -8px;
+            right: -8px;
+            width: 24px;
+            height: 24px;
+            background-color: rgba(245, 108, 108, 0.9);
+            color: #fff;
+            border: none;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10;
+            transition: all 0.2s;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            opacity: 0; /* 默认隐藏 */
+        }
+
+        /* 悬浮整个图片项时显示删除按钮 */
+        .el-upload-list__item:hover .custom-remove-btn {
+            opacity: 1;
+        }
+
+        .custom-remove-btn:hover {
+            background-color: #f56c6c;
+            transform: scale(1.15);
+        }
+
+        /* 隐藏 Element 默认的黑底 actions 遮罩，改为只点击图片预览 */
+        .custom-upload .el-upload-list__item-actions {
+            display: none !important;
+        }
+
+        /* 按图分组提示词 */
+        .image-group {
+            border: 1px solid #ebeef5; border-radius: 12px; padding: 18px; margin-bottom: 18px;
+            background: #fafbfc;
+        }
+        .image-group .ig-header {
+            display: flex; align-items: center; gap: 14px; margin-bottom: 14px;
+        }
+        .image-group .ig-header img { width: 80px; height: 80px; object-fit: cover; border-radius: 8px; }
+        .image-group .ig-header .ig-title { font-size: 15px; font-weight: 700; color: #303133; }
+        .image-group .ig-header .ig-sub { font-size: 12px; color: #909399; margin-top: 2px; }
+
+        .prompt-card {
+            background: #fff; border: 1px solid #e4e7ed; border-radius: 8px;
+            padding: 14px; margin-bottom: 10px;
+        }
+        .prompt-card .pc-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+        .prompt-card .pc-meta { font-size: 12px; color: #606266; margin-bottom: 8px; }
+
+        .action-bar {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-top: 20px; padding-top: 16px; border-top: 1px solid #f0f0f0;
+        }
+
+        /* 结果 */
+        .result-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+        .result-item { border: 1px solid #ebeef5; border-radius: 10px; overflow: hidden; background: #fff; }
+        .result-item .ri-footer { padding: 8px 12px; font-size: 12px; color: #909399; }
+
+        .scene-loading-spinner {
+            width: 32px; height: 32px; border-radius: 50%;
+            border: 3px solid #e4e7ed; border-top-color: #667eea;
+            animation: scene-spin 1s linear infinite;
+        }
+        @keyframes scene-spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+<div id="app">
+    <div class="app-layout">
+        <div class="app-main">
+            <div style="padding: 28px 32px;">
+                <div class="step-bar">
+                    <div class="step-item" :class="{active: step===1, done: step>1}">
+                        <div class="step-num">{{ step > 1 ? '✓' : '1' }}</div>
+                        <span class="step-label">输入信息</span>
+                    </div>
+                    <div class="step-item" :class="{active: step===2, done: step>2}">
+                        <div class="step-num">{{ step > 2 ? '✓' : '2' }}</div>
+                        <span class="step-label">审阅提示词</span>
+                    </div>
+                    <div class="step-item" :class="{active: step===3}">
+                        <div class="step-num">3</div>
+                        <span class="step-label">生成结果</span>
+                    </div>
+                </div>
+
+                <div class="main-card">
+                    <div v-show="step===1">
+                        <div class="form-section">
+                            <div class="form-section-title">📋 基本信息</div>
+                            <el-form label-width="80px">
+                                <el-form-item label="SPU 款号" required>
+                                    <el-input v-model="spu" placeholder="如：GC0079" clearable/>
+                                </el-form-item>
+                                <el-form-item label="服装描述" required>
+                                    <el-input v-model="clothingDesc" type="textarea" :rows="3"
+                                              placeholder="请描述服装，例如：黑色无袖上衣+宽松长裤家居服套装，棉质面料，休闲舒适风格"/>
+                                </el-form-item>
+                                <el-form-item label="场景偏好">
+                                    <el-input v-model="scenePreference" placeholder="选填，如：咖啡店、公园散步、居家（逗号分隔）"/>
+                                </el-form-item>
+                            </el-form>
+                        </div>
+
+                        <div class="form-section">
+                            <div class="form-section-title">🖼️ 产品图（不同颜色）</div>
+
+                            <div class="custom-upload-wrapper"
+                                 :class="{'drag-active': isDragging}"
+                                 @dragover.prevent="onDragOver"
+                                 @dragleave="onDragLeave"
+                                 @drop.prevent="handleDrop">
+
+                                <el-upload
+                                        class="custom-upload"
+                                        action="#"
+                                        list-type="picture-card"
+                                        :auto-upload="false"
+                                        :file-list="fileList"
+                                        :on-change="handleFileChange"
+                                        :on-preview="handlePictureCardPreview"
+                                        :on-remove="handleRemove"
+                                        accept="image/*"
+                                        multiple
+                                        :limit="6">
+                                    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%;">
+                                        <el-icon style="font-size: 28px; color: #c0c4cc; margin-bottom: 8px;"><Plus /></el-icon>
+                                        <div style="font-size: 12px; color: #909399; line-height: 1.4;">点击或拖拽图片到此</div>
+                                    </div>
+
+                                    <template #file="{ file }">
+                                        <div style="position: relative; width: 100%; height: 100%;">
+                                            <div class="el-upload-list__item-thumbnail-wrapper" @click="handlePictureCardPreview(file)" style="cursor: pointer;">
+                                                <img class="el-upload-list__item-thumbnail" :src="file.url" alt="" style="object-fit: cover;" />
+                                                <div class="color-dot-overlay">图 {{ getFileIndex(file) + 1 }}</div>
+                                            </div>
+                                            <button class="custom-remove-btn" @click.stop="handleRemove(file)">✕</button>
+                                        </div>
+                                    </template>
+                                </el-upload>
+
+                                <div style="margin-top:12px;display:flex;gap:16px;font-size:12px;color:#909399">
+                                    <span>📎 支持 JPG / PNG</span>
+                                    <span>🖼️ 最多 6 张</span>
+                                    <span>🎨 每张对应一个颜色</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <el-dialog v-model="dialogVisible" title="图片预览" width="50%">
+                            <img w-full :src="dialogImageUrl" alt="Preview Image" style="width: 100%; border-radius: 8px;" />
+                        </el-dialog>
+
+                        <div class="form-section">
+                            <div class="form-section-title">⚙️ 生成设置</div>
+                            <el-form label-width="100px">
+                                <el-row :gutter="16">
+                                    <el-col :span="8">
+                                        <el-form-item label="文本模型">
+                                            <el-radio-group v-model="textModel">
+                                                <el-radio-button value="claude">Claude</el-radio-button>
+                                                <el-radio-button value="gpt">GPT</el-radio-button>
+                                            </el-radio-group>
+                                        </el-form-item>
+                                    </el-col>
+                                    <el-col :span="8">
+                                        <el-form-item label="每图提示词数">
+                                            <el-input-number v-model="countPerImage" :min="1" :max="5" style="width:100%"/>
+                                        </el-form-item>
+                                    </el-col>
+                                    <el-col :span="8">
+                                        <div style="padding-top:8px;font-size:13px;color:#606266">
+                                            共 {{ fileList.length }} 张图 × {{ countPerImage }} 条 = <b style="color:#667eea">{{ fileList.length * countPerImage }}</b> 条提示词
+                                        </div>
+                                    </el-col>
+                                </el-row>
+                            </el-form>
+                        </div>
+
+                        <div style="text-align:center;margin-top:20px">
+                            <el-button type="primary" size="large" @click="generate" :loading="loading"
+                                       :disabled="!spu || !clothingDesc || !fileList.length"
+                                       style="padding:12px 48px;background:linear-gradient(135deg,#667eea,#764ba2);border:none;font-weight:600">
+                                🎨 生成买家秀提示词
+                            </el-button>
+                        </div>
+                    </div>
+
+                    <div v-show="step===2">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+                            <div>
+                                <div style="font-size:16px;font-weight:700;color:#303133">买家秀提示词 · {{ spu }}</div>
+                                <div style="font-size:12px;color:#909399;margin-top:2px">共 {{ allPrompts.length }} 条提示词，可编辑</div>
+                            </div>
+                            <div style="display:flex;gap:10px">
+                                <el-button @click="step=1" size="small">← 返回修改</el-button>
+                                <el-button @click="generate" :loading="loading" size="small">⟳ 重新生成</el-button>
+                            </div>
+                        </div>
+
+                        <div v-for="(group, gIdx) in groups" :key="gIdx" class="image-group">
+                            <div class="ig-header">
+                                <img :src="fileList[group.imageIndex]?.url || ''"/>
+                                <div>
+                                    <div class="ig-title">图片 {{ group.imageIndex + 1 }}</div>
+                                    <div class="ig-sub">{{ group.prompts.length }} 条提示词</div>
+                                </div>
+                            </div>
+
+                            <div v-for="(item, pIdx) in group.prompts" :key="pIdx" class="prompt-card">
+                                <div class="pc-header">
+                                    <span style="font-size:13px;font-weight:600;color:#303133">提示词 #{{ pIdx + 1 }}</span>
+                                    <div style="display:flex;gap:8px;align-items:center">
+                                        <span style="font-size:12px;color:#909399">生图数量</span>
+                                        <el-input-number v-model="item.genCount" :min="1" :max="5" size="small" style="width:100px"/>
+                                        <el-button size="small" @click="copyText(item.prompt)" style="border:none;background:none;color:#667eea">📋</el-button>
+                                    </div>
+                                </div>
+                                <div class="pc-meta">
+                                    👤 {{ item.modelDesc }} · 📍 {{ item.sceneDesc }}
+                                </div>
+                                <el-input v-model="item.prompt" type="textarea" :rows="3" style="font-size:12px;line-height:1.6"/>
+                            </div>
+                        </div>
+
+                        <div class="action-bar">
+                            <div style="font-size:13px;color:#606266;font-weight:600">
+                                总计 {{ totalGenCount }} 张图
+                            </div>
+                            <el-button type="primary" size="large" @click="submitTask" :loading="loadingSubmit"
+                                       style="padding:0 32px;height:46px;font-size:15px;font-weight:700;background:linear-gradient(135deg,#667eea,#764ba2);border:none">
+                                提交到任务队列
+                            </el-button>
+                        </div>
+                    </div>
+
+                    <div v-show="step===3">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+                            <div>
+                                <div style="font-size:16px;font-weight:700;color:#303133">生成结果 · {{ spu }}</div>
+                                <div style="font-size:12px;color:#909399;margin-top:2px">已提交 {{ submittedTasks.length }} 个任务</div>
+                            </div>
+                            <el-button @click="resetAll" type="primary" size="small">+ 新建</el-button>
+                        </div>
+
+                        <el-alert type="info" :closable="false" style="margin-bottom:20px"
+                                  v-if="submittedTasks.some(t=>t.status!=='SUCCESS'&&t.status!=='FAILED')">
+                            <span style="font-size:13px;color:#606266">任务生成中，预计 1-2 分钟/张，完成后自动刷新</span>
+                        </el-alert>
+
+                        <div v-if="submittedTasks.length===0" style="text-align:center;padding:60px;color:#909399">
+                            <div style="font-size:2rem;margin-bottom:8px">⏳</div>
+                            <div>等待生成结果...</div>
+                        </div>
+
+                        <div class="result-grid" v-else>
+                            <div v-for="task in submittedTasks" :key="task.taskId" class="result-item">
+                                <template v-if="task.status==='SUCCESS' && (task.resultOssUrl || task.resultTempUrl)">
+                                    <el-image :src="task.resultOssUrl || task.resultTempUrl" fit="cover"
+                                              style="width:100%;aspect-ratio:16/9" :preview-src-list="[task.resultOssUrl || task.resultTempUrl]" preview-teleported/>
+                                </template>
+                                <template v-else>
+                                    <div style="width:100%;aspect-ratio:16/9;background:#fafafa;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px">
+                                        <template v-if="task.status==='FAILED'">
+                                            <span style="font-size:2rem;color:#F56C6C">✕</span>
+                                            <span style="font-size:12px;color:#F56C6C">失败</span>
+                                        </template>
+                                        <template v-else>
+                                            <div class="scene-loading-spinner"></div>
+                                            <span style="font-size:12px;color:#909399">生成中...</span>
+                                        </template>
+                                    </div>
+                                </template>
+                                <div class="ri-footer">
+                                    <el-tag :type="taskStatusType(task.status)" size="small">{{ taskStatusLabel(task.status) }}</el-tag>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const icons = ElementPlusIconsVue;
+    const {createApp, ref, reactive, computed} = Vue;
+
+    const app = createApp({
+        setup() {
+            const step = ref(1);
+            const spu = ref('');
+            const clothingDesc = ref('');
+            const scenePreference = ref('');
+            const textModel = ref('claude');
+            const countPerImage = ref(1);
+            const loading = ref(false);
+            const groups = ref([]);
+            const loadingSubmit = ref(false);
+            const submittedTasks = ref([]);
+            let pollTimer = null;
+
+            const fileList = ref([]);
+            const dialogImageUrl = ref('');
+            const dialogVisible = ref(false);
+            const isDragging = ref(false);
+            let dragCounter = 0;
+
+            const handleFileChange = (uploadFile, uploadFiles) => {
+                fileList.value = uploadFiles;
+            };
+
+            const handleRemove = (uploadFile) => {
+                fileList.value = fileList.value.filter(item => item.uid !== uploadFile.uid);
+            };
+
+            const handlePictureCardPreview = (uploadFile) => {
+                dialogImageUrl.value = uploadFile.url;
+                dialogVisible.value = true;
+            };
+
+            const getFileIndex = (file) => {
+                return fileList.value.findIndex(f => f.uid === file.uid);
+            };
+
+            const onDragOver = (e) => {
+                e.preventDefault();
+                isDragging.value = true;
+            };
+            const onDragLeave = (e) => {
+                e.preventDefault();
+                isDragging.value = false;
+            };
+
+            const handleDrop = (e) => {
+                isDragging.value = false;
+                dragCounter = 0;
+                const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
+
+                if (files.length) {
+                    files.forEach(file => {
+                        if (fileList.value.length >= 6) return;
+
+                        const fakeUploadFile = {
+                            name: file.name,
+                            url: URL.createObjectURL(file),
+                            raw: file,
+                            uid: Date.now() + Math.floor(Math.random() * 10000),
+                            status: 'ready'
+                        };
+                        fileList.value.push(fakeUploadFile);
+                    });
+                }
+            };
+
+            const allPrompts = computed(() => {
+                const result = [];
+                for (const g of groups.value) {
+                    for (const p of g.prompts) {
+                        result.push({...p, imageIndex: g.imageIndex, imageUrl: fileList.value[g.imageIndex]?.url});
+                    }
+                }
+                return result;
+            });
+
+            const totalGenCount = computed(() => {
+                let total = 0;
+                for (const g of groups.value) {
+                    for (const p of g.prompts) {
+                        total += (p.genCount || 1);
+                    }
+                }
+                return total;
+            });
+
+            const uploadToOss = async (fileObj) => {
+                const realFile = fileObj.raw;
+                if (!realFile) return fileObj.url;
+
+                const policyRes = await axios.get('/api/oss/policy');
+                if (!policyRes.data.success) throw new Error('获取上传签名失败');
+                const policy = policyRes.data.data;
+                const formData = new FormData();
+                formData.append('key', policy.dir + Date.now() + '_' + realFile.name);
+                formData.append('policy', policy.policy);
+                formData.append('OSSAccessKeyId', policy.accessId);
+                formData.append('signature', policy.signature);
+                formData.append('callback', policy.callback || '');
+                formData.append('file', realFile);
+
+                const uploadRes = await axios.post(policy.host, formData);
+                return uploadRes.data?.url || (policy.host + '/' + policy.dir + realFile.name);
+            };
+
+            const generate = async () => {
+                if (!spu.value.trim()) { ElementPlus.ElMessage.warning('请填写SPU款号'); return; }
+                if (!clothingDesc.value.trim()) { ElementPlus.ElMessage.warning('请填写服装描述'); return; }
+                if (!fileList.value.length) { ElementPlus.ElMessage.warning('请上传至少一张产品图'); return; }
+
+                loading.value = true;
+                try {
+                    const imageUrls = [];
+                    for (const f of fileList.value) {
+                        if (f.ossUrl) {
+                            imageUrls.push(f.ossUrl);
+                        } else {
+                            const ossUrl = await uploadToOss(f);
+                            f.ossUrl = ossUrl;
+                            imageUrls.push(ossUrl);
+                        }
+                    }
+
+                    const r = await axios.post('/api/buyer-show/generate', {
+                        spu: spu.value,
+                        clothingDesc: clothingDesc.value,
+                        imageUrls: imageUrls,
+                        scenePreference: scenePreference.value,
+                        countPerImage: countPerImage.value,
+                        textModel: textModel.value
+                    });
+                    if (r.data.success) {
+                        const parsed = JSON.parse(r.data.data);
+                        groups.value = (parsed.groups || []).map(g => ({
+                            imageIndex: g.imageIndex,
+                            prompts: (g.prompts || []).map(p => ({
+                                ...p,
+                                genCount: 1
+                            }))
+                        }));
+                        step.value = 2;
+                    } else {
+                        ElementPlus.ElMessage.error(r.data.message || '生成失败');
+                    }
+                } catch (e) {
+                    ElementPlus.ElMessage.error('生成失败: ' + (e.response?.data?.message || e.message));
+                } finally {
+                    loading.value = false;
+                }
+            };
+
+            const submitTask = async () => {
+                if (!allPrompts.value.length) return;
+                loadingSubmit.value = true;
+                const tasks = [];
+                try {
+                    for (const prompt of allPrompts.value) {
+                        for (let i = 0; i < (prompt.genCount || 1); i++) {
+                            const r = await axios.post('/api/models/create-task', {
+                                prompt: prompt.prompt,
+                                model: 'nano-banana-pro',
+                                resolution: '4K',
+                                aspectRatio: '16:9'
+                            });
+                            if (r.data.success) {
+                                tasks.push({...r.data.data, status: r.data.data.taskStatus || 'CREATED'});
+                            }
+                        }
+                    }
+                    if (tasks.length) {
+                        submittedTasks.value = tasks;
+                        step.value = 3;
+                        startPolling();
+                    }
+                } catch (e) {
+                    ElementPlus.ElMessage.error('提交失败');
+                } finally {
+                    loadingSubmit.value = false;
+                }
+            };
+
+            const startPolling = () => {
+                stopPolling();
+                pollTimer = setInterval(async () => {
+                    if (!submittedTasks.value.length) { stopPolling(); return; }
+                    if (submittedTasks.value.every(t => t.status === 'SUCCESS' || t.status === 'FAILED')) { stopPolling(); return; }
+                    for (let i = 0; i < submittedTasks.value.length; i++) {
+                        const t = submittedTasks.value[i];
+                        if (t.status === 'CREATED' || t.status === 'PROCESSING' || t.status === 'GENERATING') {
+                            try {
+                                const r = t.dbId ? await axios.get(`/api/models/${t.dbId}`) : null;
+                                if (r?.data?.success) {
+                                    submittedTasks.value[i] = {...t, ...r.data.data, dbId: r.data.data.id};
+                                }
+                            } catch (e) {}
+                        }
+                    }
+                }, 30000);
+            };
+            const stopPolling = () => { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } };
+
+            const resetAll = () => {
+                step.value = 1; spu.value = ''; clothingDesc.value = ''; scenePreference.value = '';
+                fileList.value = []; groups.value = []; submittedTasks.value = []; stopPolling();
+            };
+
+            const copyText = async (t) => {
+                if (!t) return;
+                try { await navigator.clipboard.writeText(t); ElementPlus.ElMessage.success('复制成功'); } catch (e) {}
+            };
+
+            const taskStatusType = (s) => ({CREATED:'info',PROCESSING:'warning',GENERATING:'warning',SUCCESS:'success',FAILED:'danger'}[s]||'info');
+            const taskStatusLabel = (s) => ({CREATED:'⏳ 排队中',PROCESSING:'🔄 生图中',GENERATING:'🔄 生图中',SUCCESS:'✅ 已完成',FAILED:'❌ 失败'}[s]||s);
+
+            return {
+                step, spu, clothingDesc, scenePreference, textModel, countPerImage, loading,
+                groups, allPrompts, totalGenCount, isDragging,
+                loadingSubmit, submittedTasks,
+                onDragOver, onDragLeave, handleDrop, generate, submitTask, resetAll, copyText,
+                taskStatusType, taskStatusLabel,
+
+                fileList, dialogImageUrl, dialogVisible,
+                handleFileChange, handleRemove, handlePictureCardPreview, getFileIndex
+            };
+        }
+    });
+
+    for (const [key, component] of Object.entries(icons)) {
+        app.component(key, component);
+    }
+
+    app.use(ElementPlus).mount('#app');
+</script>
+</body>
+</html>

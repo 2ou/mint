@@ -1,0 +1,2497 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <title>A+ 套图生成 — AI 电商视觉平台</title>
+    <link rel="stylesheet" href="css/variables.css">
+    <link rel="stylesheet" href="css/shared.css">
+    <script>
+        window.tailwind = window.tailwind || {};
+        tailwind.config = {
+            darkMode: 'class',
+            corePlugins: { preflight: false },
+            theme: {
+                extend: {
+                    colors: {
+                        border: 'hsl(240 3.7% 15.9%)',
+                        input: 'hsl(240 3.7% 15.9%)',
+                        ring: 'hsl(240 4.9% 83.9%)',
+                        background: 'hsl(240 10% 3.9%)',
+                        foreground: 'hsl(0 0% 98%)',
+                        muted: 'hsl(240 3.7% 15.9%)',
+                        'muted-foreground': 'hsl(240 5% 64.9%)',
+                        card: 'hsl(240 10% 3.9%)',
+                        'card-foreground': 'hsl(0 0% 98%)',
+                        primary: 'hsl(0 0% 98%)',
+                        'primary-foreground': 'hsl(240 5.9% 10%)',
+                        destructive: 'hsl(0 62.8% 30.6%)',
+                        'destructive-foreground': 'hsl(0 0% 98%)'
+                    },
+                    borderRadius: {
+                        lg: '0.75rem',
+                        md: '0.5rem',
+                        sm: '0.375rem'
+                    }
+                }
+            }
+        }
+    </script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css"/>
+    <script src="https://unpkg.com/element-plus"></script>
+    <script src="https://unpkg.com/@element-plus/icons-vue"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <script src="auth.js"></script>
+    <script src="js/sidebar.js"></script>
+    <style>
+        :root {
+            --sh-background: hsl(240 10% 3.9%);
+            --sh-foreground: hsl(0 0% 98%);
+            --sh-card: hsl(240 10% 3.9%);
+            --sh-card-strong: hsl(240 5.9% 6.8%);
+            --sh-popover: hsl(240 5.9% 10%);
+            --sh-muted: hsl(240 3.7% 15.9%);
+            --sh-muted-foreground: hsl(240 5% 64.9%);
+            --sh-border: hsl(240 3.7% 15.9%);
+            --sh-border-soft: hsl(240 3.7% 18%);
+            --sh-input: hsl(240 3.7% 15.9%);
+            --sh-ring: hsl(240 4.9% 83.9%);
+            --sh-primary: hsl(0 0% 98%);
+            --sh-primary-foreground: hsl(240 5.9% 10%);
+            --sh-accent: hsl(240 3.7% 15.9%);
+            --sh-accent-foreground: hsl(0 0% 98%);
+            --sh-destructive: hsl(0 62.8% 30.6%);
+            --sh-destructive-foreground: hsl(0 0% 98%);
+            --sh-warning: hsl(38 92% 50%);
+            --sh-success: hsl(142 70% 45%);
+            --sh-radius: 0.75rem;
+        }
+
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: var(--app-font-family);
+            background: radial-gradient(circle at top left, rgba(255, 255, 255, 0.05), transparent 32rem), var(--sh-background);
+            color: var(--sh-foreground);
+            letter-spacing: 0;
+        }
+
+        /* ====== 全局布局 ====== */
+        .app-layout {
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+            background: transparent;
+        }
+
+        .app-main {
+            flex: 1;
+            margin-left: 220px;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* ====== 左侧面板 ====== */
+        .left-panel {
+            width: 440px;
+            min-width: 440px;
+            background: color-mix(in srgb, var(--sh-card-strong) 92%, transparent);
+            border-right: 1px solid var(--sh-border);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .left-header {
+            padding: 22px 24px 18px;
+            border-bottom: 1px solid var(--sh-border);
+            background: var(--sh-card);
+        }
+
+        .left-header h1 {
+            font-size: 19px;
+            font-weight: 700;
+            color: var(--sh-foreground);
+            margin: 0 0 6px 0;
+            letter-spacing: 0;
+        }
+
+        .left-header p {
+            font-size: 12px;
+            color: var(--sh-muted-foreground);
+            margin: 0;
+        }
+
+        .left-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 18px 24px 24px;
+        }
+
+        .left-content::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .left-content::-webkit-scrollbar-track {
+            background: var(--sh-card);
+        }
+
+        .left-content::-webkit-scrollbar-thumb {
+            background: var(--sh-muted);
+            border-radius: 999px;
+        }
+
+        .left-content::-webkit-scrollbar-thumb:hover {
+            background: hsl(240 4% 24%);
+        }
+
+        /* ====== 表单区域 ====== */
+        .form-section {
+            margin-bottom: 20px;
+            position: relative;
+        }
+
+        .form-label {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--sh-foreground);
+            letter-spacing: 0;
+            margin-bottom: 8px;
+            display: block;
+        }
+
+        .form-input {
+            width: 100%;
+            background: var(--sh-background);
+            border: 1px solid var(--sh-input);
+            border-radius: calc(var(--sh-radius) - 2px);
+            padding: 10px 12px;
+            color: var(--sh-foreground);
+            font-size: 14px;
+            transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+            outline: none;
+        }
+
+        .form-input:focus {
+            border-color: var(--sh-ring);
+            box-shadow: 0 0 0 2px color-mix(in srgb, var(--sh-ring) 24%, transparent);
+        }
+
+        .form-input::placeholder {
+            color: var(--sh-muted-foreground);
+        }
+
+        textarea.form-input {
+            resize: vertical;
+            min-height: 80px;
+        }
+
+        /* ====== 上传区域 ====== */
+        .upload-zone {
+            background: var(--sh-card);
+            border: 1px dashed var(--sh-border);
+            border-radius: var(--sh-radius);
+            padding: 24px;
+            text-align: center;
+            cursor: pointer;
+            transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
+        }
+
+        .upload-zone:hover {
+            border-color: var(--sh-ring);
+            background: var(--sh-popover);
+            box-shadow: 0 0 0 2px color-mix(in srgb, var(--sh-ring) 12%, transparent);
+        }
+
+        .upload-zone.has-file {
+            border-color: var(--sh-ring);
+            background: var(--sh-popover);
+            padding: 12px;
+        }
+
+        .upload-zone .upload-icon {
+            font-size: 32px;
+            color: var(--sh-muted-foreground);
+            margin-bottom: 8px;
+        }
+
+        .upload-zone .upload-text {
+            font-size: 13px;
+            color: var(--sh-muted-foreground);
+        }
+
+        .upload-preview {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .upload-preview img {
+            width: 80px;
+            height: 80px;
+            object-fit: cover;
+            border-radius: calc(var(--sh-radius) - 2px);
+            border: 1px solid var(--sh-border);
+        }
+
+        .upload-preview-info {
+            flex: 1;
+            text-align: left;
+        }
+
+        .upload-preview-name {
+            font-size: 14px;
+            color: var(--sh-foreground);
+            margin-bottom: 4px;
+        }
+
+        .upload-preview-size {
+            font-size: 12px;
+            color: var(--sh-muted-foreground);
+        }
+
+        .upload-remove {
+            color: hsl(0 84% 70%);
+            cursor: pointer;
+            font-size: 18px;
+            padding: 4px;
+        }
+
+        /* ====== 模块补充信息 ====== */
+        .module-upload-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 6px;
+            margin-bottom: 6px;
+        }
+
+        .module-upload-item {
+            position: relative;
+            aspect-ratio: 1;
+            border-radius: calc(var(--sh-radius) - 4px);
+            overflow: hidden;
+            border: 1px solid var(--sh-border);
+        }
+
+        .module-upload-item img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .module-upload-remove {
+            position: absolute;
+            top: 2px;
+            right: 2px;
+            width: 18px;
+            height: 18px;
+            background: var(--sh-destructive);
+            color: var(--sh-destructive-foreground);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            cursor: pointer;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
+        .module-upload-item:hover .module-upload-remove {
+            opacity: 1;
+        }
+
+        .module-dropzone {
+            background: var(--sh-background);
+            border: 1px dashed var(--sh-border);
+            border-radius: calc(var(--sh-radius) - 3px);
+            padding: 12px;
+            text-align: center;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            transition: all 0.2s;
+        }
+
+        .module-dropzone:hover {
+            border-color: var(--sh-ring);
+            background: var(--sh-popover);
+        }
+
+        .module-dropzone.drag-over {
+            border-color: var(--sh-ring);
+            background: var(--sh-popover);
+            border-style: solid;
+        }
+
+        /* ====== 模块选择 ====== */
+        .module-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
+        }
+
+        .module-item {
+            background: var(--sh-card);
+            border: 1px solid var(--sh-border);
+            border-radius: calc(var(--sh-radius) - 2px);
+            padding: 11px 12px;
+            cursor: pointer;
+            transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
+            position: relative;
+        }
+
+        .module-item:hover {
+            border-color: var(--sh-ring);
+            background: var(--sh-popover);
+        }
+
+        .module-item.selected {
+            border-color: var(--sh-ring);
+            background: var(--sh-popover);
+            box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sh-ring) 28%, transparent);
+        }
+
+        .module-item .module-code {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--sh-foreground);
+            margin-bottom: 2px;
+        }
+
+        .module-item .module-name {
+            font-size: 12px;
+            color: var(--sh-muted-foreground);
+            font-weight: 500;
+        }
+
+        .module-item .module-check {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            border: 1px solid var(--sh-border);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+        }
+
+        .module-item.selected .module-check {
+            background: var(--sh-primary);
+            border-color: var(--sh-primary);
+        }
+
+        .module-item.selected .module-check::after {
+            content: '✓';
+            font-size: 10px;
+            color: var(--sh-primary-foreground);
+        }
+
+        /* ====== 模块展开详情 ====== */
+        .module-detail {
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid var(--sh-border);
+        }
+
+        .module-detail .detail-label {
+            font-size: 11px;
+            color: var(--sh-muted-foreground);
+            margin-bottom: 6px;
+        }
+
+        .module-detail .detail-input {
+            width: 100%;
+            background: var(--sh-background);
+            border: 1px solid var(--sh-input);
+            border-radius: calc(var(--sh-radius) - 4px);
+            padding: 8px 10px;
+            color: var(--sh-foreground);
+            font-size: 12px;
+            outline: none;
+        }
+
+        .module-detail .detail-input:focus {
+            border-color: var(--sh-ring);
+            box-shadow: 0 0 0 2px color-mix(in srgb, var(--sh-ring) 16%, transparent);
+        }
+
+        .module-detail .detail-upload {
+            width: 100%;
+            background: var(--sh-background);
+            border: 1px dashed var(--sh-border);
+            border-radius: calc(var(--sh-radius) - 4px);
+            padding: 12px;
+            text-align: center;
+            cursor: pointer;
+            font-size: 12px;
+            color: var(--sh-muted-foreground);
+        }
+
+        .module-detail .detail-upload:hover {
+            border-color: var(--sh-ring);
+            color: var(--sh-foreground);
+        }
+
+        /* ====== 操作按钮 ====== */
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 22px;
+        }
+
+        .btn {
+            flex: 1;
+            min-height: 40px;
+            padding: 10px 16px;
+            border-radius: calc(var(--sh-radius) - 2px);
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s, color 0.2s, border-color 0.2s, box-shadow 0.2s;
+            border: 1px solid transparent;
+            outline: none;
+        }
+
+        .btn-primary {
+            background: var(--sh-primary);
+            color: var(--sh-primary-foreground);
+            border-color: var(--sh-primary);
+        }
+
+        .btn-primary:hover {
+            background: color-mix(in srgb, var(--sh-primary) 90%, transparent);
+            box-shadow: 0 0 0 2px color-mix(in srgb, var(--sh-ring) 18%, transparent);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            box-shadow: none;
+        }
+
+        .btn-secondary {
+            background: transparent;
+            color: var(--sh-foreground);
+            border-color: var(--sh-border);
+        }
+
+        .btn-secondary:hover {
+            background: var(--sh-accent);
+        }
+
+        /* ====== 右侧面板 ====== */
+        .right-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            background: transparent;
+        }
+
+        .right-header {
+            padding: 18px 24px;
+            border-bottom: 1px solid var(--sh-border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: color-mix(in srgb, var(--sh-card) 94%, transparent);
+        }
+
+        .right-header-left {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .right-header h2 {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--sh-foreground);
+            margin: 0;
+        }
+
+        .right-header .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 500;
+            border: 1px solid var(--sh-border);
+        }
+
+        .status-badge.pending {
+            background: var(--sh-muted);
+            color: var(--sh-muted-foreground);
+        }
+
+        .status-badge.generating {
+            background: color-mix(in srgb, var(--sh-warning) 16%, transparent);
+            color: hsl(38 92% 72%);
+            border-color: color-mix(in srgb, var(--sh-warning) 30%, transparent);
+        }
+
+        .status-badge.completed {
+            background: color-mix(in srgb, var(--sh-success) 16%, transparent);
+            color: hsl(142 70% 72%);
+            border-color: color-mix(in srgb, var(--sh-success) 30%, transparent);
+        }
+
+        .status-badge.failed {
+            background: color-mix(in srgb, var(--sh-destructive) 28%, transparent);
+            color: hsl(0 84% 78%);
+            border-color: color-mix(in srgb, var(--sh-destructive) 42%, transparent);
+        }
+
+        .right-header-right {
+            display: flex;
+            gap: 8px;
+        }
+
+        .icon-btn {
+            width: 36px;
+            height: 36px;
+            border-radius: calc(var(--sh-radius) - 3px);
+            border: 1px solid var(--sh-border);
+            background: transparent;
+            color: var(--sh-muted-foreground);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 16px;
+        }
+
+        .icon-btn:hover {
+            border-color: var(--sh-ring);
+            color: var(--sh-foreground);
+            background: var(--sh-accent);
+        }
+
+        .icon-btn.active {
+            border-color: var(--sh-ring);
+            color: var(--sh-foreground);
+            background: var(--sh-accent);
+        }
+
+        /* ====== 进度条 ====== */
+        .progress-container {
+            padding: 14px 24px;
+            background: color-mix(in srgb, var(--sh-card) 94%, transparent);
+            border-bottom: 1px solid var(--sh-border);
+        }
+
+        .progress-bar {
+            height: 6px;
+            background: var(--sh-muted);
+            border-radius: 999px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: var(--sh-primary);
+            border-radius: 999px;
+            transition: width 0.3s ease;
+        }
+
+        .progress-text {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 8px;
+            font-size: 12px;
+            color: var(--sh-muted-foreground);
+        }
+
+        /* ====== 右侧内容区 ====== */
+        .right-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 24px;
+        }
+
+        .right-content::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .right-content::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .right-content::-webkit-scrollbar-thumb {
+            background: var(--sh-muted);
+            border-radius: 999px;
+        }
+
+        /* ====== 空状态 ====== */
+        .empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: var(--sh-muted-foreground);
+            text-align: center;
+            border: 1px dashed var(--sh-border);
+            border-radius: var(--sh-radius);
+            background: color-mix(in srgb, var(--sh-card) 72%, transparent);
+            min-height: 420px;
+        }
+
+        .empty-state .empty-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+
+        .empty-state .empty-text {
+            font-size: 14px;
+            color: var(--sh-foreground);
+            margin-bottom: 8px;
+        }
+
+        .empty-state .empty-hint {
+            font-size: 12px;
+            color: var(--sh-muted-foreground);
+        }
+
+        /* ====== 结果网格 ====== */
+        .result-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 16px;
+        }
+
+        .result-card {
+            background: var(--sh-card);
+            border: 1px solid var(--sh-border);
+            border-radius: var(--sh-radius);
+            overflow: hidden;
+            transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
+        }
+
+        .result-card:hover {
+            border-color: var(--sh-ring);
+            transform: translateY(-2px);
+            box-shadow: 0 18px 50px rgba(0, 0, 0, 0.28);
+        }
+
+        .result-card .card-image {
+            width: 100%;
+            aspect-ratio: 16/9;
+            object-fit: cover;
+            display: block;
+            background: var(--sh-muted);
+        }
+
+        .result-card .card-placeholder {
+            width: 100%;
+            aspect-ratio: 16/9;
+            background: color-mix(in srgb, var(--sh-muted) 70%, transparent);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+        }
+
+        .result-card .card-placeholder .spinner {
+            width: 32px;
+            height: 32px;
+            border: 3px solid var(--sh-muted);
+            border-top-color: var(--sh-ring);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .result-card .card-placeholder .placeholder-text {
+            font-size: 12px;
+            color: var(--sh-muted-foreground);
+        }
+
+        .result-card .card-footer {
+            padding: 12px 14px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-top: 1px solid var(--sh-border);
+        }
+
+        .result-card .card-info {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .result-card .card-code {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--sh-foreground);
+        }
+
+        .result-card .card-name {
+            font-size: 11px;
+            color: var(--sh-muted-foreground);
+            margin-top: 2px;
+        }
+
+        .result-card .card-actions {
+            display: flex;
+            gap: 6px;
+        }
+
+        .result-card .card-btn {
+            padding: 4px 8px;
+            border-radius: calc(var(--sh-radius) - 4px);
+            font-size: 11px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 1px solid var(--sh-border);
+            outline: none;
+        }
+
+        .result-card .card-btn-download {
+            background: var(--sh-primary);
+            color: var(--sh-primary-foreground);
+            border-color: var(--sh-primary);
+        }
+
+        .result-card .card-btn-download:hover {
+            background: color-mix(in srgb, var(--sh-primary) 90%, transparent);
+        }
+
+        .result-card .card-btn-regenerate {
+            background: transparent;
+            color: var(--sh-foreground);
+        }
+
+        .result-card .card-btn-regenerate:hover {
+            background: var(--sh-accent);
+        }
+
+        .review-panel,
+        .failed-panel {
+            margin-bottom: 18px;
+            border: 1px solid var(--sh-border);
+            border-radius: var(--sh-radius);
+            background: var(--sh-card);
+            box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03);
+        }
+
+        .review-panel {
+            padding: 16px;
+        }
+
+        .review-panel-header,
+        .failed-panel {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .review-panel-header {
+            margin-bottom: 12px;
+        }
+
+        .review-panel-title,
+        .failed-panel-title {
+            font-size: 15px;
+            font-weight: 700;
+            color: var(--sh-foreground);
+            margin: 0;
+        }
+
+        .review-panel-desc,
+        .failed-panel-desc {
+            font-size: 12px;
+            color: var(--sh-muted-foreground);
+            margin-top: 4px;
+        }
+
+        .review-panel-actions {
+            display: flex;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+
+        .review-panel-actions .btn,
+        .failed-panel .btn {
+            flex: 0 0 auto;
+        }
+
+        .review-list {
+            display: grid;
+            gap: 10px;
+        }
+
+        .review-card {
+            border: 1px solid var(--sh-border);
+            border-radius: calc(var(--sh-radius) - 2px);
+            padding: 10px;
+            background: color-mix(in srgb, var(--sh-background) 82%, transparent);
+        }
+
+        .review-card-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        .review-card-name {
+            font-size: 13px;
+            color: var(--sh-foreground);
+        }
+
+        .review-textarea {
+            width: 100%;
+            min-height: 112px;
+            color: var(--sh-foreground);
+            background: var(--sh-background);
+            border: 1px solid var(--sh-input);
+            border-radius: calc(var(--sh-radius) - 4px);
+            padding: 10px 12px;
+            font-size: 12px;
+            outline: none;
+            resize: vertical;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        .review-textarea:focus {
+            border-color: var(--sh-ring);
+            box-shadow: 0 0 0 2px color-mix(in srgb, var(--sh-ring) 16%, transparent);
+        }
+
+        .failed-panel {
+            padding: 14px 16px;
+            background: color-mix(in srgb, var(--sh-destructive) 16%, var(--sh-card));
+            border-color: color-mix(in srgb, var(--sh-destructive) 40%, var(--sh-border));
+        }
+
+        .failed-panel-title {
+            color: hsl(0 84% 82%);
+        }
+
+        .failed-panel-desc {
+            color: hsl(0 72% 78%);
+        }
+
+        .text-muted-inline {
+            color: var(--sh-muted-foreground);
+        }
+
+        .module-extra-title {
+            font-size: 12px;
+            color: var(--sh-foreground);
+        }
+
+        .module-extra-meta {
+            font-size: 11px;
+            color: var(--sh-muted-foreground);
+        }
+
+        .gallery-placeholder {
+            aspect-ratio: 16/9;
+            background: color-mix(in srgb, var(--sh-muted) 70%, transparent);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .gallery-placeholder-failed {
+            font-size: 12px;
+            color: hsl(0 84% 78%);
+            margin-top: 4px;
+        }
+
+        /* ====== 全屏画廊模式 ====== */
+        .gallery-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: color-mix(in srgb, var(--sh-background) 92%, transparent);
+            backdrop-filter: blur(10px);
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .gallery-header {
+            padding: 20px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .gallery-header h3 {
+            font-size: 16px;
+            color: var(--sh-foreground);
+            margin: 0;
+        }
+
+        .gallery-close {
+            width: 40px;
+            height: 40px;
+            border-radius: calc(var(--sh-radius) - 2px);
+            border: 1px solid var(--sh-border);
+            background: var(--sh-card);
+            color: var(--sh-muted-foreground);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 20px;
+            transition: all 0.2s;
+        }
+
+        .gallery-close:hover {
+            border-color: var(--sh-ring);
+            color: var(--sh-foreground);
+            background: var(--sh-accent);
+        }
+
+        .gallery-content {
+            flex: 1;
+            overflow: auto;
+            padding: 0 24px 24px;
+        }
+
+        .gallery-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+            gap: 20px;
+        }
+
+        .gallery-item {
+            background: var(--sh-card);
+            border: 1px solid var(--sh-border);
+            border-radius: var(--sh-radius);
+            overflow: hidden;
+            transition: border-color 0.2s, transform 0.2s;
+        }
+
+        .gallery-item:hover {
+            transform: scale(1.02);
+            border-color: var(--sh-ring);
+        }
+
+        .gallery-item img {
+            width: 100%;
+            display: block;
+        }
+
+        .gallery-item-footer {
+            padding: 14px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-top: 1px solid var(--sh-border);
+        }
+
+        .gallery-item-info {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .gallery-item-code {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--sh-foreground);
+        }
+
+        .gallery-item-name {
+            font-size: 12px;
+            color: var(--sh-muted-foreground);
+            margin-top: 2px;
+        }
+
+        .gallery-item-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .gallery-btn {
+            padding: 6px 12px;
+            border-radius: calc(var(--sh-radius) - 4px);
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 1px solid var(--sh-border);
+            outline: none;
+        }
+
+        .gallery-btn-download {
+            background: var(--sh-primary);
+            color: var(--sh-primary-foreground);
+            border-color: var(--sh-primary);
+        }
+
+        .gallery-btn-download:hover {
+            background: color-mix(in srgb, var(--sh-primary) 90%, transparent);
+        }
+
+        .gallery-btn-regenerate {
+            background: transparent;
+            color: var(--sh-foreground);
+        }
+
+        .gallery-btn-regenerate:hover {
+            background: var(--sh-accent);
+        }
+
+        /* ====== 历史项目抽屉 ====== */
+        .history-drawer {
+            position: fixed;
+            top: 0;
+            right: 0;
+            width: 500px;
+            height: 100vh;
+            background: var(--sh-card);
+            border-left: 1px solid var(--sh-border);
+            z-index: 999;
+            display: flex;
+            flex-direction: column;
+            transform: translateX(100%);
+            transition: transform 0.3s ease;
+        }
+
+        .history-drawer.open {
+            transform: translateX(0);
+        }
+
+        .history-header {
+            padding: 20px 24px;
+            border-bottom: 1px solid var(--sh-border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .history-header h3 {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--sh-foreground);
+            margin: 0;
+        }
+
+        .history-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px 24px;
+        }
+
+        .history-item {
+            background: var(--sh-card);
+            border: 1px solid var(--sh-border);
+            border-radius: var(--sh-radius);
+            padding: 14px 16px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            transition: border-color 0.2s, background 0.2s;
+        }
+
+        .history-item:hover {
+            border-color: var(--sh-ring);
+            background: var(--sh-popover);
+        }
+
+        .history-item-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .history-item-name {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--sh-foreground);
+        }
+
+        .history-item-status {
+            font-size: 11px;
+            padding: 2px 8px;
+            border-radius: 999px;
+            border: 1px solid var(--sh-border);
+        }
+
+        .history-item-meta {
+            display: flex;
+            gap: 16px;
+            font-size: 12px;
+            color: var(--sh-muted-foreground);
+        }
+
+        .history-item-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .history-btn {
+            padding: 4px 10px;
+            border-radius: calc(var(--sh-radius) - 4px);
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 1px solid var(--sh-border);
+            outline: none;
+        }
+
+        .history-btn-view {
+            background: transparent;
+            color: var(--sh-foreground);
+        }
+
+        .history-btn-view:hover {
+            background: var(--sh-accent);
+        }
+
+        .history-btn-delete {
+            background: color-mix(in srgb, var(--sh-destructive) 18%, transparent);
+            color: hsl(0 84% 78%);
+            border-color: color-mix(in srgb, var(--sh-destructive) 40%, var(--sh-border));
+        }
+
+        .history-btn-delete:hover {
+            background: color-mix(in srgb, var(--sh-destructive) 28%, transparent);
+        }
+
+        /* ====== 骨架屏 ====== */
+        .skeleton {
+            background: linear-gradient(90deg, var(--sh-card) 25%, var(--sh-muted) 50%, var(--sh-card) 75%);
+            background-size: 200% 100%;
+            animation: shimmer 1.5s infinite;
+            border-radius: calc(var(--sh-radius) - 2px);
+        }
+
+        @keyframes shimmer {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+
+        .skeleton-card {
+            background: var(--sh-card);
+            border-radius: var(--sh-radius);
+            overflow: hidden;
+        }
+
+        .skeleton-image {
+            width: 100%;
+            aspect-ratio: 16/9;
+        }
+
+        .skeleton-text {
+            height: 16px;
+            margin: 12px 14px;
+            width: 60%;
+        }
+
+        /* ====== 模板选择下拉 ====== */
+        .template-dropdown {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: var(--sh-popover);
+            border: 1px solid var(--sh-border);
+            border-radius: var(--sh-radius);
+            margin-top: 4px;
+            max-height: 300px;
+            overflow-y: auto;
+            z-index: 100;
+            box-shadow: 0 18px 50px rgba(0, 0, 0, 0.34);
+        }
+
+        /* 🔴 完美的下拉框透明遮罩层：它负责点击空白处关闭下拉框，而不会影响正常的冒泡 */
+        .dropdown-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            z-index: 99;
+        }
+
+        .template-dropdown::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .template-dropdown::-webkit-scrollbar-track {
+            background: var(--sh-popover);
+        }
+
+        .template-dropdown::-webkit-scrollbar-thumb {
+            background: var(--sh-muted);
+            border-radius: 999px;
+        }
+
+        .template-search {
+            padding: 8px;
+            border-bottom: 1px solid var(--sh-border);
+        }
+
+        .template-list {
+            padding: 4px;
+        }
+
+        .template-item {
+            padding: 10px 12px;
+            cursor: pointer;
+            border-radius: calc(var(--sh-radius) - 4px);
+            transition: all 0.2s;
+            margin-bottom: 2px;
+        }
+
+        .template-item:hover {
+            background: var(--sh-accent);
+        }
+
+        .template-item-name {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--sh-foreground);
+            margin-bottom: 4px;
+        }
+
+        .template-item-meta {
+            font-size: 11px;
+            color: var(--sh-muted-foreground);
+            display: flex;
+            gap: 12px;
+        }
+
+        .template-item-modules {
+            display: flex;
+            gap: 4px;
+            flex-wrap: wrap;
+            margin-top: 6px;
+        }
+
+        .module-tag {
+            font-size: 10px;
+            padding: 2px 6px;
+            border-radius: 999px;
+            background: var(--sh-muted);
+            color: var(--sh-muted-foreground);
+            border: 1px solid var(--sh-border);
+        }
+
+        @media (max-width: 1180px) {
+            .left-panel {
+                width: 390px;
+                min-width: 390px;
+            }
+
+            .result-grid {
+                grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+            }
+        }
+
+        @media (max-width: 900px) {
+            .app-main {
+                margin-left: 0;
+                flex-direction: column;
+                overflow-y: auto;
+            }
+
+            .left-panel,
+            .right-panel {
+                width: 100%;
+                min-width: 0;
+                min-height: auto;
+                overflow: visible;
+            }
+
+            .left-content,
+            .right-content {
+                overflow: visible;
+            }
+
+            .history-drawer {
+                width: min(100vw, 500px);
+            }
+
+            .review-panel-header,
+            .failed-panel {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+        }
+
+        /* ====== 动画 ====== */
+        .fade-enter-active,
+        .fade-leave-active {
+            transition: opacity 0.3s ease;
+        }
+
+        .fade-enter-from,
+        .fade-leave-to {
+            opacity: 0;
+        }
+
+        .slide-right-enter-active,
+        .slide-right-leave-active {
+            transition: transform 0.3s ease;
+        }
+
+        .slide-right-enter-from,
+        .slide-right-leave-to {
+            transform: translateX(100%);
+        }
+    </style>
+</head>
+<body>
+<div id="app">
+    <div class="dropdown-overlay" v-if="showTemplatePicker" @click="showTemplatePicker = false"></div>
+
+    <div class="app-layout">
+        <div class="app-main">
+            <div class="left-panel">
+                <div class="left-header">
+                    <h1>A+ 套图生成</h1>
+                    <p>基于产品参考图和卖点，AI 自动生成 7 模块 A+ Content</p>
+                </div>
+
+                <div class="left-content">
+                    <div class="form-section">
+                        <label class="form-label">选择模板（可选）</label>
+                        <div style="position: relative;">
+                            <input class="form-input" :value="selectedTemplateName" placeholder="点击选择已有模板快速填充" readonly
+                                   @click="showTemplatePicker = true; if(templates.length === 0) loadTemplates()" style="cursor: pointer;">
+                            <span v-if="selectedTemplate" @click="clearTemplate"
+                                  style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); cursor: pointer; color: #f56c6c; font-size: 14px;">✕</span>
+                        </div>
+
+                        <div v-if="showTemplatePicker" class="template-dropdown" style="z-index: 100;">
+                            <div class="template-search">
+                                <input class="form-input" v-model="templateSearch" placeholder="搜索模板..."
+                                       @input="loadTemplates" style="font-size: 12px; padding: 8px 10px;">
+                            </div>
+                            <div class="template-list" v-if="!loadingTemplates">
+                                <div v-if="templates.length === 0" style="text-align: center; padding: 20px; color: #555;">
+                                    暂无模板
+                                </div>
+                                <div v-for="t in templates" :key="t.id" class="template-item"
+                                     @click="applyTemplate(t)">
+                                    <div class="template-item-name">{{ t.templateName }}</div>
+                                    <div class="template-item-meta">
+                                        <span v-if="t.spu">SPU: {{ t.spu }}</span>
+                                        <span>{{ t.createdAt }}</span>
+                                    </div>
+                                    <div class="template-item-modules" v-if="parseModules(t.selectedModules).length">
+                                        <span v-for="m in parseModules(t.selectedModules)" :key="m" class="module-tag">{{ m }}</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div v-else class="text-muted-inline" style="text-align: center; padding: 20px;">加载中...</div>
+                        </div>
+                    </div>
+
+                    <div class="form-section">
+                        <label class="form-label">项目名称</label>
+                        <input class="form-input" v-model="form.projectName" :placeholder="autoProjectName" clearable>
+                    </div>
+
+                    <div class="form-section">
+                        <label class="form-label">SPU <span style="color: #f56c6c;">*</span></label>
+                        <input class="form-input" v-model="form.spu" placeholder="产品 SPU 编号" clearable>
+                    </div>
+
+                    <div class="form-section">
+                        <label class="form-label">参考图 <span style="color: #f56c6c;">*</span></label>
+                        <div class="upload-zone" :class="{'has-file': referenceFileList.length > 0}"
+                             @click="triggerUpload"
+                             @dragover.prevent="onDragOver"
+                             @dragleave="onDragLeave"
+                             @drop.prevent="handleDrop">
+                            <template v-if="referenceFileList.length === 0">
+                                <div class="upload-icon">+</div>
+                                <div class="upload-text">点击或拖拽图片到此</div>
+                                <div style="font-size: 11px; color: #444; margin-top: 4px;">支持 JPG / PNG</div>
+                            </template>
+                            <template v-else>
+                                <div class="upload-preview">
+                                    <img :src="referenceFileList[0].url" alt="preview">
+                                    <div class="upload-preview-info">
+                                        <div class="upload-preview-name">{{ referenceFileList[0].name }}</div>
+                                        <div class="upload-preview-size">已选择</div>
+                                    </div>
+                                    <span class="upload-remove" @click.stop="removeReference">✕</span>
+                                </div>
+                            </template>
+                        </div>
+                        <input type="file" ref="fileInput" style="display: none;" accept="image/*" @change="handleFileSelect">
+                    </div>
+
+                    <div class="form-section">
+                        <label class="form-label">卖点 <span style="color: #f56c6c;">*</span></label>
+                        <textarea class="form-input" v-model="form.sellingPoints" rows="4"
+                                  placeholder="衣服类型、季节、面料、核心卖点等，每行一个"></textarea>
+                    </div>
+
+                    <div class="form-section">
+                        <label class="form-label">模块选择</label>
+                        <div class="module-grid">
+                            <div v-for="mod in modules" :key="mod.code"
+                                 class="module-item" :class="{ selected: form.selectedModules.includes(mod.code) }"
+                                 @click="toggleModule(mod.code)">
+                                <div class="module-check"></div>
+                                <div class="module-code">{{ mod.code }}</div>
+                                <div class="module-name">{{ mod.name }}</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-section" v-if="form.selectedModules.length > 0">
+                        <label class="form-label">补充信息（可选）</label>
+                        <div v-for="code in form.selectedModules" :key="code" style="margin-bottom: 8px;">
+                            <div class="module-item" @click="toggleExpand(code)" style="margin-bottom: 0;">
+                                <div style="display: flex; justify-content: space-between; align-items: center;">
+                                    <span class="module-extra-title">{{ getModule(code).name }}</span>
+                                    <span class="module-extra-meta">
+                                    {{ getModuleExtra(code).fileList.length > 0 ? getModuleExtra(code).fileList.length + '张照片 · ' : '' }}
+                                    {{ expandedModules.includes(code) ? '收起' : '展开' }}
+                                </span>
+                                </div>
+                            </div>
+                            <div v-if="expandedModules.includes(code)" class="module-detail">
+                                <div class="detail-label">补充文字</div>
+                                <textarea class="detail-input" v-model="getModuleExtra(code).text" rows="2"
+                                          :placeholder="getModule(code).extraHint"></textarea>
+                                <div class="detail-label" style="margin-top: 8px;">
+                                    补充照片
+                                    <span style="font-size: 10px; color: #555; margin-left: 4px;">（可拖拽多张）</span>
+                                </div>
+                                <div v-if="getModuleExtra(code).fileList.length > 0" class="module-upload-grid">
+                                    <div v-for="(file, idx) in getModuleExtra(code).fileList" :key="file.uid" class="module-upload-item">
+                                        <img :src="file.url" alt="preview">
+                                        <span class="module-upload-remove" @click.stop="removeModuleFile(code, idx)">✕</span>
+                                    </div>
+                                </div>
+                                <div class="module-dropzone"
+                                     @dragover.prevent="onModuleDragOver($event, code)"
+                                     @dragleave="onModuleDragLeave($event, code)"
+                                     @drop.prevent="handleModuleDrop($event, code)"
+                                     @click="triggerModuleUpload(code)">
+                                    <span style="font-size: 20px; color: #444;">+</span>
+                                    <span style="font-size: 11px; color: #555;">拖拽或点击上传</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="btn-group">
+                        <button class="btn btn-secondary" @click="showHistory = true">历史项目</button>
+                        <button class="btn btn-primary" @click="createProject" :disabled="!canCreate || creating">
+                            {{ creating ? '创建中...' : '创建并生成文案' }}
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="right-panel">
+                <template v-if="currentProject">
+                    <div class="right-header">
+                        <div class="right-header-left">
+                            <h2>{{ currentProject.projectName }}</h2>
+                            <span class="status-badge" :class="getStatusClass(currentProject.status)">
+                            {{ getStatusLabel(currentProject.status) }}
+                        </span>
+                        </div>
+                        <div class="right-header-right">
+                            <button class="icon-btn" @click="toggleViewMode" :title="viewMode === 'grid' ? '画廊模式' : '网格模式'">
+                                {{ viewMode === 'grid' ? '🖼' : '▦' }}
+                            </button>
+                            <button class="icon-btn" @click="refreshProject" :disabled="refreshing">↻</button>
+                            <button class="icon-btn" @click="currentProject = null">✕</button>
+                        </div>
+                    </div>
+
+                    <div class="progress-container" v-if="isGenerating">
+                        <div class="progress-bar">
+                            <div class="progress-fill" :style="{ width: progressPercent + '%' }"></div>
+                        </div>
+                        <div class="progress-text">
+                            <span>{{ completedCount }} / {{ totalCount }} 模块完成</span>
+                            <span>{{ progressPercent }}%</span>
+                        </div>
+                    </div>
+
+                    <div class="right-content">
+                        <div v-if="isCopyReview" class="review-panel">
+                            <div class="review-panel-header">
+                                <div>
+                                    <div class="review-panel-title">文案确认</div>
+                                    <div class="review-panel-desc">确认或微调每个模块的文案和视觉描述后，再提交图片生成。</div>
+                                </div>
+                                <div class="review-panel-actions">
+                                    <button class="btn btn-secondary !w-auto px-4" @click="saveCopy" :disabled="savingCopy">
+                                        {{ savingCopy ? '保存中...' : '保存文案' }}
+                                    </button>
+                                    <button class="btn btn-primary !w-auto px-5" @click="confirmGenerateImages" :disabled="savingCopy || generatingImages">
+                                        {{ generatingImages ? '提交中...' : '确认并生成图片' }}
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="review-list">
+                                <div v-for="task in currentProject.imageTasks" :key="'copy-' + task.id" class="review-card">
+                                    <div class="review-card-header">
+                                        <span class="card-code">{{ task.moduleCode }}</span>
+                                        <span class="review-card-name">{{ task.moduleName }}</span>
+                                    </div>
+                                    <textarea class="review-textarea" v-model="moduleCopyDrafts[task.moduleCode]" rows="5"></textarea>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div v-if="isPartialFailed" class="failed-panel">
+                            <div>
+                                <div class="failed-panel-title">部分模块生成失败</div>
+                                <div class="failed-panel-desc">可以单独重试，也可以一键重试全部失败模块。</div>
+                            </div>
+                            <button class="btn btn-primary !w-auto px-4" @click="retryFailedModules" :disabled="retryingFailed">
+                                {{ retryingFailed ? '提交中...' : '重试失败模块' }}
+                            </button>
+                        </div>
+
+                        <div v-if="viewMode === 'grid'" class="result-grid">
+                            <div v-for="task in currentProject.imageTasks" :key="task.id" class="result-card">
+                                <template v-if="task.status === 'SUCCESS' && (task.resultOssUrl || task.resultTempUrl)">
+                                    <img :src="task.resultOssUrl || task.resultTempUrl" class="card-image"
+                                         @click="openGallery(task)" style="cursor: pointer;">
+                                </template>
+                                <template v-else>
+                                    <div class="card-placeholder">
+                                        <template v-if="task.status === 'PENDING'">
+                                            <span style="font-size: 24px; color: #8a8a8a;">•</span>
+                                            <span class="placeholder-text">{{ isCopyReview ? '待确认文案' : '待生成' }}</span>
+                                        </template>
+                                        <template v-else-if="task.status === 'FAILED'">
+                                            <span style="font-size: 24px; color: #f87171;">✕</span>
+                                            <span class="placeholder-text">生成失败</span>
+                                        </template>
+                                        <template v-else>
+                                            <div class="spinner"></div>
+                                            <span class="placeholder-text">生成中...</span>
+                                        </template>
+                                    </div>
+                                </template>
+                                <div class="card-footer">
+                                    <div class="card-info">
+                                        <span class="card-code">{{ task.moduleCode }}</span>
+                                        <span class="card-name">{{ task.moduleName }}</span>
+                                    </div>
+                                    <div class="card-actions">
+                                        <button v-if="task.status === 'SUCCESS'" class="card-btn card-btn-download"
+                                                @click="downloadSingle(task)">下载</button>
+                                        <button class="card-btn card-btn-regenerate"
+                                                @click="regenerateModule(task.moduleCode)">重试</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div v-else class="gallery-grid">
+                            <div v-for="task in currentProject.imageTasks" :key="task.id" class="gallery-item">
+                                <template v-if="task.status === 'SUCCESS' && (task.resultOssUrl || task.resultTempUrl)">
+                                    <img :src="task.resultOssUrl || task.resultTempUrl" @click="openGallery(task)">
+                                </template>
+                                <template v-else>
+                                    <div class="gallery-placeholder">
+                                        <div v-if="task.status === 'FAILED'" style="text-align: center;">
+                                            <div style="font-size: 24px; color: #f87171;">✕</div>
+                                            <div class="gallery-placeholder-failed">失败</div>
+                                        </div>
+                                        <div v-else style="text-align: center;">
+                                            <div class="spinner"></div>
+                                            <div class="text-muted-inline" style="font-size: 12px; margin-top: 8px;">生成中...</div>
+                                        </div>
+                                    </div>
+                                </template>
+                                <div class="gallery-item-footer">
+                                    <div class="gallery-item-info">
+                                        <span class="gallery-item-code">{{ task.moduleCode }}</span>
+                                        <span class="gallery-item-name">{{ task.moduleName }}</span>
+                                    </div>
+                                    <div class="gallery-item-actions">
+                                        <button v-if="task.status === 'SUCCESS'" class="gallery-btn gallery-btn-download"
+                                                @click="downloadSingle(task)">下载</button>
+                                        <button class="gallery-btn gallery-btn-regenerate"
+                                                @click="regenerateModule(task.moduleCode)">重试</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div style="display: flex; justify-content: center; margin-top: 24px;" v-if="hasSuccessTasks">
+                            <button class="btn btn-primary" style="width: auto; padding: 12px 32px;" @click="downloadZip">
+                                批量下载 ZIP
+                            </button>
+                        </div>
+                    </div>
+                </template>
+
+                <template v-else>
+                    <div class="right-content">
+                        <div class="empty-state">
+                            <div class="empty-icon">✨</div>
+                            <div class="empty-text">创建项目开始生成 A+ 套图</div>
+                            <div class="empty-hint">在左侧填写信息后点击"创建并生成"</div>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
+
+        <div class="history-drawer" :class="{ open: showHistory }">
+            <div class="history-header">
+                <h3>历史项目</h3>
+                <button class="icon-btn" @click="showHistory = false">✕</button>
+            </div>
+            <div style="padding: 16px 24px; border-bottom: 1px solid #1a1a1a;">
+                <div style="display: flex; gap: 8px;">
+                    <input class="form-input" v-model="searchSpu" placeholder="搜索 SPU" style="flex: 1;"
+                           @keyup.enter="loadProjects">
+                    <button class="btn btn-secondary" style="width: auto; padding: 8px 16px;" @click="loadProjects">搜索</button>
+                </div>
+            </div>
+            <div class="history-content">
+                <div v-if="loadingProjects" class="text-muted-inline" style="text-align: center; padding: 40px;">加载中...</div>
+                <template v-else>
+                    <div v-for="project in projects" :key="project.id" class="history-item" @click="viewProject(project.id)">
+                        <div class="history-item-header">
+                            <span class="history-item-name">{{ project.projectName }}</span>
+                            <span class="history-item-status" :class="getStatusClass(project.status)">
+                            {{ getStatusLabel(project.status) }}
+                        </span>
+                        </div>
+                        <div class="history-item-meta">
+                            <span>SPU: {{ project.spu }}</span>
+                            <span>{{ project.createdAt }}</span>
+                        </div>
+                        <div class="history-item-actions">
+                            <button class="history-btn history-btn-view" @click.stop="viewProject(project.id)">查看</button>
+                            <button class="history-btn history-btn-delete" @click.stop="deleteProject(project.id)">删除</button>
+                        </div>
+                    </div>
+                    <div v-if="projects.length === 0" style="text-align: center; padding: 40px; color: #555;">暂无项目</div>
+                </template>
+                <div style="display: flex; justify-content: center; margin-top: 16px;" v-if="totalProjects > pageSize">
+                    <el-pagination
+                            v-model:current-page="currentPage"
+                            v-model:page-size="pageSize"
+                            :page-sizes="[10, 20, 50]"
+                            :total="totalProjects"
+                            layout="prev, pager, next"
+                            @size-change="loadProjects"
+                            @current-change="loadProjects"
+                            background
+                            small/>
+                </div>
+            </div>
+        </div>
+
+        <div v-if="galleryVisible" class="gallery-overlay">
+            <div class="gallery-header">
+                <h3>{{ galleryTask?.moduleCode }} - {{ galleryTask?.moduleName }}</h3>
+                <button class="gallery-close" @click="galleryVisible = false">✕</button>
+            </div>
+            <div class="gallery-content">
+                <div style="display: flex; justify-content: center; align-items: center; height: 100%;">
+                    <img :src="galleryTask?.resultOssUrl || galleryTask?.resultTempUrl"
+                         style="max-width: 90%; max-height: 80vh; object-fit: contain; border-radius: 8px;">
+                </div>
+                <div style="display: flex; justify-content: center; gap: 12px; margin-top: 16px;">
+                    <button class="gallery-btn gallery-btn-download" @click="downloadSingle(galleryTask)">下载原图</button>
+                    <button class="gallery-btn gallery-btn-regenerate" @click="regenerateModule(galleryTask?.moduleCode); galleryVisible = false;">重新生成</button>
+                </div>
+            </div>
+        </div>
+
+        <script>
+            const icons = ElementPlusIconsVue;
+            const { createApp, ref, reactive, computed, onUnmounted } = Vue;
+
+            const app = createApp({
+                setup() {
+                    // 模块定义
+                    const modules = [
+                        { code: 'AD-01', name: '品牌英雄图', desc: '宽幅生活方式横幅', extraHint: '品牌调性、目标人群描述' },
+                        { code: 'AD-02', name: '印花/面料故事图', desc: '左右分栏', extraHint: '面料成分、工艺说明' },
+                        { code: 'AD-03', name: '设计细节图', desc: '中心+四周', extraHint: '设计亮点（口袋/拉链/缝线）' },
+                        { code: 'AD-04', name: '多场景穿搭图', desc: '三宫格', extraHint: '场景描述（海滩/brunch/晚宴）' },
+                        { code: 'AD-05', name: '舒适体验图', desc: '主角+角落', extraHint: '穿着感受描述' },
+                        { code: 'AD-06', name: '尺码/版型指南', desc: '技术图表', extraHint: '具体尺码数据（S/M/L/XL）' },
+                        { code: 'AD-07', name: '护理/品牌收尾图', desc: '静物+说明', extraHint: '护理说明（洗涤方式、注意事项）' }
+                    ];
+
+                    // 状态
+                    const creating = ref(false);
+                    const refreshing = ref(false);
+                    const loadingProjects = ref(false);
+                    const projects = ref([]);
+                    const currentProject = ref(null);
+                    const currentPage = ref(1);
+                    const pageSize = ref(20);
+                    const totalProjects = ref(0);
+                    const searchSpu = ref('');
+                    const showHistory = ref(false);
+                    const viewMode = ref('grid'); // 'grid' or 'gallery'
+                    const savingCopy = ref(false);
+                    const generatingImages = ref(false);
+                    const retryingFailed = ref(false);
+                    const moduleCopyDrafts = reactive({});
+
+                    // 画廊
+                    const galleryVisible = ref(false);
+                    const galleryTask = ref(null);
+
+                    // 表单
+                    const form = reactive({
+                        projectName: '',
+                        spu: '',
+                        sellingPoints: '',
+                        selectedModules: ['AD-01', 'AD-02', 'AD-03', 'AD-04', 'AD-05', 'AD-06', 'AD-07']
+                    });
+
+                    // 参考图上传
+                    const referenceFileList = ref([]);
+                    const fileInput = ref(null);
+                    const isDragging = ref(false);
+
+                    // 模块补充信息
+                    const moduleExtras = reactive({});
+                    const expandedModules = ref([]);
+
+                    // 轮询
+                    let pollTimer = null;
+
+                    // 模板选择
+                    const showTemplatePicker = ref(false);
+                    const selectedTemplate = ref(null);
+                    const selectedTemplateName = ref('');
+                    const templateSearch = ref('');
+                    const loadingTemplates = ref(false);
+                    const templates = ref([]);
+
+                    // 解析模块
+                    const parseModules = (modulesStr) => {
+                        try {
+                            return JSON.parse(modulesStr || '[]');
+                        } catch {
+                            return [];
+                        }
+                    };
+
+                    // 自动项目名称
+                    const autoProjectName = computed(() => {
+                        const spu = form.spu || 'SPU';
+                        const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+                        return `${spu}-A+-${date}`;
+                    });
+
+                    // 是否可创建
+                    const canCreate = computed(() => {
+                        return form.spu.trim() && form.sellingPoints.trim() && referenceFileList.value.length > 0 && form.selectedModules.length > 0;
+                    });
+
+                    // 进度
+                    const terminalStatuses = ['COPY_DONE', 'COMPLETED', 'PARTIAL_FAILED', 'FAILED'];
+                    const isTerminalStatus = (status) => terminalStatuses.includes(status);
+
+                    const isGenerating = computed(() => {
+                        return currentProject.value && ['GENERATING_COPY', 'GENERATING_IMAGES'].includes(currentProject.value.status);
+                    });
+
+                    const isCopyReview = computed(() => {
+                        return currentProject.value && currentProject.value.status === 'COPY_DONE';
+                    });
+
+                    const isPartialFailed = computed(() => {
+                        return currentProject.value && currentProject.value.status === 'PARTIAL_FAILED';
+                    });
+
+                    const completedCount = computed(() => {
+                        if (!currentProject.value || !currentProject.value.imageTasks) return 0;
+                        return currentProject.value.imageTasks.filter(t => t.status === 'SUCCESS').length;
+                    });
+
+                    const totalCount = computed(() => {
+                        if (!currentProject.value || !currentProject.value.imageTasks) return 0;
+                        return currentProject.value.imageTasks.length;
+                    });
+
+                    const progressPercent = computed(() => {
+                        if (totalCount.value === 0) return 0;
+                        return Math.round((completedCount.value / totalCount.value) * 100);
+                    });
+
+                    // 是否有成功的任务
+                    const hasSuccessTasks = computed(() => {
+                        if (!currentProject.value || !currentProject.value.imageTasks) return false;
+                        return currentProject.value.imageTasks.some(t => t.status === 'SUCCESS');
+                    });
+
+                    // 获取模块信息
+                    const getModule = (code) => modules.find(m => m.code === code) || {};
+
+                    // 获取模块补充信息
+                    const getModuleExtra = (code) => {
+                        if (!moduleExtras[code]) {
+                            moduleExtras[code] = { fileList: [], text: '' };
+                        }
+                        return moduleExtras[code];
+                    };
+
+                    const syncModuleCopyDrafts = (project) => {
+                        if (!project || !project.imageTasks) return;
+                        project.imageTasks.forEach(task => {
+                            moduleCopyDrafts[task.moduleCode] = task.moduleCopy || '';
+                        });
+                    };
+
+                    const buildModuleCopyPayload = () => {
+                        const moduleCopies = {};
+                        if (currentProject.value && currentProject.value.imageTasks) {
+                            currentProject.value.imageTasks.forEach(task => {
+                                moduleCopies[task.moduleCode] = moduleCopyDrafts[task.moduleCode] || '';
+                            });
+                        }
+                        return moduleCopies;
+                    };
+
+                    // 切换模块选择
+                    const toggleModule = (code) => {
+                        const idx = form.selectedModules.indexOf(code);
+                        if (idx >= 0) {
+                            form.selectedModules.splice(idx, 1);
+                        } else {
+                            form.selectedModules.push(code);
+                        }
+                    };
+
+                    // 切换模块展开
+                    const toggleExpand = (code) => {
+                        const idx = expandedModules.value.indexOf(code);
+                        if (idx >= 0) {
+                            expandedModules.value.splice(idx, 1);
+                        } else {
+                            expandedModules.value.push(code);
+                        }
+                    };
+
+                    // 触发上传
+                    const triggerUpload = () => {
+                        if (referenceFileList.value.length === 0) {
+                            fileInput.value.click();
+                        }
+                    };
+
+                    // 文件选择
+                    const handleFileSelect = (e) => {
+                        const file = e.target.files[0];
+                        if (file) {
+                            referenceFileList.value = [{
+                                name: file.name,
+                                url: URL.createObjectURL(file),
+                                raw: file,
+                                uid: Date.now(),
+                                status: 'ready'
+                            }];
+                        }
+                        e.target.value = '';
+                    };
+
+                    // 移除参考图
+                    const removeReference = () => {
+                        referenceFileList.value = [];
+                    };
+
+                    // 拖拽处理
+                    const onDragOver = (e) => {
+                        e.preventDefault();
+                        isDragging.value = true;
+                    };
+
+                    const onDragLeave = (e) => {
+                        e.preventDefault();
+                        isDragging.value = false;
+                    };
+
+                    const handleDrop = (e) => {
+                        isDragging.value = false;
+                        const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
+                        if (files.length && referenceFileList.value.length === 0) {
+                            const file = files[0];
+                            referenceFileList.value = [{
+                                name: file.name,
+                                url: URL.createObjectURL(file),
+                                raw: file,
+                                uid: Date.now(),
+                                status: 'ready'
+                            }];
+                        }
+                    };
+
+                    // 模块补充照片上传
+                    const triggerModuleUpload = (code) => {
+                        const input = document.createElement('input');
+                        input.type = 'file';
+                        input.accept = 'image/*';
+                        input.multiple = true; // 支持多选
+                        input.onchange = (e) => {
+                            const files = Array.from(e.target.files);
+                            files.forEach(file => {
+                                getModuleExtra(code).fileList.push({
+                                    name: file.name,
+                                    url: URL.createObjectURL(file),
+                                    raw: file,
+                                    uid: Date.now() + Math.random(),
+                                    status: 'ready'
+                                });
+                            });
+                        };
+                        input.click();
+                    };
+
+                    // 移除模块补充照片
+                    const removeModuleFile = (code, idx) => {
+                        getModuleExtra(code).fileList.splice(idx, 1);
+                    };
+
+                    // 模块拖拽上传
+                    const onModuleDragOver = (e, code) => {
+                        e.preventDefault();
+                        e.currentTarget.classList.add('drag-over');
+                    };
+
+                    const onModuleDragLeave = (e, code) => {
+                        e.preventDefault();
+                        e.currentTarget.classList.remove('drag-over');
+                    };
+
+                    const handleModuleDrop = (e, code) => {
+                        e.preventDefault();
+                        e.currentTarget.classList.remove('drag-over');
+                        const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
+                        files.forEach(file => {
+                            getModuleExtra(code).fileList.push({
+                                name: file.name,
+                                url: URL.createObjectURL(file),
+                                raw: file,
+                                uid: Date.now() + Math.random(),
+                                status: 'ready'
+                            });
+                        });
+                    };
+
+                    // OSS 上传
+                    const uploadToOss = async (fileObj) => {
+                        const realFile = fileObj.raw;
+                        if (!realFile) return fileObj.url;
+
+                        const policyRes = await axios.get('/api/oss/policy');
+                        if (!policyRes.data.success) throw new Error('获取上传签名失败');
+                        const policy = policyRes.data.data;
+                        const formData = new FormData();
+                        formData.append('key', policy.dir + Date.now() + '_' + realFile.name);
+                        formData.append('policy', policy.policy);
+                        formData.append('OSSAccessKeyId', policy.accessId);
+                        formData.append('signature', policy.signature);
+                        formData.append('callback', policy.callback || '');
+                        formData.append('file', realFile);
+
+                        const uploadRes = await axios.post(policy.host, formData);
+                        return uploadRes.data?.url || (policy.host + '/' + policy.dir + realFile.name);
+                    };
+
+                    // 创建项目
+                    const createProject = async () => {
+                        if (!canCreate.value) {
+                            ElementPlus.ElMessage.warning('请填写必填项');
+                            return;
+                        }
+
+                        creating.value = true;
+                        try {
+                            // 1. 上传参考图
+                            const referenceImageUrl = await uploadToOss(referenceFileList.value[0]);
+
+                            // 2. 上传各模块补充照片（支持多张）
+                            const moduleExtrasData = {};
+                            for (const code of form.selectedModules) {
+                                const extra = moduleExtras[code];
+                                if (extra && (extra.fileList.length > 0 || extra.text.trim())) {
+                                    const uploadedUrls = [];
+                                    for (const file of extra.fileList) {
+                                        const url = await uploadToOss(file);
+                                        uploadedUrls.push(url);
+                                    }
+                                    moduleExtrasData[code] = {
+                                        supplementaryImageUrls: uploadedUrls,
+                                        supplementaryText: extra.text.trim() || null
+                                    };
+                                }
+                            }
+
+                            // 3. 创建项目
+                            const r = await axios.post('/api/aplus/projects', {
+                                projectName: form.projectName || autoProjectName.value,
+                                spu: form.spu,
+                                referenceImageUrl,
+                                sellingPoints: form.sellingPoints,
+                                selectedModules: form.selectedModules,
+                                moduleExtras: moduleExtrasData
+                            });
+
+                            if (r.data.success) {
+                                ElementPlus.ElMessage.success('项目创建成功');
+                                resetForm();
+
+                                // 4. 查看项目详情并开始轮询
+                                await viewProject(r.data.data.id);
+
+                                // 5. 刷新列表
+                                await loadProjects();
+                            } else {
+                                ElementPlus.ElMessage.error(r.data.message || '创建失败');
+                            }
+                        } catch (e) {
+                            ElementPlus.ElMessage.error('创建失败: ' + (e.response?.data?.message || e.message));
+                        } finally {
+                            creating.value = false;
+                        }
+                    };
+
+                    // 重置表单
+                    const resetForm = () => {
+                        form.projectName = '';
+                        form.spu = '';
+                        form.sellingPoints = '';
+                        form.selectedModules = ['AD-01', 'AD-02', 'AD-03', 'AD-04', 'AD-05', 'AD-06', 'AD-07'];
+                        referenceFileList.value = [];
+                        expandedModules.value = [];
+                        Object.keys(moduleExtras).forEach(key => {
+                            delete moduleExtras[key];
+                        });
+                        selectedTemplate.value = null;
+                        selectedTemplateName.value = '';
+                    };
+
+                    // 加载模板列表
+                    const loadTemplates = async () => {
+                        loadingTemplates.value = true;
+                        try {
+                            const params = { page: 1, size: 50 };
+                            if (templateSearch.value) params.name = templateSearch.value;
+                            const r = await axios.get('/api/aplus/templates', { params });
+                            if (r.data.success) {
+                                templates.value = r.data.data.content || [];
+                            }
+                        } catch (e) {
+                            console.error('加载模板失败', e);
+                        } finally {
+                            loadingTemplates.value = false;
+                        }
+                    };
+
+                    // 应用模板
+                    const applyTemplate = async (template) => {
+                        try {
+                            const r = await axios.post(`/api/aplus/templates/${template.id}/apply`);
+                            if (r.data.success) {
+                                const data = r.data.data;
+                                form.projectName = data.projectName || template.templateName;
+                                form.spu = data.spu || '';
+                                form.sellingPoints = data.sellingPoints || '';
+                                form.selectedModules = data.selectedModules || [];
+                                if (data.moduleExtras) {
+                                    Object.keys(data.moduleExtras).forEach(code => {
+                                        moduleExtras[code] = {
+                                            fileList: [],
+                                            text: data.moduleExtras[code].supplementaryText || ''
+                                        };
+                                    });
+                                }
+                                selectedTemplate.value = template;
+                                selectedTemplateName.value = template.templateName;
+                                showTemplatePicker.value = false;
+                                ElementPlus.ElMessage.success('模板已应用');
+                            }
+                        } catch (e) {
+                            ElementPlus.ElMessage.error('应用模板失败');
+                        }
+                    };
+
+                    // 清除模板选择
+                    const clearTemplate = () => {
+                        selectedTemplate.value = null;
+                        selectedTemplateName.value = '';
+                    };
+
+                    // 查看项目详情
+                    const viewProject = async (id) => {
+                        try {
+                            const r = await axios.get(`/api/aplus/projects/${id}`);
+                            if (r.data.success) {
+                                currentProject.value = r.data.data;
+                                syncModuleCopyDrafts(currentProject.value);
+                                showHistory.value = false;
+                                // 如果项目还在生成中，开始轮询
+                                if (!isTerminalStatus(currentProject.value.status)) {
+                                    startPolling();
+                                }
+                            }
+                        } catch (e) {
+                            ElementPlus.ElMessage.error('获取项目详情失败');
+                        }
+                    };
+
+                    // 刷新项目状态
+                    const refreshProject = async () => {
+                        if (!currentProject.value) return;
+                        refreshing.value = true;
+                        try {
+                            await viewProject(currentProject.value.id);
+                        } finally {
+                            refreshing.value = false;
+                        }
+                    };
+
+                    // 轮询
+                    const startPolling = () => {
+                        stopPolling();
+                        pollTimer = setInterval(async () => {
+                            if (!currentProject.value) {
+                                stopPolling();
+                                return;
+                            }
+                            try {
+                                const r = await axios.get(`/api/aplus/projects/${currentProject.value.id}`);
+                                if (r.data.success) {
+                                    currentProject.value = r.data.data;
+                                    syncModuleCopyDrafts(currentProject.value);
+                                    if (isTerminalStatus(currentProject.value.status)) {
+                                        stopPolling();
+                                        if (currentProject.value.status === 'COMPLETED') {
+                                            ElementPlus.ElMessage.success('生成完成');
+                                        }
+                                    }
+                                }
+                            } catch (e) {}
+                        }, 5000);
+                    };
+
+                    const stopPolling = () => {
+                        if (pollTimer) {
+                            clearInterval(pollTimer);
+                            pollTimer = null;
+                        }
+                    };
+
+                    const saveCopy = async (showMessage = true) => {
+                        if (!currentProject.value) return false;
+                        savingCopy.value = true;
+                        try {
+                            const r = await axios.put(`/api/aplus/projects/${currentProject.value.id}/copy`, {
+                                aplusMarkdown: currentProject.value.aplusMarkdown || '',
+                                moduleCopies: buildModuleCopyPayload()
+                            });
+                            if (r.data.success) {
+                                currentProject.value = r.data.data;
+                                syncModuleCopyDrafts(currentProject.value);
+                                if (showMessage) {
+                                    ElementPlus.ElMessage.success('文案已保存');
+                                }
+                                return true;
+                            }
+                            ElementPlus.ElMessage.error(r.data.message || '保存失败');
+                            return false;
+                        } catch (e) {
+                            ElementPlus.ElMessage.error('保存失败: ' + (e.response?.data?.message || e.message));
+                            return false;
+                        } finally {
+                            savingCopy.value = false;
+                        }
+                    };
+
+                    const confirmGenerateImages = async () => {
+                        if (!currentProject.value) return;
+                        const saved = await saveCopy(false);
+                        if (!saved) return;
+
+                        const projectId = currentProject.value.id;
+                        generatingImages.value = true;
+                        try {
+                            const r = await axios.post(`/api/aplus/projects/${projectId}/generate-images`);
+                            if (r.data.success) {
+                                ElementPlus.ElMessage.success('图片生成任务已提交');
+                                await viewProject(projectId);
+                                startPolling();
+                            } else {
+                                ElementPlus.ElMessage.error(r.data.message || '提交失败');
+                            }
+                        } catch (e) {
+                            ElementPlus.ElMessage.error('提交失败: ' + (e.response?.data?.message || e.message));
+                        } finally {
+                            generatingImages.value = false;
+                        }
+                    };
+
+                    const retryFailedModules = async () => {
+                        if (!currentProject.value) return;
+                        const projectId = currentProject.value.id;
+                        retryingFailed.value = true;
+                        try {
+                            const r = await axios.post(`/api/aplus/projects/${projectId}/retry-failed`);
+                            if (r.data.success) {
+                                ElementPlus.ElMessage.success('失败模块已重新提交');
+                                await viewProject(projectId);
+                                startPolling();
+                            } else {
+                                ElementPlus.ElMessage.error(r.data.message || '提交失败');
+                            }
+                        } catch (e) {
+                            ElementPlus.ElMessage.error('提交失败: ' + (e.response?.data?.message || e.message));
+                        } finally {
+                            retryingFailed.value = false;
+                        }
+                    };
+
+                    // 下载单张
+                    const downloadSingle = (task) => {
+                        const url = task.resultOssUrl || task.resultTempUrl;
+                        if (url) {
+                            window.open(`/api/aplus/proxy-download?url=${encodeURIComponent(url)}&filename=${task.moduleCode}.jpg`);
+                        }
+                    };
+
+                    // 批量下载 ZIP
+                    const downloadZip = async () => {
+                        if (!currentProject.value) return;
+                        try {
+                            const res = await axios.post(`/api/aplus/projects/${currentProject.value.id}/download-zip`, {}, {
+                                responseType: 'blob'
+                            });
+                            const url = window.URL.createObjectURL(new Blob([res.data]));
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = `A+_${currentProject.value.projectName}.zip`;
+                            a.click();
+                            window.URL.revokeObjectURL(url);
+                        } catch (e) {
+                            ElementPlus.ElMessage.error('下载失败');
+                        }
+                    };
+
+                    // 重新生成单个模块
+                    const regenerateModule = async (moduleCode) => {
+                        if (!currentProject.value) return;
+                        try {
+                            const r = await axios.post(`/api/aplus/projects/${currentProject.value.id}/modules/${moduleCode}/regenerate`);
+                            if (r.data.success) {
+                                ElementPlus.ElMessage.success(`${moduleCode} 重新生成任务已提交`);
+                                startPolling();
+                            } else {
+                                ElementPlus.ElMessage.error(r.data.message || '提交失败');
+                            }
+                        } catch (e) {
+                            ElementPlus.ElMessage.error('提交失败');
+                        }
+                    };
+
+                    // 打开画廊
+                    const openGallery = (task) => {
+                        galleryTask.value = task;
+                        galleryVisible.value = true;
+                    };
+
+                    // 切换视图模式
+                    const toggleViewMode = () => {
+                        viewMode.value = viewMode.value === 'grid' ? 'gallery' : 'grid';
+                    };
+
+                    // 加载项目列表
+                    const loadProjects = async () => {
+                        loadingProjects.value = true;
+                        try {
+                            const params = {
+                                page: currentPage.value,
+                                size: pageSize.value
+                            };
+                            if (searchSpu.value) params.spu = searchSpu.value;
+
+                            const r = await axios.get('/api/aplus/projects', { params });
+                            if (r.data.success) {
+                                projects.value = r.data.data.content || [];
+                                totalProjects.value = r.data.data.totalElements || 0;
+                            }
+                        } catch (e) {
+                            ElementPlus.ElMessage.error('加载项目列表失败');
+                        } finally {
+                            loadingProjects.value = false;
+                        }
+                    };
+
+                    // 删除项目
+                    const deleteProject = async (id) => {
+                        try {
+                            await ElementPlus.ElMessageBox.confirm('确定删除该项目？', '确认删除', {
+                                confirmButtonText: '确定',
+                                cancelButtonText: '取消',
+                                type: 'warning'
+                            });
+
+                            const r = await axios.delete(`/api/aplus/projects/${id}`);
+                            if (r.data.success) {
+                                ElementPlus.ElMessage.success('删除成功');
+                                if (currentProject.value && currentProject.value.id === id) {
+                                    currentProject.value = null;
+                                    stopPolling();
+                                }
+                                await loadProjects();
+                            } else {
+                                ElementPlus.ElMessage.error(r.data.message || '删除失败');
+                            }
+                        } catch (e) {
+                            if (e !== 'cancel') {
+                                ElementPlus.ElMessage.error('删除失败');
+                            }
+                        }
+                    };
+
+                    // 状态显示
+                    const getStatusClass = (status) => ({
+                        CREATED: 'pending',
+                        GENERATING_COPY: 'generating',
+                        COPY_DONE: 'pending',
+                        GENERATING_IMAGES: 'generating',
+                        COMPLETED: 'completed',
+                        PARTIAL_FAILED: 'failed',
+                        FAILED: 'failed'
+                    }[status] || 'pending');
+
+                    const getStatusLabel = (status) => ({
+                        CREATED: '已创建',
+                        GENERATING_COPY: '生成文案中',
+                        COPY_DONE: '文案待确认',
+                        GENERATING_IMAGES: '生成图片中',
+                        COMPLETED: '已完成',
+                        PARTIAL_FAILED: '部分失败',
+                        FAILED: '失败'
+                    }[status] || status);
+
+                    // 初始化
+                    loadProjects();
+
+                    // 清理
+                    onUnmounted(() => {
+                        stopPolling();
+                    });
+
+                    return {
+                        modules,
+                        creating,
+                        refreshing,
+                        loadingProjects,
+                        projects,
+                        currentProject,
+                        currentPage,
+                        pageSize,
+                        totalProjects,
+                        searchSpu,
+                        showHistory,
+                        viewMode,
+                        galleryVisible,
+                        galleryTask,
+                        savingCopy,
+                        generatingImages,
+                        retryingFailed,
+                        moduleCopyDrafts,
+                        form,
+                        referenceFileList,
+                        fileInput,
+                        isDragging,
+                        moduleExtras,
+                        expandedModules,
+                        autoProjectName,
+                        canCreate,
+                        isGenerating,
+                        isCopyReview,
+                        isPartialFailed,
+                        completedCount,
+                        totalCount,
+                        progressPercent,
+                        hasSuccessTasks,
+                        showTemplatePicker,
+                        selectedTemplate,
+                        selectedTemplateName,
+                        templateSearch,
+                        loadingTemplates,
+                        templates,
+                        getModule,
+                        getModuleExtra,
+                        toggleModule,
+                        toggleExpand,
+                        triggerUpload,
+                        handleFileSelect,
+                        removeReference,
+                        onDragOver,
+                        onDragLeave,
+                        handleDrop,
+                        triggerModuleUpload,
+                        removeModuleFile,
+                        onModuleDragOver,
+                        onModuleDragLeave,
+                        handleModuleDrop,
+                        createProject,
+                        saveCopy,
+                        confirmGenerateImages,
+                        retryFailedModules,
+                        viewProject,
+                        refreshProject,
+                        downloadSingle,
+                        downloadZip,
+                        regenerateModule,
+                        openGallery,
+                        toggleViewMode,
+                        loadProjects,
+                        loadTemplates,
+                        applyTemplate,
+                        clearTemplate,
+                        parseModules,
+                        deleteProject,
+                        getStatusClass,
+                        getStatusLabel
+                    };
+                }
+            });
+
+            for (const [key, component] of Object.entries(icons)) {
+                app.component(key, component);
+            }
+
+            app.use(ElementPlus).mount('#app');
+        </script>
+    </div>
+</body>
+</html>

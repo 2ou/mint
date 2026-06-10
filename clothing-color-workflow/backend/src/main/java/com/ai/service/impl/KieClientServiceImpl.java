@@ -68,7 +68,12 @@ public class KieClientServiceImpl implements KieClientService {
 
             // 2. 处理颜色图/参考图
             if (colorUrl != null && !colorUrl.trim().isEmpty()) {
-                imageArray.add(colorUrl.trim());
+                String[] urls = colorUrl.split(",");
+                for (String u : urls) {
+                    if (!u.trim().isEmpty()) {
+                        imageArray.add(u.trim());
+                    }
+                }
             }
 
             inputNode.set("image_input", imageArray);

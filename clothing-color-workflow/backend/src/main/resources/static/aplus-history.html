@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <title>A+ 历史记录 — AI 电商视觉平台</title>
+    <link rel="stylesheet" href="css/variables.css">
+    <link rel="stylesheet" href="css/shared.css">
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css"/>
+    <script src="https://unpkg.com/element-plus"></script>
+    <script src="https://unpkg.com/@element-plus/icons-vue"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <script src="auth.js"></script>
+    <script src="js/sidebar.js"></script>
+    <style>
+        body { margin: 0; font-family: var(--app-font-family); }
+        .main-card { background: #fff; border-radius: var(--app-radius-lg); box-shadow: var(--app-shadow-card); padding: 28px; }
+
+        /* 结果卡片 */
+        .result-card {
+            border: 1px solid #ebeef5; border-radius: 12px; overflow: hidden; background: #fff;
+            transition: all 0.2s;
+        }
+        .result-card .rc-image { width: 100%; aspect-ratio: 16/9; object-fit: cover; display: block; }
+        .result-card .rc-placeholder {
+            width: 100%; aspect-ratio: 16/9; background: #fafafa;
+            display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+        }
+        .result-card .rc-footer { padding: 12px; display: flex; justify-content: space-between; align-items: center; }
+        .loading-spinner {
+            width: 32px; height: 32px; border-radius: 50%;
+            border: 3px solid #e4e7ed; border-top-color: #667eea;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* 详情抽屉 */
+        .detail-field { margin-bottom: 12px; }
+        .detail-field .label { font-size: 12px; color: #909399; margin-bottom: 2px; }
+        .detail-field .value { font-size: 14px; color: #303133; }
+    </style>
+</head>
+<body>
+<div id="app">
+    <div class="app-layout">
+        <div class="app-main">
+            <div style="padding: 28px 32px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+                    <div>
+                        <div style="font-size: 20px; font-weight: 700; color: #303133;">A+ 历史记录</div>
+                        <div style="font-size: 13px; color: #909399; margin-top: 4px;">查看所有 A+ 项目，支持重新生成、导出和删除</div>
+                    </div>
+                    <el-button type="primary" @click="window.location.href='aplus.html'" style="background: linear-gradient(135deg, #667eea, #764ba2); border: none;">
+                        + 新建项目
+                    </el-button>
+                </div>
+
+                <!-- 搜索栏 -->
+                <div class="main-card" style="margin-bottom: 16px; padding: 16px 20px;">
+                    <div style="display: flex; gap: 12px; align-items: center;">
+                        <el-input v-model="searchSpu" placeholder="搜索 SPU" clearable size="default"
+                                  style="width: 200px;" @clear="loadProjects" @keyup.enter="loadProjects"/>
+                        <el-select v-model="searchStatus" placeholder="状态筛选" clearable size="default" style="width: 150px;" @change="loadProjects">
+                            <el-option label="已创建" value="CREATED"/>
+                            <el-option label="生成文案中" value="GENERATING_COPY"/>
+                            <el-option label="文案待确认" value="COPY_DONE"/>
+                            <el-option label="生成图片中" value="GENERATING_IMAGES"/>
+                            <el-option label="已完成" value="COMPLETED"/>
+                            <el-option label="部分失败" value="PARTIAL_FAILED"/>
+                            <el-option label="失败" value="FAILED"/>
+                        </el-select>
+                        <el-button type="primary" @click="loadProjects" style="background: linear-gradient(135deg, #667eea, #764ba2); border: none;">搜索</el-button>
+                        <el-button @click="searchSpu=''; searchStatus=''; loadProjects()">重置</el-button>
+                    </div>
+                </div>
+
+                <!-- 项目表格 -->
+                <div class="main-card">
+                    <el-table :data="projects" style="width: 100%" v-loading="loading" stripe>
+                        <el-table-column prop="id" label="ID" width="60"/>
+                        <el-table-column prop="projectName" label="项目名称" min-width="180" show-overflow-tooltip/>
+                        <el-table-column prop="spu" label="SPU" width="120"/>
+                        <el-table-column label="状态" width="110">
+                            <template #default="{ row }">
+                                <el-tag :type="statusType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
+                            </template>
+                        </el-table-column>
+                        <el-table-column prop="operator" label="操作人" width="80"/>
+                        <el-table-column prop="createdAt" label="创建时间" width="160"/>
+                        <el-table-column prop="completedAt" label="完成时间" width="160"/>
+                        <el-table-column label="操作" width="260" fixed="right">
+                            <template #default="{ row }">
+                                <el-button size="small" @click="viewDetail(row.id)">详情</el-button>
+                                <el-button size="small" @click="downloadZip(row)" :disabled="!['COMPLETED', 'PARTIAL_FAILED'].includes(row.status)">ZIP</el-button>
+                                <el-button size="small" @click="saveAsTemplate(row)">存模板</el-button>
+                                <el-button size="small" type="danger" @click="deleteProject(row.id)" plain>删除</el-button>
+                            </template>
+                        </el-table-column>
+                    </el-table>
+
+                    <div style="display: flex; justify-content: center; margin-top: 20px;">
+                        <el-pagination
+                            v-model:current-page="currentPage"
+                            v-model:page-size="pageSize"
+                            :page-sizes="[10, 20, 50]"
+                            :total="totalProjects"
+                            layout="total, sizes, prev, pager, next, jumper"
+                            @size-change="loadProjects"
+                            @current-change="loadProjects"/>
+                    </div>
+                </div>
+
+                <!-- 详情抽屉 -->
+                <el-drawer v-model="showDetail" title="项目详情" size="70%" :destroy-on-close="true">
+                    <template v-if="detailProject">
+                        <!-- 基本信息 -->
+                        <div style="margin-bottom: 24px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                                <div>
+                                    <div style="font-size: 16px; font-weight: 700; color: #303133;">
+                                        {{ detailProject.projectName }}
+                                        <el-tag :type="statusType(detailProject.status)" size="small" style="margin-left: 8px;">
+                                            {{ statusLabel(detailProject.status) }}
+                                        </el-tag>
+                                    </div>
+                                    <div style="font-size: 12px; color: #909399; margin-top: 4px;">
+                                        SPU: {{ detailProject.spu }} · 创建: {{ detailProject.createdAt }}
+                                        <span v-if="detailProject.completedAt"> · 完成: {{ detailProject.completedAt }}</span>
+                                    </div>
+                                </div>
+                                <div style="display: flex; gap: 8px;">
+                                    <el-button size="small" @click="refreshDetail" :loading="refreshing">刷新</el-button>
+                                    <el-button v-if="detailProject.status === 'COPY_DONE'" size="small" type="primary"
+                                               @click="generateImages"
+                                               style="background: linear-gradient(135deg, #667eea, #764ba2); border: none;">
+                                        确认生成图片
+                                    </el-button>
+                                    <el-button v-if="detailProject.status === 'PARTIAL_FAILED'" size="small" type="warning"
+                                               @click="retryFailedModules">
+                                        重试失败模块
+                                    </el-button>
+                                    <el-button size="small" type="primary" @click="downloadZip(detailProject)"
+                                               :disabled="!hasSuccessTasks"
+                                               style="background: linear-gradient(135deg, #667eea, #764ba2); border: none;">
+                                        批量下载 ZIP
+                                    </el-button>
+                                </div>
+                            </div>
+
+                            <div class="detail-field" v-if="detailProject.sellingPoints">
+                                <div class="label">产品卖点</div>
+                                <div class="value" style="white-space: pre-wrap;">{{ detailProject.sellingPoints }}</div>
+                            </div>
+                        </div>
+
+                        <!-- 参考图 -->
+                        <div v-if="detailProject.referenceImageUrl" style="margin-bottom: 24px;">
+                            <div style="font-size: 14px; font-weight: 600; color: #303133; margin-bottom: 10px;">参考图</div>
+                            <el-image :src="detailProject.referenceImageUrl" fit="contain"
+                                      style="max-height: 200px; border-radius: 8px; border: 1px solid #ebeef5;"
+                                      :preview-src-list="[detailProject.referenceImageUrl]" preview-teleported/>
+                        </div>
+
+                        <!-- 模块图片结果 -->
+                        <div>
+                            <div style="font-size: 14px; font-weight: 600; color: #303133; margin-bottom: 12px;">生成结果</div>
+                            <el-row :gutter="16">
+                                <el-col :span="8" v-for="task in detailProject.imageTasks" :key="task.id" style="margin-bottom: 16px;">
+                                    <div class="result-card">
+                                        <template v-if="task.status === 'SUCCESS' && (task.resultOssUrl || task.resultTempUrl)">
+                                            <el-image :src="task.resultOssUrl || task.resultTempUrl" fit="cover"
+                                                      class="rc-image" :preview-src-list="[task.resultOssUrl || task.resultTempUrl]" preview-teleported/>
+                                        </template>
+                                        <template v-else>
+                                            <div class="rc-placeholder">
+                                                <template v-if="task.status === 'PENDING'">
+                                                    <span style="font-size: 2rem; color: #909399;">•</span>
+                                                    <span style="font-size: 12px; color: #909399;">待生成</span>
+                                                </template>
+                                                <template v-else-if="task.status === 'FAILED'">
+                                                    <span style="font-size: 2rem; color: #F56C6C;">✕</span>
+                                                    <span style="font-size: 12px; color: #F56C6C;">失败</span>
+                                                </template>
+                                                <template v-else>
+                                                    <div class="loading-spinner"></div>
+                                                    <span style="font-size: 12px; color: #909399;">生成中...</span>
+                                                </template>
+                                            </div>
+                                        </template>
+                                        <div class="rc-footer">
+                                            <div>
+                                                <div style="font-size: 13px; font-weight: 600; color: #303133;">{{ task.moduleCode }}</div>
+                                                <div style="font-size: 11px; color: #909399;">{{ task.moduleName }}</div>
+                                            </div>
+                                            <div style="display: flex; gap: 6px; align-items: center;">
+                                                <el-tag :type="taskStatusType(task.status)" size="small">{{ taskStatusLabel(task.status) }}</el-tag>
+                                                <el-button v-if="task.status === 'SUCCESS'" size="small" @click="downloadSingle(task)">下载</el-button>
+                                                <el-button v-if="task.status === 'SUCCESS' || task.status === 'FAILED'" size="small"
+                                                           @click="regenerateModule(task.moduleCode)">重生成</el-button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </el-col>
+                            </el-row>
+                        </div>
+
+                        <!-- 文案 -->
+                        <div v-if="detailProject.aplusMarkdown" style="margin-top: 24px;">
+                            <div style="font-size: 14px; font-weight: 600; color: #303133; margin-bottom: 10px;">A+ 文案</div>
+                            <div style="background: #fafbfc; border-radius: 8px; padding: 16px; border: 1px solid #ebeef5; white-space: pre-wrap; font-size: 13px; color: #606266; max-height: 400px; overflow-y: auto;">
+                                {{ detailProject.aplusMarkdown }}
+                            </div>
+                        </div>
+                    </template>
+                </el-drawer>
+
+                <!-- 保存为模板对话框 -->
+                <el-dialog v-model="showSaveDialog" title="保存为模板" width="400px" :close-on-click-modal="false">
+                    <el-form label-width="80px">
+                        <el-form-item label="模板名称" required>
+                            <el-input v-model="saveTemplateName" placeholder="请输入模板名称"/>
+                        </el-form-item>
+                    </el-form>
+                    <template #footer>
+                        <el-button @click="showSaveDialog = false">取消</el-button>
+                        <el-button type="primary" @click="confirmSaveTemplate" :loading="savingTemplate"
+                                   :disabled="!saveTemplateName.trim()"
+                                   style="background: linear-gradient(135deg, #667eea, #764ba2); border: none;">保存</el-button>
+                    </template>
+                </el-dialog>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const icons = ElementPlusIconsVue;
+    const { createApp, ref, reactive, computed } = Vue;
+
+    const app = createApp({
+        setup() {
+            const loading = ref(false);
+            const projects = ref([]);
+            const currentPage = ref(1);
+            const pageSize = ref(20);
+            const totalProjects = ref(0);
+            const searchSpu = ref('');
+            const searchStatus = ref('');
+
+            // 详情
+            const showDetail = ref(false);
+            const detailProject = ref(null);
+            const refreshing = ref(false);
+            let pollTimer = null;
+
+            // 保存模板
+            const showSaveDialog = ref(false);
+            const saveTemplateName = ref('');
+            const savingTemplate = ref(false);
+            const saveTemplateSource = ref(null);
+            const terminalStatuses = ['COPY_DONE', 'COMPLETED', 'PARTIAL_FAILED', 'FAILED'];
+            const isTerminalStatus = (status) => terminalStatuses.includes(status);
+
+            // 加载项目列表
+            const loadProjects = async () => {
+                loading.value = true;
+                try {
+                    const params = { page: currentPage.value, size: pageSize.value };
+                    if (searchSpu.value) params.spu = searchSpu.value;
+                    if (searchStatus.value) params.status = searchStatus.value;
+                    const r = await axios.get('/api/aplus/projects', { params });
+                    if (r.data.success) {
+                        projects.value = r.data.data.content || [];
+                        totalProjects.value = r.data.data.totalElements || 0;
+                    }
+                } catch (e) {
+                    ElementPlus.ElMessage.error('加载项目列表失败');
+                } finally {
+                    loading.value = false;
+                }
+            };
+
+            // 查看详情
+            const viewDetail = async (id) => {
+                try {
+                    const r = await axios.get(`/api/aplus/projects/${id}`);
+                    if (r.data.success) {
+                        detailProject.value = r.data.data;
+                        showDetail.value = true;
+                        if (!isTerminalStatus(detailProject.value.status)) {
+                            startPolling();
+                        }
+                    }
+                } catch (e) {
+                    ElementPlus.ElMessage.error('获取详情失败');
+                }
+            };
+
+            // 刷新详情
+            const refreshDetail = async () => {
+                if (!detailProject.value) return;
+                refreshing.value = true;
+                try {
+                    await viewDetail(detailProject.value.id);
+                } finally {
+                    refreshing.value = false;
+                }
+            };
+
+            // 轮询
+            const startPolling = () => {
+                stopPolling();
+                pollTimer = setInterval(async () => {
+                    if (!detailProject.value || !showDetail.value) { stopPolling(); return; }
+                    try {
+                        const r = await axios.get(`/api/aplus/projects/${detailProject.value.id}`);
+                        if (r.data.success) {
+                            detailProject.value = r.data.data;
+                            if (isTerminalStatus(detailProject.value.status)) {
+                                stopPolling();
+                                if (detailProject.value.status === 'COMPLETED') {
+                                    ElementPlus.ElMessage.success('生成完成');
+                                }
+                            }
+                        }
+                    } catch (e) {}
+                }, 5000);
+            };
+            const stopPolling = () => { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } };
+
+            // 是否有成功任务
+            const hasSuccessTasks = computed(() => {
+                if (!detailProject.value || !detailProject.value.imageTasks) return false;
+                return detailProject.value.imageTasks.some(t => t.status === 'SUCCESS');
+            });
+
+            // 下载单张
+            const downloadSingle = (task) => {
+                const url = task.resultOssUrl || task.resultTempUrl;
+                if (url) window.open(`/api/aplus/proxy-download?url=${encodeURIComponent(url)}&filename=${task.moduleCode}.jpg`);
+            };
+
+            // 下载 ZIP
+            const downloadZip = async (project) => {
+                try {
+                    const res = await axios.post(`/api/aplus/projects/${project.id}/download-zip`, {}, { responseType: 'blob' });
+                    const url = window.URL.createObjectURL(new Blob([res.data]));
+                    const a = document.createElement('a');
+                    a.href = url; a.download = `A+_${project.projectName}.zip`; a.click();
+                    window.URL.revokeObjectURL(url);
+                } catch (e) {
+                    ElementPlus.ElMessage.error('下载失败');
+                }
+            };
+
+            // 确认生成图片
+            const generateImages = async () => {
+                if (!detailProject.value) return;
+                const projectId = detailProject.value.id;
+                try {
+                    const r = await axios.post(`/api/aplus/projects/${projectId}/generate-images`);
+                    if (r.data.success) {
+                        ElementPlus.ElMessage.success('图片生成任务已提交');
+                        await viewDetail(projectId);
+                        startPolling();
+                    } else {
+                        ElementPlus.ElMessage.error(r.data.message || '提交失败');
+                    }
+                } catch (e) {
+                    ElementPlus.ElMessage.error('提交失败');
+                }
+            };
+
+            // 重试失败模块
+            const retryFailedModules = async () => {
+                if (!detailProject.value) return;
+                const projectId = detailProject.value.id;
+                try {
+                    const r = await axios.post(`/api/aplus/projects/${projectId}/retry-failed`);
+                    if (r.data.success) {
+                        ElementPlus.ElMessage.success('失败模块已重新提交');
+                        await viewDetail(projectId);
+                        startPolling();
+                    } else {
+                        ElementPlus.ElMessage.error(r.data.message || '提交失败');
+                    }
+                } catch (e) {
+                    ElementPlus.ElMessage.error('提交失败');
+                }
+            };
+
+            // 重新生成模块
+            const regenerateModule = async (moduleCode) => {
+                if (!detailProject.value) return;
+                try {
+                    const r = await axios.post(`/api/aplus/projects/${detailProject.value.id}/modules/${moduleCode}/regenerate`);
+                    if (r.data.success) {
+                        ElementPlus.ElMessage.success(`${moduleCode} 重新生成任务已提交`);
+                        startPolling();
+                    } else {
+                        ElementPlus.ElMessage.error(r.data.message || '提交失败');
+                    }
+                } catch (e) {
+                    ElementPlus.ElMessage.error('提交失败');
+                }
+            };
+
+            // 删除项目
+            const deleteProject = async (id) => {
+                try {
+                    await ElementPlus.ElMessageBox.confirm('确定删除该项目？删除后不可恢复。', '确认删除', {
+                        confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning'
+                    });
+                    const r = await axios.delete(`/api/aplus/projects/${id}`);
+                    if (r.data.success) {
+                        ElementPlus.ElMessage.success('删除成功');
+                        if (detailProject.value && detailProject.value.id === id) {
+                            showDetail.value = false;
+                            detailProject.value = null;
+                            stopPolling();
+                        }
+                        await loadProjects();
+                    } else {
+                        ElementPlus.ElMessage.error(r.data.message || '删除失败');
+                    }
+                } catch (e) {
+                    if (e !== 'cancel') ElementPlus.ElMessage.error('删除失败');
+                }
+            };
+
+            // 存为模板
+            const saveAsTemplate = (row) => {
+                saveTemplateSource.value = row;
+                saveTemplateName.value = row.projectName || '';
+                showSaveDialog.value = true;
+            };
+
+            const confirmSaveTemplate = async () => {
+                if (!saveTemplateName.value.trim() || !saveTemplateSource.value) return;
+                savingTemplate.value = true;
+                try {
+                    // 获取完整项目详情
+                    const r = await axios.get(`/api/aplus/projects/${saveTemplateSource.value.id}`);
+                    if (!r.data.success) throw new Error('获取项目详情失败');
+                    const project = r.data.data;
+
+                    // 构建 moduleExtras
+                    const moduleExtras = {};
+                    if (project.imageTasks) {
+                        for (const task of project.imageTasks) {
+                            if (task.supplementaryImageUrl || task.supplementaryText) {
+                                moduleExtras[task.moduleCode] = {
+                                    supplementaryImageUrl: task.supplementaryImageUrl,
+                                    supplementaryText: task.supplementaryText
+                                };
+                            }
+                        }
+                    }
+
+                    // 解析 selectedModules
+                    let selectedModules = [];
+                    try { selectedModules = JSON.parse(project.selectedModules || '[]'); } catch {}
+
+                    const templateRes = await axios.post('/api/aplus/templates', {
+                        templateName: saveTemplateName.value.trim(),
+                        spu: project.spu,
+                        referenceImageUrl: project.referenceImageUrl,
+                        sellingPoints: project.sellingPoints,
+                        selectedModules: selectedModules,
+                        moduleExtras: moduleExtras
+                    });
+
+                    if (templateRes.data.success) {
+                        ElementPlus.ElMessage.success('模板保存成功');
+                        showSaveDialog.value = false;
+                    } else {
+                        ElementPlus.ElMessage.error(templateRes.data.message || '保存失败');
+                    }
+                } catch (e) {
+                    ElementPlus.ElMessage.error('保存失败: ' + (e.message || ''));
+                } finally {
+                    savingTemplate.value = false;
+                }
+            };
+
+            // 状态显示
+            const statusType = (status) => ({
+                CREATED: 'info', GENERATING_COPY: 'warning', COPY_DONE: 'info',
+                GENERATING_IMAGES: 'warning', COMPLETED: 'success', PARTIAL_FAILED: 'danger', FAILED: 'danger'
+            }[status] || 'info');
+
+            const statusLabel = (status) => ({
+                CREATED: '已创建', GENERATING_COPY: '生成文案中', COPY_DONE: '文案待确认',
+                GENERATING_IMAGES: '生成图片中', COMPLETED: '已完成', PARTIAL_FAILED: '部分失败', FAILED: '失败'
+            }[status] || status);
+
+            const taskStatusType = (status) => ({
+                PENDING: 'info', PROCESSING: 'warning', SUCCESS: 'success', FAILED: 'danger'
+            }[status] || 'info');
+
+            const taskStatusLabel = (status) => ({
+                PENDING: '待生成', PROCESSING: '生成中', SUCCESS: '已完成', FAILED: '失败'
+            }[status] || status);
+
+            loadProjects();
+
+            return {
+                loading, projects, currentPage, pageSize, totalProjects,
+                searchSpu, searchStatus, showDetail, detailProject, refreshing,
+                hasSuccessTasks, showSaveDialog, saveTemplateName, savingTemplate,
+                loadProjects, viewDetail, refreshDetail, downloadSingle, downloadZip,
+                generateImages, retryFailedModules, regenerateModule, deleteProject, saveAsTemplate, confirmSaveTemplate,
+                statusType, statusLabel, taskStatusType, taskStatusLabel
+            };
+        }
+    });
+
+    for (const [key, component] of Object.entries(icons)) {
+        app.component(key, component);
+    }
+    app.use(ElementPlus);
+    app.mount('#app');
+</script>
+</body>
+</html>
