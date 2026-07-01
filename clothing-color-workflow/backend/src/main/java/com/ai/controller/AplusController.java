@@ -13,6 +13,8 @@ import com.ai.repository.AplusProjectRepository;
 import com.ai.service.AplusCopyService;
 import com.ai.service.AplusImageService;
 import com.ai.service.AplusProjectService;
+import com.ai.service.ImageTaskService;
+import com.ai.service.ModelLibraryService;
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -36,6 +38,7 @@ import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.stream.Collectors;
@@ -52,6 +55,8 @@ public class AplusController {
     private final AplusProjectService projectService;
     private final AplusCopyService copyService;
     private final AplusImageService imageService;
+    private final ImageTaskService imageTaskService;
+    private final ModelLibraryService modelLibraryService;
     private final AplusProjectRepository projectRepository;
     private final AplusImageTaskRepository imageTaskRepository;
 
@@ -69,7 +74,7 @@ public class AplusController {
     }
 
     @GetMapping("/projects/{id}")
-    public ApiResponse<AplusProjectResponse> getProject(@PathVariable Long id) {
+    public ApiResponse<AplusProjectResponse> getProject(@PathVariable("id") Long id) {
         return ApiResponse.ok("ok", projectService.getProjectById(id));
     }
 
@@ -83,7 +88,7 @@ public class AplusController {
     }
 
     @PostMapping("/projects/{id}/generate-copy")
-    public ApiResponse<String> generateCopy(@PathVariable Long id) {
+    public ApiResponse<String> generateCopy(@PathVariable("id") Long id) {
         CompletableFuture.runAsync(() -> copyService.generateCopy(id), aplusAsyncExecutor)
                 .exceptionally(ex -> {
                     log.error("[A+] async copy generation failed: projectId={}, error={}", id, ex.getMessage(), ex);
@@ -93,13 +98,13 @@ public class AplusController {
     }
 
     @PutMapping("/projects/{id}/copy")
-    public ApiResponse<AplusProjectResponse> updateCopy(@PathVariable Long id,
+    public ApiResponse<AplusProjectResponse> updateCopy(@PathVariable("id") Long id,
                                                         @RequestBody AplusCopyUpdateRequest request) {
         return ApiResponse.ok("文案已保存", projectService.updateCopy(id, request));
     }
 
     @PostMapping("/projects/{id}/generate-images")
-    public ApiResponse<String> generateImages(@PathVariable Long id) {
+    public ApiResponse<String> generateImages(@PathVariable("id") Long id) {
         CompletableFuture.runAsync(() -> imageService.generateImages(id), aplusAsyncExecutor)
                 .exceptionally(ex -> {
                     log.error("[A+] async image generation failed: projectId={}, error={}", id, ex.getMessage(), ex);
@@ -109,13 +114,14 @@ public class AplusController {
     }
 
     @PostMapping("/projects/{id}/retry-failed")
-    public ApiResponse<Integer> retryFailedModules(@PathVariable Long id) {
+    public ApiResponse<Integer> retryFailedModules(@PathVariable("id") Long id) {
         int count = imageService.retryFailedModules(id);
         return ApiResponse.ok("失败模块重试任务已提交", count);
     }
 
     @PostMapping("/projects/{id}/modules/{moduleCode}/regenerate")
-    public ApiResponse<String> regenerateModule(@PathVariable Long id, @PathVariable String moduleCode) {
+    public ApiResponse<String> regenerateModule(@PathVariable("id") Long id,
+                                                @PathVariable("moduleCode") String moduleCode) {
         CompletableFuture.runAsync(() -> imageService.regenerateModule(id, moduleCode), aplusAsyncExecutor)
                 .exceptionally(ex -> {
                     log.error("[A+] async module regeneration failed: projectId={}, module={}, error={}",
@@ -126,7 +132,7 @@ public class AplusController {
     }
 
     @GetMapping("/projects/{id}/modules")
-    public ApiResponse<List<AplusImageTaskResponse>> getModuleTasks(@PathVariable Long id) {
+    public ApiResponse<List<AplusImageTaskResponse>> getModuleTasks(@PathVariable("id") Long id) {
         List<AplusImageTaskResponse> responses = imageTaskRepository.findByProjectId(id).stream()
                 .map(AplusImageTaskResponse::from)
                 .collect(Collectors.toList());
@@ -134,7 +140,7 @@ public class AplusController {
     }
 
     @PostMapping("/projects/{id}/download-zip")
-    public void downloadZip(@PathVariable Long id, HttpServletResponse response) throws IOException {
+    public void downloadZip(@PathVariable("id") Long id, HttpServletResponse response) throws IOException {
         AplusProject project = projectRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("A+ 项目不存在: " + id));
 
@@ -191,8 +197,35 @@ public class AplusController {
         }
     }
 
+    /**
+     * KIE 统一回调接口（所有模块共用）
+     * 回调顺序：A+ 套图 → 普通生图 → 模特库生图
+     */
+    @PostMapping("/callback")
+    public ApiResponse<String> kieCallback(@RequestBody Map<String, Object> payload) {
+        log.info("[Callback] KIE callback received: {}", payload);
+        if (payload == null || !payload.containsKey("taskId")) {
+            log.warn("[Callback] missing taskId");
+            return ApiResponse.ok("missing taskId", null);
+        }
+        String taskId = String.valueOf(payload.get("taskId"));
+        try {
+            // 按优先级依次尝试：A+ → 普通生图 → 模特库
+            if (imageTaskService.refreshTaskByKieTaskId(taskId)) {
+                log.info("[Callback] handled by ImageTask: {}", taskId);
+            } else if (modelLibraryService.refreshTaskByKieTaskId(taskId)) {
+                log.info("[Callback] handled by ModelLibrary: {}", taskId);
+            } else {
+                log.warn("[Callback] taskId not found in any service: {}", taskId);
+            }
+        } catch (Exception e) {
+            log.error("[Callback]处理失败: taskId={}, error={}", taskId, e.getMessage(), e);
+        }
+        return ApiResponse.ok("ok", null);
+    }
+
     @DeleteMapping("/projects/{id}")
-    public ApiResponse<String> deleteProject(@PathVariable Long id) {
+    public ApiResponse<String> deleteProject(@PathVariable("id") Long id) {
         projectService.deleteProject(id);
         return ApiResponse.ok("项目删除成功", null);
     }

@@ -50,7 +50,7 @@ public class BuyerShowController {
             } catch (NumberFormatException ignored) {}
         }
 
-        String textModel = (String) request.getOrDefault("textModel", "claude");
+        String textModel = (String) request.getOrDefault("textModel", "gpt");
 
         String result = buyerShowService.generateBuyerShow(spu, clothingDesc, imageUrls, scenePreference, countPerImage, textModel);
         return ApiResponse.ok("生成成功", result);

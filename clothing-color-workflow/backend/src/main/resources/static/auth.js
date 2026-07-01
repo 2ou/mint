@@ -2,8 +2,8 @@
 
 // --- 动态设置 API 基础路径 ---
 // 如果是本地开发，则指向 8080
-if (window.location.hostname === 'localhost') {
-    axios.defaults.baseURL = 'http://localhost:8080';
+if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    axios.defaults.baseURL = window.location.origin;
 } else {
     // 部署后，前端和后端同源，直接设为部署地址
     axios.defaults.baseURL = 'http://39.108.115.240:10010';

@@ -81,6 +81,11 @@ public interface ModelLibraryService {
     Map<String, String> getLensRecommendation(String modelType);
 
     /**
+     * 回调入口：通过 KIE taskId 刷新任务
+     */
+    boolean refreshTaskByKieTaskId(String kieTaskId);
+
+    /**
      * 刷新处理中的任务状态
      */
     void refreshProcessingTasks();

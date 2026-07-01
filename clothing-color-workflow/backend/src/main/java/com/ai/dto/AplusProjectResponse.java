@@ -24,6 +24,10 @@ public class AplusProjectResponse {
     private String referenceImageUrl;
     private String sellingPoints;
     private String aplusMarkdown;
+    private Long layoutTemplateId;
+    private String layoutTemplateName;
+    private String layoutReferenceImageUrl;
+    private String layoutBlueprintJson;
     private String selectedModules;
     private List<String> selectedModuleList;
     private String status;
@@ -47,6 +51,10 @@ public class AplusProjectResponse {
         resp.setReferenceImageUrl(project.getReferenceImageUrl());
         resp.setSellingPoints(project.getSellingPoints());
         resp.setAplusMarkdown(project.getAplusMarkdown());
+        resp.setLayoutTemplateId(project.getLayoutTemplateId());
+        resp.setLayoutTemplateName(project.getLayoutTemplateName());
+        resp.setLayoutReferenceImageUrl(project.getLayoutReferenceImageUrl());
+        resp.setLayoutBlueprintJson(project.getLayoutBlueprintJson());
         resp.setSelectedModules(project.getSelectedModules());
         resp.setSelectedModuleList(parseSelectedModules(project.getSelectedModules()));
         resp.setStatus(project.getStatus());

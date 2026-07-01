@@ -4,47 +4,52 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * A+ 模块定义常量
+ * A+ module definitions used by copy and image generation prompts.
  */
 public class AplusModuleDefinition {
 
-    /** 7 个模块的编号 → 名称映射 */
     public static final Map<String, String> MODULES = new LinkedHashMap<>();
     static {
-        MODULES.put("AD-01", "品牌英雄图");
-        MODULES.put("AD-02", "印花/面料故事图");
-        MODULES.put("AD-03", "设计细节图");
-        MODULES.put("AD-04", "多场景穿搭图");
-        MODULES.put("AD-05", "舒适体验图");
-        MODULES.put("AD-06", "尺码/版型指南");
-        MODULES.put("AD-07", "护理/品牌收尾图");
+        MODULES.put("AD-01", "Brand Hero");
+        MODULES.put("AD-02", "Fabric Story");
+        MODULES.put("AD-03", "Design Details");
+        MODULES.put("AD-04", "Scenario Styling");
+        MODULES.put("AD-05", "Comfort Experience");
+        MODULES.put("AD-06", "Fit And Size Guide");
+        MODULES.put("AD-07", "Care And Closing");
     }
 
-    /** 统一风格锚点 */
     public static final String STYLE_ANCHOR =
-            "同一个产品、同一个印花、同一个面料、同一个品牌调性、同一个摄影风格、同一个排版体系、同一个色彩体系";
+            "Use one consistent A+ visual system across all modules: same product identity, same garment fidelity, "
+                    + "same lighting family, same premium e-commerce tone, same spacing rhythm, same border radius logic, "
+                    + "same typography scale, and product-adaptive neutral color palette.";
 
-    /** 各模块视觉定位描述 */
     public static final Map<String, String> VISUAL_POSITIONS = new LinkedHashMap<>();
     static {
-        VISUAL_POSITIONS.put("AD-01", "宽幅生活方式横幅 — 产品在目标环境中的整体气质");
-        VISUAL_POSITIONS.put("AD-02", "左右分栏 — 左侧平铺产品/面料图案，右侧面料微距细节");
-        VISUAL_POSITIONS.put("AD-03", "中心+四周 — 中心产品平铺图 + 四周圆形细节放大图和连接线");
-        VISUAL_POSITIONS.put("AD-04", "三宫格 — Beach Day / Brunch Ready / Resort Evening");
-        VISUAL_POSITIONS.put("AD-05", "主角+角落 — 主画面模特放松场景 + 角落面料微距小图");
-        VISUAL_POSITIONS.put("AD-06", "技术图表 — 正反面平铺服装 + 量体箭头 + 尺码表");
-        VISUAL_POSITIONS.put("AD-07", "静物+说明 — 折叠产品静物图 + 护理说明区域");
+        VISUAL_POSITIONS.put("AD-01",
+                "Wide hero banner with a strong product/model anchor, clear headline area, and premium first impression.");
+        VISUAL_POSITIONS.put("AD-02",
+                "Split fabric story: product cutout or folded product on one side, macro fabric/detail crop on the other, with concise material labels.");
+        VISUAL_POSITIONS.put("AD-03",
+                "Product-centered detail layout with 3-4 close-up inset panels, thin connector lines, and labels tied to real visible details.");
+        VISUAL_POSITIONS.put("AD-04",
+                "Three scenario cards showing consistent garment identity across everyday American lifestyle situations, each with a short caption.");
+        VISUAL_POSITIONS.put("AD-05",
+                "Comfort proof layout with model-worn or fit-focused image, one fabric/fit detail inset, and concise comfort labels.");
+        VISUAL_POSITIONS.put("AD-06",
+                "Technical fit guide with product view, measurement arrows, and a compact size chart only when exact size data is supplied.");
+        VISUAL_POSITIONS.put("AD-07",
+                "Care and closing module with folded product or still-life arrangement plus short care/quality explanation text.");
     }
 
-    /** 各模块补充信息提示（前端 placeholder 用） */
     public static final Map<String, String> EXTRA_HINTS = new LinkedHashMap<>();
     static {
-        EXTRA_HINTS.put("AD-01", "品牌调性、目标人群描述");
-        EXTRA_HINTS.put("AD-02", "面料成分、工艺说明");
-        EXTRA_HINTS.put("AD-03", "设计亮点（口袋/拉链/缝线）");
-        EXTRA_HINTS.put("AD-04", "场景描述（海滩/brunch/晚宴）");
-        EXTRA_HINTS.put("AD-05", "穿着感受描述");
-        EXTRA_HINTS.put("AD-06", "具体尺码数据（S/M/L/XL）");
-        EXTRA_HINTS.put("AD-07", "护理说明（洗涤方式、注意事项）");
+        EXTRA_HINTS.put("AD-01", "Brand tone, target buyer, hero headline direction, optional model preference.");
+        EXTRA_HINTS.put("AD-02", "Fabric composition, hand feel, weight, stretch, breathability, print or texture notes.");
+        EXTRA_HINTS.put("AD-03", "Specific visible details such as neckline, buttons, sleeve, hem, seam, pocket, or stitching.");
+        EXTRA_HINTS.put("AD-04", "Scenario names and styling direction such as coffee run, workday casual, weekend errands, or travel.");
+        EXTRA_HINTS.put("AD-05", "Comfort, coverage, drape, movement, fit, or body-type guidance.");
+        EXTRA_HINTS.put("AD-06", "Exact size data. Do not provide approximate numbers unless they are approved product measurements.");
+        EXTRA_HINTS.put("AD-07", "Care instructions, washing method, drying notes, quality promise, or final brand value points.");
     }
 }

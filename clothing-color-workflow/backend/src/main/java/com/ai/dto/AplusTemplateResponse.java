@@ -20,6 +20,8 @@ public class AplusTemplateResponse {
 
     private Long id;
     private String templateName;
+    private String templateType;
+    private String templateStatus;
     private String spu;
     private String referenceImageUrl;
     private String sellingPoints;
@@ -27,6 +29,8 @@ public class AplusTemplateResponse {
     private List<String> selectedModuleList;
     private String moduleExtras;
     private Map<String, AplusModuleExtra> moduleExtrasMap;
+    private String layoutReferenceImageUrl;
+    private String layoutBlueprintJson;
     private String operator;
     private String shopName;
 
@@ -40,6 +44,8 @@ public class AplusTemplateResponse {
         AplusTemplateResponse resp = new AplusTemplateResponse();
         resp.setId(template.getId());
         resp.setTemplateName(template.getTemplateName());
+        resp.setTemplateType(template.getTemplateType());
+        resp.setTemplateStatus(template.getTemplateStatus());
         resp.setSpu(template.getSpu());
         resp.setReferenceImageUrl(template.getReferenceImageUrl());
         resp.setSellingPoints(template.getSellingPoints());
@@ -47,6 +53,8 @@ public class AplusTemplateResponse {
         resp.setSelectedModuleList(parseSelectedModules(template.getSelectedModules()));
         resp.setModuleExtras(template.getModuleExtras());
         resp.setModuleExtrasMap(parseModuleExtras(template.getModuleExtras()));
+        resp.setLayoutReferenceImageUrl(template.getLayoutReferenceImageUrl());
+        resp.setLayoutBlueprintJson(template.getLayoutBlueprintJson());
         resp.setOperator(template.getOperator());
         resp.setShopName(template.getShopName());
         resp.setCreatedAt(template.getCreatedAt());

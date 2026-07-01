@@ -32,8 +32,9 @@ public class SceneGeneratorController {
                 // 使用默认值
             }
         }
-        String textModel = (String) request.getOrDefault("textModel", "claude");
-        String result = sceneGeneratorService.recommendScenes(clothingDesc, count, textModel);
+        String textModel = (String) request.getOrDefault("textModel", "gpt");
+        String clothingImageUrl = (String) request.getOrDefault("clothingImageUrl", "");
+        String result = sceneGeneratorService.recommendScenes(clothingDesc, count, textModel, clothingImageUrl);
         return ApiResponse.ok("推荐成功", result);
     }
 
@@ -55,9 +56,10 @@ public class SceneGeneratorController {
                 // 使用默认值
             }
         }
-        String textModel = (String) request.getOrDefault("textModel", "claude");
+        String textModel = (String) request.getOrDefault("textModel", "gpt");
+        String clothingImageUrl = (String) request.getOrDefault("clothingImageUrl", "");
 
-        String prompt = sceneGeneratorService.generatePrompt(sceneDesc, clothingDesc, count, textModel);
+        String prompt = sceneGeneratorService.generatePrompt(sceneDesc, clothingDesc, count, textModel, clothingImageUrl);
         return ApiResponse.ok("提示词生成成功", prompt);
     }
 

@@ -12,8 +12,16 @@ import java.util.Map;
 public class AplusProjectCreateRequest {
     private String projectName;
     private String spu;
+    /** 产品参考图 URL（KIE 图片模型以此作为产品款式真相） */
     private String referenceImageUrl;
     private String sellingPoints;
+    private String textModel;
+    private String imageModel;
+    private String resolution;
+    private Long layoutTemplateId;
+    private String layoutTemplateName;
+    private String layoutReferenceImageUrl;
+    private String layoutBlueprintJson;
     private List<String> selectedModules;
     /** 各模块补充信息，key 为模块编号如 "AD-02" */
     private Map<String, AplusModuleExtra> moduleExtras;

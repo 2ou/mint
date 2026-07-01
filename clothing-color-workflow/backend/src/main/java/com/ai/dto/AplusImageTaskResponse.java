@@ -20,6 +20,7 @@ public class AplusImageTaskResponse {
     private String supplementaryText;
     private String prompt;
     private String aspectRatio;
+    private String resolution;
     private String kieTaskId;
     private String model;
     private String status;
@@ -44,6 +45,7 @@ public class AplusImageTaskResponse {
         resp.setSupplementaryText(task.getSupplementaryText());
         resp.setPrompt(task.getPrompt());
         resp.setAspectRatio(task.getAspectRatio());
+        resp.setResolution(task.getResolution());
         resp.setKieTaskId(task.getKieTaskId());
         resp.setModel(task.getModel());
         resp.setStatus(task.getStatus());

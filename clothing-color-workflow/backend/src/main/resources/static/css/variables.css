@@ -1,38 +1,44 @@
-/* ===== AI 时尚视觉设计平台 - CSS 变量 ===== */
+/* AI fashion visual workflow - shared product UI tokens */
 
 :root {
-    /* 字体 */
-    --app-font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    --app-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 
-    /* 圆角 */
     --app-radius-sm: 4px;
-    --app-radius-md: 8px;
-    --app-radius-lg: 12px;
+    --app-radius-md: 6px;
+    --app-radius-lg: 8px;
 
-    /* 品牌色 */
-    --app-brand-primary: #409EFF;
-    --app-brand-success: #67c23a;
-    --app-brand-warning: #E6A23C;
-    --app-brand-danger: #f56c6c;
-    --app-brand-info: #909399;
+    --app-brand-primary: #2563eb;
+    --app-brand-primary-hover: #1d4ed8;
+    --app-brand-primary-soft: #eff5ff;
+    --app-brand-success: #16803c;
+    --app-brand-warning: #b7791f;
+    --app-brand-danger: #dc2626;
+    --app-brand-info: #64748b;
 
-    /* 背景色 */
-    --app-bg-page: #f0f2f5;
-    --app-bg-card: #ffffff;
-    --app-bg-section: #fafbfc;
+    --app-bg-page: #f5f7fb;
+    --app-bg-card: #fbfcff;
+    --app-bg-section: #f1f5f9;
+    --app-bg-elevated: #f8fafc;
 
-    /* 边框 */
-    --app-border-color: #ebeef5;
-    --app-border-light: #f0f0f0;
+    --app-text-primary: #172033;
+    --app-text-secondary: #526071;
+    --app-text-muted: #7b8794;
+    --app-text-inverse: #eef4ff;
 
-    /* 阴影 */
-    --app-shadow-card: 0 2px 8px rgba(0, 0, 0, 0.04);
-    --app-shadow-hover: 0 4px 16px rgba(0, 0, 0, 0.08);
+    --app-border-color: rgba(23, 32, 51, 0.10);
+    --app-border-light: rgba(23, 32, 51, 0.07);
+    --app-focus-ring: rgba(37, 99, 235, 0.24);
 
-    /* 间距 */
+    --app-shadow-card: 0 16px 40px rgba(31, 42, 68, 0.08), 0 2px 6px rgba(31, 42, 68, 0.04);
+    --app-shadow-hover: 0 20px 48px rgba(31, 42, 68, 0.12), 0 4px 10px rgba(31, 42, 68, 0.06);
+    --app-shadow-focus: 0 0 0 3px var(--app-focus-ring);
+
+    --app-space-xs: 4px;
     --app-space-sm: 8px;
     --app-space-md: 12px;
     --app-space-lg: 16px;
     --app-space-xl: 20px;
     --app-space-xxl: 24px;
+
+    --app-sidebar-width: 240px;
 }

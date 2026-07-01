@@ -440,13 +440,9 @@
                                     <div class="form-block-title">🤖 AI 引擎</div>
                                     <el-form label-width="80px">
                                         <el-form-item label="文本模型">
-                                            <el-radio-group v-model="form.textModel">
-                                                <el-radio-button label="">本地模板</el-radio-button>
-                                                <el-radio-button label="claude">Claude Opus 4.7</el-radio-button>
-                                                <el-radio-button label="gpt">GPT-5.5</el-radio-button>
-                                            </el-radio-group>
+                                            <el-input model-value="GPT（视觉识别 + 提示词）" disabled></el-input>
                                             <div style="font-size:11px;color:#999;margin-top:4px">
-                                                本地模板：基于 Skill 配置快速生成 · Claude/GPT：AI 智能生成更自然的提示词
+                                                固定使用 GPT：上传服装图时一次完成视觉识别和提示词生成，减少服装跑偏。
                                             </div>
                                         </el-form-item>
                                         <el-row :gutter="16">
@@ -682,7 +678,7 @@
             const busy = reactive({submit:false,load:false,hist:false});
             const form = reactive({
                 modelType:'', modelTypeCustom:'', ethnicity:'', ageRange:'', specialRequirements:'',
-                textModel:'', hairstyle:'', skinTone:'', cameraAngle:'composite_panel', background:'white_studio',
+                textModel:'gpt', hairstyle:'', skinTone:'', cameraAngle:'composite_panel', background:'white_studio',
                 clothingDescription:'', clothingImageUrl:'',
                 imageModel:'nano-banana-pro', resolution:'4K', aspectRatio:'16:9',
                 batchCount:1, namePrefix:''

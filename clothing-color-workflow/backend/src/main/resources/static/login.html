@@ -10,6 +10,8 @@
     <script src="https://unpkg.com/element-plus"></script>
     <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
     <script src="https://unpkg.com/@element-plus/icons-vue"></script>
+    <!-- 腾讯云验证码 TCaptcha -->
+    <script src="https://turing.captcha.qcloud.com/TJCaptcha.js"></script>
 
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -231,6 +233,18 @@
 
 <script>
     const { createApp, reactive, ref } = Vue;
+
+    /* ====================
+       腾讯云 TCaptcha 配置
+       ====================
+       1. 登录 https://console.cloud.tencent.com/captcha/graphical
+       2. 左侧「图形验证 → 验证管理」→ 新建验证
+       3. 拿到 CaptchaAppId 和 AppSecretKey
+       4. 把下面 YOUR_CAPTCHA_APP_ID 替换成你的 CaptchaAppId
+       5. 后端 application.yml 填入 app-secret-key
+    */
+    const CAPTCHA_APP_ID = '192381451';
+
     const app = createApp({
         setup() {
             const loginFormRef = ref(null);
@@ -242,30 +256,48 @@
                 password: [{ required: true, message: '请输入密码', trigger: 'blur' }]
             });
 
+            /** 点击登录 → 先弹验证码 → 通过后再登录 */
             const handleLogin = () => {
                 if (!loginFormRef.value) return;
-                loginFormRef.value.validate(async (valid) => {
-                    if (valid) {
-                        loading.value = true;
-                        try {
-                            const res = await axios.post('/api/auth/login', form);
-                            if (res.data.success) {
-                                localStorage.setItem("user_token", res.data.data.token);
-                                localStorage.setItem("user_name", res.data.data.realName);
-                                localStorage.setItem("shop_name", res.data.data.shopName);
-                                ElementPlus.ElMessage.success("登录成功！即将跳转...");
-                                setTimeout(() => window.location.href = 'index.html', 1000);
-                            } else {
-                                ElementPlus.ElMessage.error(res.data.message || "登录失败");
-                            }
-                        } catch (e) {
-                            const errorMsg = e.response?.data?.message || "网络或服务异常，请检查服务是否启动";
-                            ElementPlus.ElMessage.error(errorMsg);
-                        } finally {
-                            loading.value = false;
+                loginFormRef.value.validate((valid) => {
+                    if (!valid) return;
+
+                    // 弹出腾讯滑块验证码
+                    const captcha = new TencentCaptcha(CAPTCHA_APP_ID, function(res) {
+                        if (res.ret === 0) {
+                            // 验证通过，拿 ticket + randstr 请求后端
+                            doLogin(res.ticket, res.randstr);
+                        } else {
+                            // 用户关闭了验证弹窗，不做任何事
                         }
-                    }
+                    });
+                    captcha.show();
                 });
+            };
+
+            const doLogin = async (ticket, randstr) => {
+                loading.value = true;
+                try {
+                    const res = await axios.post('/api/auth/login', {
+                        username: form.username,
+                        password: form.password,
+                        ticket: ticket,
+                        randstr: randstr
+                    });
+                    if (res.data.success) {
+                        localStorage.setItem("user_token", res.data.data.token);
+                        localStorage.setItem("user_name", res.data.data.realName);
+                        localStorage.setItem("shop_name", res.data.data.shopName);
+                        ElementPlus.ElMessage.success("登录成功！即将跳转...");
+                        setTimeout(() => window.location.href = 'index.html', 1000);
+                    } else {
+                        ElementPlus.ElMessage.error(res.data.message || "登录失败");
+                    }
+                } catch (e) {
+                    ElementPlus.ElMessage.error(e.response?.data?.message || "网络或服务异常，请检查服务是否启动");
+                } finally {
+                    loading.value = false;
+                }
             };
 
             return { loginFormRef, form, rules, loading, handleLogin };

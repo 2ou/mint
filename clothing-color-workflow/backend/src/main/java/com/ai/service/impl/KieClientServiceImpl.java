@@ -44,12 +44,17 @@ public class KieClientServiceImpl implements KieClientService {
      * 创建 KIE 任务
      */
     @Override
-    public String createTask(String spu, String prompt, String resolution, String aspectRatio, String model, String inputUrl, String colorUrl) {
+    public String createTask(String spu, String prompt, String resolution, String aspectRatio, String model, String inputUrl, String colorUrl, String callBackUrl) {
         try {
             String url = appProperties.getKie().getBaseUrl() + "/jobs/createTask";
 
             ObjectNode rootNode = objectMapper.createObjectNode();
             rootNode.put("model", model);
+
+            // 回调地址：有值则传，无值则不传（走轮询）
+            if (callBackUrl != null && !callBackUrl.isBlank()) {
+                rootNode.put("callBackUrl", callBackUrl.trim());
+            }
 
             ObjectNode inputNode = objectMapper.createObjectNode();
             inputNode.put("prompt", prompt);
@@ -253,7 +258,7 @@ public class KieClientServiceImpl implements KieClientService {
         // 1. 构造 KIE 任务请求体
         KieCreateTaskRequest request = new KieCreateTaskRequest();
         request.setModel(model);
-        request.setCallBackUrl(null); // 纯轮询模式
+        request.setCallBackUrl(appProperties.getKie().getCallbackUrl());
         request.setInput(input);
 
         String jsonBody = gson.toJson(request);

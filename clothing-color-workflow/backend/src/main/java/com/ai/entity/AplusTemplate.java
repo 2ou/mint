@@ -23,11 +23,19 @@ public class AplusTemplate {
     @Column(nullable = false, length = 200)
     private String templateName;
 
+    /** FORM_TEMPLATE / LAYOUT_REFERENCE. */
+    @Column(length = 40)
+    private String templateType;
+
+    /** DRAFT / ACTIVE / DISABLED. */
+    @Column(length = 30)
+    private String templateStatus;
+
     /** 关联 SPU（可为空，通用模板不绑 SPU） */
     @Column(length = 100)
     private String spu;
 
-    /** 参考图 OSS URL（永久桶） */
+    /** A+ 参考图 OSS URL（永久桶，用于版式/风格参考） */
     @Column(length = 500)
     private String referenceImageUrl;
 
@@ -42,6 +50,14 @@ public class AplusTemplate {
     /** 各模块补充信息，JSON 对象 {"AD-02":{"supplementaryImageUrl":"...","supplementaryText":"..."}} */
     @Column(columnDefinition = "text")
     private String moduleExtras;
+
+    /** Original A+ structure/reference image URL for layout-reference templates. */
+    @Column(length = 500)
+    private String layoutReferenceImageUrl;
+
+    /** Parsed reusable layout blueprint JSON. */
+    @Column(columnDefinition = "text")
+    private String layoutBlueprintJson;
 
     /** 创建人 */
     @Column(length = 50)

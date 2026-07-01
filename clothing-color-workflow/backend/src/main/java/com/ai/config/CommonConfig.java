@@ -38,6 +38,6 @@ public class CommonConfig {
      */
     @Bean(name = "aplusAsyncExecutor")
     public Executor aplusAsyncExecutor() {
-        return Executors.newFixedThreadPool(4);
+        return Executors.newFixedThreadPool(10);
     }
 }

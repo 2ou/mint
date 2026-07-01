@@ -11,6 +11,7 @@ import com.ai.repository.AplusProjectRepository;
 import com.ai.service.AplusImageService;
 import com.ai.service.KieClientService;
 import com.ai.service.OssService;
+import com.ai.config.AppProperties;
 import jakarta.annotation.Resource;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -20,7 +21,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.stream.Collectors;
@@ -34,6 +38,7 @@ public class AplusImageServiceImpl implements AplusImageService {
     private final OssService ossService;
     private final AplusProjectRepository projectRepository;
     private final AplusImageTaskRepository imageTaskRepository;
+    private final AppProperties appProperties;
 
     @Resource(name = "aplusAsyncExecutor")
     private Executor aplusAsyncExecutor;
@@ -57,20 +62,27 @@ public class AplusImageServiceImpl implements AplusImageService {
         projectRepository.save(project);
 
         List<AplusImageTask> tasks = imageTaskRepository.findByProjectId(projectId);
-        int submitted = 0;
-        for (AplusImageTask task : tasks) {
-            if (!AplusTaskStatus.PENDING.name().equals(task.getStatus())) {
-                continue;
-            }
-            if (submitTask(project, task)) {
-                submitted++;
-            }
+        List<AplusImageTask> pendingTasks = tasks.stream()
+                .filter(task -> AplusTaskStatus.PENDING.name().equals(task.getStatus()))
+                .toList();
+
+        if (pendingTasks.isEmpty()) {
+            checkProjectCompletion(projectId);
+            return;
         }
+
+        // 并行提交所有模块任务
+        List<CompletableFuture<Boolean>> futures = pendingTasks.stream()
+                .map(task -> CompletableFuture.supplyAsync(
+                        () -> submitTask(project, task), aplusAsyncExecutor))
+                .toList();
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+        long submitted = futures.stream().filter(CompletableFuture::join).count();
 
         if (submitted == 0) {
             checkProjectCompletion(projectId);
         }
-        log.info("[A+] image generation submitted: projectId={}, submitted={}", projectId, submitted);
+        log.info("[A+] image generation submitted: projectId={}, submitted={}/{}", projectId, submitted, pendingTasks.size());
     }
 
     @Override
@@ -107,15 +119,17 @@ public class AplusImageServiceImpl implements AplusImageService {
         project.setErrorMessage(null);
         projectRepository.save(project);
 
-        for (AplusImageTask task : failedTasks) {
-            resetForRegeneration(task);
-            submitTask(project, task);
-        }
-        checkProjectCompletion(projectId);
+        // 并行重试所有失败任务，不在这里检查完成状态（由轮询统一处理）
+        failedTasks.forEach(this::resetForRegeneration);
+        List<CompletableFuture<Boolean>> futures = failedTasks.stream()
+                .map(task -> CompletableFuture.supplyAsync(
+                        () -> submitTask(project, task), aplusAsyncExecutor))
+                .toList();
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
         return failedTasks.size();
     }
 
-    @Scheduled(fixedRate = 30000)
+    @Scheduled(fixedRate = 15000)
     public void pollTaskStatus() {
         List<AplusImageTask> processingTasks = imageTaskRepository.findByStatus(AplusTaskStatus.PROCESSING.name());
         if (processingTasks.isEmpty()) {
@@ -130,20 +144,25 @@ public class AplusImageServiceImpl implements AplusImageService {
     private boolean submitTask(AplusProject project, AplusImageTask task) {
         try {
             String prompt = buildModulePrompt(task, project);
+            String resolution = effectiveResolution(task);
+            String imageModel = effectiveModel(task);
+            String callbackUrl = appProperties.getKie().getCallbackUrl();
             String kieTaskId = kieClientService.createTask(
                     project.getSpu(),
                     prompt,
-                    "2K",
+                    resolution,
                     task.getAspectRatio() != null ? task.getAspectRatio() : "16:9",
-                    defaultModel,
+                    imageModel,
                     project.getReferenceImageUrl(),
-                    task.getSupplementaryImageUrl()
+                    task.getSupplementaryImageUrl(),
+                    callbackUrl
             );
 
             task.setPrompt(prompt);
             task.setKieTaskId(kieTaskId);
             task.setStatus(AplusTaskStatus.PROCESSING.name());
-            task.setModel(defaultModel);
+            task.setModel(imageModel);
+            task.setResolution(resolution);
             task.setErrorMessage(null);
             imageTaskRepository.save(task);
             return true;
@@ -168,10 +187,6 @@ public class AplusImageServiceImpl implements AplusImageService {
             Long projectId = task.getProject().getId();
             if (result.isSuccess() || "SUCCESS".equalsIgnoreCase(result.getStatus())) {
                 task.setResultTempUrl(result.getResultUrl());
-                task.setStatus(AplusTaskStatus.SUCCESS.name());
-                task.setCompletedAt(LocalDateTime.now());
-                imageTaskRepository.save(task);
-
                 try {
                     AplusProject project = projectRepository.findById(projectId)
                             .orElseThrow(() -> new RuntimeException("A+ 项目不存在: " + projectId));
@@ -181,10 +196,21 @@ public class AplusImageServiceImpl implements AplusImageService {
                             task.getId(),
                             true
                     );
-                    task.setResultOssUrl(extractOssUrl(ossResult));
+                    String ossUrl = extractOssUrl(ossResult);
+                    if (ossUrl == null || ossUrl.isBlank()) {
+                        throw new RuntimeException("OSS returned an empty result URL");
+                    }
+                    task.setResultOssUrl(ossUrl);
+                    task.setStatus(AplusTaskStatus.SUCCESS.name());
+                    task.setErrorMessage(null);
+                    task.setCompletedAt(LocalDateTime.now());
                     imageTaskRepository.save(task);
                 } catch (Exception e) {
                     log.error("[A+] OSS transfer failed: module={}, error={}", task.getModuleCode(), e.getMessage());
+                    task.setStatus(AplusTaskStatus.FAILED.name());
+                    task.setErrorMessage("Image generated but OSS transfer failed: " + e.getMessage());
+                    task.setCompletedAt(LocalDateTime.now());
+                    imageTaskRepository.save(task);
                 }
 
                 checkProjectCompletion(projectId);
@@ -241,39 +267,183 @@ public class AplusImageServiceImpl implements AplusImageService {
         imageTaskRepository.save(task);
     }
 
+    // ── 模块 Prompt 数据：布局规范 + 文案指导 + 生成模式，一处定义，不再散落 ──
+    private static final Map<String, String> MODULE_LAYOUTS = new LinkedHashMap<>();
+    private static final Map<String, String> MODULE_TEXT_GUIDES = new LinkedHashMap<>();
+    private static final Set<String> MODEL_SCENE_MODULES = Set.of("AD-01", "AD-04", "AD-05");
+
+    static {
+        MODULE_LAYOUTS.put("AD-01",
+                "Brand hero banner. Premium first impression with realistic American model wearing the user's product. " +
+                "Studio or clean lifestyle setting. Frame garment head to hip/waist, place headline/subline in clean text area.");
+        MODULE_TEXT_GUIDES.put("AD-01",
+                "Hero headline + subline, e.g. Effortless Everyday Comfort; Flowy fit with polished Henley neckline.");
+
+        MODULE_LAYOUTS.put("AD-02",
+                "Split layout: product flat-lay/cutout/folded on one side, macro fabric/print texture on the other. " +
+                "Soft divider, tactile realism, readable fabric/feel labels, no model unless provided.");
+        MODULE_TEXT_GUIDES.put("AD-02",
+                "2-4 fabric/feel labels, e.g. Soft Draping Fabric; Smooth Touch; Lightweight Feel.");
+
+        MODULE_LAYOUTS.put("AD-03",
+                "Center product flat-lay/cutout, surround with 3-4 close-up inset panels for real details (neckline, sleeve, hem, stitching). " +
+                "Thin connector lines, readable detail labels.");
+        MODULE_TEXT_GUIDES.put("AD-03",
+                "3-4 detail labels tied to visible features, e.g. V-Neck Henley; Three-Button Detail; Curved Hem.");
+
+        MODULE_LAYOUTS.put("AD-04",
+                "Three American lifestyle panels, consistent model wearing same product in different scenarios (coffee shop, office, street). " +
+                "Short caption per panel, identical garment identity across all.");
+        MODULE_TEXT_GUIDES.put("AD-04",
+                "One caption per panel, e.g. Coffee Run; Workday Casual; Weekend Ready.");
+
+        MODULE_LAYOUTS.put("AD-05",
+                "Realistic American model in relaxed pose emphasizing drape, coverage, movement, flattering fit. " +
+                "One fabric/fit detail inset, readable comfort/fit labels.");
+        MODULE_TEXT_GUIDES.put("AD-05",
+                "2-4 comfort/fit labels, e.g. Relaxed Fit; Soft Drape; Comfortable Coverage; Moves With You.");
+
+        MODULE_LAYOUTS.put("AD-06",
+                "Technical layout: front product view, measurement arrows, compact size chart panel. " +
+                "If size data provided, render exact table (Size/Bust/Length/Sleeve). Otherwise use fit labels, no fake numbers.");
+        MODULE_TEXT_GUIDES.put("AD-06",
+                "Size chart with exact supplied values, or fit labels if no measurements provided.");
+
+        MODULE_LAYOUTS.put("AD-07",
+                "Still-life with folded garment or neat arrangement, care/quality visual cues, readable care explanation panel.");
+        MODULE_TEXT_GUIDES.put("AD-07",
+                "Care/quality text, e.g. Gentle Machine Wash; Easy Care; Soft Drape; Made for Everyday Wear.");
+    }
+
+    private static final String SHARED_NEGATIVE =
+            "No unsupported garment design, wrong pattern, arbitrary color changes, incorrect neckline, missing/extra buttons, " +
+            "duplicated sleeves, extra collars, melted/distorted fabric, plastic/CGI texture, Chinese text, bilingual text, " +
+            "unreadable/fake/misspelled text, random typography, watermark, logo, barcode, messy collage, low-res artifacts.";
+
+    private static final String MODEL_SCENE_NEGATIVE =
+            "No full-body invention from cropped reference, influencer face, porcelain skin, ultra-thin body for plus-size, " +
+            "stiff pose, Chinese-style scene/architecture/furniture, over-saturated filters, warped body/hands, random props hiding garment, " + SHARED_NEGATIVE;
+
+    private static final String PRODUCT_NEGATIVE =
+            "No new model, human body, face, hands, hanger, mannequin, worn view, lifestyle scene " +
+            "unless supplemental references explicitly request them, " + SHARED_NEGATIVE;
+
     private String buildModulePrompt(AplusImageTask task, AplusProject project) {
-        String moduleCode = task.getModuleCode();
-        StringBuilder sb = new StringBuilder();
-        sb.append("Create one premium e-commerce product-detail content image for women's fashion.\n\n");
-        sb.append("Module: ").append(moduleCode).append(" ").append(task.getModuleName()).append("\n");
-        sb.append("Product SPU: ").append(project.getSpu()).append("\n");
-        sb.append("Reference product image must be followed exactly: same product, same print, same fabric, same color family.\n\n");
+        String code = task.getModuleCode();
+        boolean hasRef = hasAplusReference(project);
+        String moduleLayout = MODULE_LAYOUTS.getOrDefault(code, "Premium e-commerce A+ module layout.");
+        String moduleTextGuide = MODULE_TEXT_GUIDES.getOrDefault(code, "Short headline + 2-3 product-benefit labels.");
+        boolean modelScene = MODEL_SCENE_MODULES.contains(code);
 
-        sb.append("Brand/Style Consistency:\n");
-        sb.append(AplusModuleDefinition.STYLE_ANCHOR).append("\n\n");
+        StringBuilder sb = new StringBuilder(2048);
+        // ── 任务概述 ──
+        sb.append("Create one production-ready 16:9 A+ module image for women's fashion e-commerce.\n");
+        sb.append(hasRef
+                ? "Image-to-image: A+ reference provided for layout style only, not product truth.\n\n"
+                : "No A+ reference. Build from selling points, module copy, and supplementary images.\n\n");
 
-        sb.append("Module Copy and Visual Brief:\n");
-        sb.append(task.getModuleCopy() != null ? task.getModuleCopy() : project.getSellingPoints()).append("\n\n");
+        // ── 模块 & 产品 ──
+        sb.append("Module: ").append(code).append(" ").append(task.getModuleName()).append("\n");
+        sb.append("SPU: ").append(project.getSpu()).append("\n");
+        sb.append("A+ Reference: ").append(hasRef ? project.getReferenceImageUrl() : "Not provided").append("\n\n");
 
-        String visualPosition = AplusModuleDefinition.VISUAL_POSITIONS.getOrDefault(moduleCode, "");
-        if (!visualPosition.isBlank()) {
-            sb.append("Required Layout: ").append(visualPosition).append("\n\n");
+        // ── Image Input 角色 ──
+        appendImageInputRoleMap(sb, task, project);
+
+        // ── 参考图使用规则 ──
+        if (hasRef) {
+            sb.append("A+ Reference Rules: layout/hierarchy/panel-rhythm/crop/text-placement only. " +
+                    "Do NOT copy its product, model, face, pose, brand, logo, or scene. " +
+                    "Replace product with user's product from SPU/selling-points/module-copy/supplementary images.\n\n");
         }
 
+        // ── 产品构建 + 生成模式 ──
+        sb.append("Product: match SPU, selling points, module copy. No invented logos/prints/hardware/category changes. " +
+                "Product clarity > scene creativity.\n");
+        sb.append(modelScene
+                ? "Mode: realistic American model + authentic lifestyle scene. Dress in user's product. " +
+                  "Model: Curve/Plus-Size or Commercial/Catalog woman, 30-42, natural skin, body-positive. " +
+                  "Scene: modern apartment, coffee shop, casual office, NYC/LA street, garden/patio. " +
+                  "Minimal accessories.\n\n"
+                : "Mode: product-focused (cutout/flat-lay/folded/fabric macro/detail insets/size chart/care still-life). " +
+                  "No new model or scene unless user instructions request it.\n\n");
+
+        // ── 风格锚点 + 布局 ──
+        sb.append("Style: ").append(AplusModuleDefinition.STYLE_ANCHOR).append("\n\n");
+        sb.append("Layout: ").append(moduleLayout).append("\n\n");
+
+        // ── 文案 ──
+        sb.append("Module Copy:\n").append(task.getModuleCopy() != null ? task.getModuleCopy() : project.getSellingPoints()).append("\n\n");
+        sb.append("Required Text: ").append(moduleTextGuide).append("\n\n");
+
+        // ── 补充信息 ──
         if (task.getSupplementaryText() != null && !task.getSupplementaryText().isBlank()) {
-            sb.append("Additional Module Instructions:\n").append(task.getSupplementaryText()).append("\n\n");
+            sb.append("Additional Instructions: ").append(task.getSupplementaryText()).append("\n");
+        }
+        if (task.getSupplementaryImageUrl() != null && !task.getSupplementaryImageUrl().isBlank()) {
+            sb.append("Supplementary image(s) provided: use for module-specific detail/scene/fabric/fit only. " +
+                    "Do not copy unrelated brands/models/faces/scenes.\n");
         }
 
-        if ("AD-06".equals(moduleCode) || "AD-07".equals(moduleCode)) {
-            sb.append("Text Handling Rule: do NOT render readable words, numbers, labels, or size chart text inside the image. ");
-            sb.append("Create clean blank content zones, placeholders, panels, or soft label areas where the system can overlay real text later. ");
-            sb.append("Keep the layout premium, clear, and editorial.\n\n");
-        } else {
-            sb.append("No random text overlays, no misspelled text, no fake labels.\n\n");
-        }
+        // ── 文字规则（合并英文约束 + 文案处理） ──
+        sb.append("\nText Rules: English only — no Chinese characters, bilingual captions, or mixed typography. " +
+                "Render concise readable text from module copy + required text guidance. " +
+                "For AD-06 with size data, reproduce exact measurements as compact chart. " +
+                "Clean typography, high-contrast, premium alignment. " +
+                "No random words, fake brand names, fake measurements, or unrelated labels.\n\n");
 
-        sb.append("Image Specification: 16:9 aspect ratio, 2K resolution, premium e-commerce detail-page visual, realistic product material, clean commercial lighting.");
+        // ── 质量标准 ──
+        sb.append("Quality: sharp edges, realistic drape/folds, clean lighting, balanced spacing, clear hierarchy, " +
+                "consistent palette, safe margins, premium catalog finish.\n\n");
+
+        // ── 负面约束 ──
+        sb.append("Negative: ").append(modelScene ? MODEL_SCENE_NEGATIVE : PRODUCT_NEGATIVE).append("\n\n");
+
+        // ── 输出规格 ──
+        sb.append("Output: 16:9, ").append(effectiveResolution(task)).append(", single finished image.");
         return sb.toString();
+    }
+
+    private void appendImageInputRoleMap(StringBuilder sb, AplusImageTask task, AplusProject project) {
+        boolean hasRef = hasAplusReference(project);
+        sb.append("Image Inputs:\n");
+        sb.append(hasRef
+                ? "- [0] A+ reference: layout/style only, not garment identity.\n"
+                : "- No A+ reference. Garment identity from SPU/selling-points/module-copy/supplementary images.\n");
+        String supplementary = task.getSupplementaryImageUrl();
+        if (supplementary != null && !supplementary.isBlank()) {
+            String[] urls = supplementary.split(",");
+            int start = hasRef ? 1 : 0;
+            for (int i = 0; i < urls.length; i++) {
+                String url = urls[i] == null ? "" : urls[i].trim();
+                if (!url.isBlank()) {
+                    sb.append("- [").append(start + i).append("] supplementary: ").append(url)
+                            .append(". Module-specific detail only.\n");
+                }
+            }
+        }
+        if (project.getLayoutTemplateName() != null && !project.getLayoutTemplateName().isBlank()) {
+            sb.append("- Layout template: ").append(project.getLayoutTemplateName()).append(" (structure only).\n");
+        }
+        sb.append("\n");
+    }
+
+    private boolean hasAplusReference(AplusProject project) {
+        return project.getReferenceImageUrl() != null && !project.getReferenceImageUrl().isBlank();
+    }
+
+    private String effectiveModel(AplusImageTask task) {
+        if (task.getModel() != null && !task.getModel().isBlank()) {
+            return task.getModel().trim();
+        }
+        return defaultModel;
+    }
+
+    private String effectiveResolution(AplusImageTask task) {
+        if (task.getResolution() == null || task.getResolution().isBlank()) {
+            return "2K";
+        }
+        return task.getResolution().trim().toUpperCase();
     }
 
     private String extractOssUrl(String ossResult) {

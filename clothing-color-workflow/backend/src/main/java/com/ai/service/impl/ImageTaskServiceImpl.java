@@ -67,7 +67,7 @@ public class ImageTaskServiceImpl implements ImageTaskService {
     }
 
     // ======================== 核心业务逻辑 ========================
-    @Scheduled(fixedRate = 180000) // 3分钟跑一次
+    @Scheduled(cron = "${app.image-task-polling.cron:-}") // 默认关闭；本地需要时通过配置开启
     public void scheduledRefreshProcessingTasks() {
         log.info("【定时任务】开始自动刷新处理中的 AI 任务...");
         List<ImageTask> processingTasks = imageTaskRepository.findAll((root, query, cb) -> cb.or(
@@ -113,7 +113,7 @@ public class ImageTaskServiceImpl implements ImageTaskService {
 
         try {
             // 🔴 假设 kieClientService.createTask 方法签名也修改为接收 aspectRatio
-            String taskId = kieClientService.createTask(spu, prompt, resolution, aspectRatio, model, inputUrl, colorUrl);
+            String taskId = kieClientService.createTask(spu, prompt, resolution, aspectRatio, model, inputUrl, colorUrl, appProperties.getKie().getCallbackUrl());
             task.setTaskId(taskId); task.setStatus("PROCESSING");
         } catch (Exception e) {
             log.error("创建 KIE 任务失败", e);
@@ -366,6 +366,18 @@ public class ImageTaskServiceImpl implements ImageTaskService {
     }
 
     // 👇 下面是原本就有的代码，插在它的上面即可 👇
+    /**
+     * 回调入口：通过 KIE taskId 查找任务并刷新状态
+     */
+    public boolean refreshTaskByKieTaskId(String kieTaskId) {
+        ImageTask task = imageTaskRepository.findByTaskId(kieTaskId);
+        if (task == null) {
+            return false;
+        }
+        refreshTask(task.getId());
+        return true;
+    }
+
     @jakarta.annotation.PreDestroy
     public void onDestroy() {
         log.info("【系统关闭】正在释放轮询线程池...");

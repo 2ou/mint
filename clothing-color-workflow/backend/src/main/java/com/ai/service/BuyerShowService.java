@@ -15,7 +15,7 @@ public interface BuyerShowService {
      * @param imageUrls 产品图 URL 列表（多张不同颜色）
      * @param scenePreference 场景偏好（用户自由输入，可为空）
      * @param countPerImage 每张图生成几条提示词（默认1）
-     * @param textModel 使用的文本模型: claude / gpt
+     * @param textModel 使用的文本模型: gpt
      * @return 买家秀提示词 JSON（按图片分组）
      */
     String generateBuyerShow(String spu, String clothingDesc, List<String> imageUrls,

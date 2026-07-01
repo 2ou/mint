@@ -38,7 +38,7 @@ public class ModelGenerateRequest {
     private String styleTags;
 
     /**
-     * 使用的文本模型：claude / gpt（可选，默认 claude）
+     * 使用的文本模型：gpt（可选，默认 gpt）
      */
     private String textModel;
 

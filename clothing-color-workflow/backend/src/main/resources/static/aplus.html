@@ -1,10 +1,10 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-    <title>A+ 套图生成 — AI 电商视觉平台</title>
+    <title>A+ 套图生成 - AI 时尚视觉平台</title>
     <link rel="stylesheet" href="css/variables.css">
     <link rel="stylesheet" href="css/shared.css">
     <script>
@@ -79,7 +79,7 @@
             letter-spacing: 0;
         }
 
-        /* ====== 全局布局 ====== */
+        /* ====== 鍏ㄥ眬甯冨眬 ====== */
         .app-layout {
             display: flex;
             height: 100vh;
@@ -95,7 +95,7 @@
             overflow: hidden;
         }
 
-        /* ====== 左侧面板 ====== */
+        /* ====== 宸︿晶闈㈡澘 ====== */
         .left-panel {
             width: 440px;
             min-width: 440px;
@@ -149,7 +149,7 @@
             background: hsl(240 4% 24%);
         }
 
-        /* ====== 表单区域 ====== */
+        /* ====== 琛ㄥ崟鍖哄煙 ====== */
         .form-section {
             margin-bottom: 20px;
             position: relative;
@@ -185,12 +185,44 @@
             color: var(--sh-muted-foreground);
         }
 
+        select.form-input {
+            appearance: none;
+            cursor: pointer;
+            padding-right: 34px;
+            background-image:
+                linear-gradient(45deg, transparent 50%, var(--sh-muted-foreground) 50%),
+                linear-gradient(135deg, var(--sh-muted-foreground) 50%, transparent 50%);
+            background-position:
+                calc(100% - 16px) calc(50% - 2px),
+                calc(100% - 11px) calc(50% - 2px);
+            background-size: 5px 5px, 5px 5px;
+            background-repeat: no-repeat;
+        }
+
+        .model-config-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+        }
+
+        .model-config-field-wide {
+            grid-column: 1 / -1;
+        }
+
+        .model-config-label {
+            display: block;
+            font-size: 11px;
+            font-weight: 500;
+            color: var(--sh-muted-foreground);
+            margin-bottom: 6px;
+        }
+
         textarea.form-input {
             resize: vertical;
             min-height: 80px;
         }
 
-        /* ====== 上传区域 ====== */
+        /* ====== 涓婁紶鍖哄煙 ====== */
         .upload-zone {
             background: var(--sh-card);
             border: 1px dashed var(--sh-border);
@@ -261,7 +293,7 @@
             padding: 4px;
         }
 
-        /* ====== 模块补充信息 ====== */
+        /* ====== 妯″潡琛ュ厖淇℃伅 ====== */
         .module-upload-grid {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
@@ -330,7 +362,7 @@
             border-style: solid;
         }
 
-        /* ====== 模块选择 ====== */
+        /* ====== 妯″潡閫夋嫨 ====== */
         .module-grid {
             display: grid;
             grid-template-columns: repeat(2, 1fr);
@@ -391,12 +423,12 @@
         }
 
         .module-item.selected .module-check::after {
-            content: '✓';
+            content: 'v';
             font-size: 10px;
             color: var(--sh-primary-foreground);
         }
 
-        /* ====== 模块展开详情 ====== */
+        /* ====== 妯″潡灞曞紑璇︽儏 ====== */
         .module-detail {
             margin-top: 12px;
             padding-top: 12px;
@@ -442,7 +474,7 @@
             color: var(--sh-foreground);
         }
 
-        /* ====== 操作按钮 ====== */
+        /* ====== 鎿嶄綔鎸夐挳 ====== */
         .btn-group {
             display: flex;
             gap: 10px;
@@ -489,7 +521,7 @@
             background: var(--sh-accent);
         }
 
-        /* ====== 右侧面板 ====== */
+        /* ====== 鍙充晶闈㈡澘 ====== */
         .right-panel {
             flex: 1;
             display: flex;
@@ -586,7 +618,7 @@
             background: var(--sh-accent);
         }
 
-        /* ====== 进度条 ====== */
+        /* ====== 杩涘害鏉?====== */
         .progress-container {
             padding: 14px 24px;
             background: color-mix(in srgb, var(--sh-card) 94%, transparent);
@@ -615,7 +647,7 @@
             color: var(--sh-muted-foreground);
         }
 
-        /* ====== 右侧内容区 ====== */
+        /* ====== 鍙充晶鍐呭鍖?====== */
         .right-content {
             flex: 1;
             overflow-y: auto;
@@ -635,7 +667,7 @@
             border-radius: 999px;
         }
 
-        /* ====== 空状态 ====== */
+        /* ====== 绌虹姸鎬?====== */
         .empty-state {
             display: flex;
             flex-direction: column;
@@ -667,7 +699,7 @@
             color: var(--sh-muted-foreground);
         }
 
-        /* ====== 结果网格 ====== */
+        /* ====== 缁撴灉缃戞牸 ====== */
         .result-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
@@ -836,6 +868,63 @@
             flex: 0 0 auto;
         }
 
+        .copy-loading-panel {
+            min-height: 360px;
+            border: 1px solid var(--sh-border);
+            border-radius: var(--sh-radius);
+            background:
+                linear-gradient(180deg, color-mix(in srgb, var(--sh-card) 96%, white), var(--sh-card)),
+                var(--sh-card);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 32px;
+            box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03);
+        }
+
+        .copy-loading-content {
+            width: min(520px, 100%);
+            text-align: center;
+        }
+
+        .copy-loading-spinner {
+            width: 44px;
+            height: 44px;
+            border: 3px solid var(--sh-muted);
+            border-top-color: var(--sh-ring);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 18px;
+        }
+
+        .copy-loading-title {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--sh-foreground);
+            margin-bottom: 8px;
+        }
+
+        .copy-loading-desc {
+            font-size: 13px;
+            line-height: 1.7;
+            color: var(--sh-muted-foreground);
+            margin: 0 auto;
+        }
+
+        .copy-loading-meta {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 18px;
+            padding: 8px 12px;
+            border: 1px solid var(--sh-border);
+            border-radius: calc(var(--sh-radius) - 2px);
+            background: var(--sh-background);
+            color: var(--sh-foreground);
+            font-size: 12px;
+            font-weight: 500;
+        }
+
         .review-list {
             display: grid;
             gap: 10px;
@@ -897,6 +986,52 @@
             color: var(--sh-muted-foreground);
         }
 
+        .stable-layout-card {
+            display: flex;
+            gap: 10px;
+            align-items: flex-start;
+            border: 1px solid var(--sh-border);
+            border-radius: calc(var(--sh-radius) - 2px);
+            padding: 12px;
+            background: color-mix(in srgb, var(--sh-card) 92%, transparent);
+            cursor: pointer;
+            transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
+        }
+
+        .stable-layout-card.active {
+            border-color: color-mix(in srgb, var(--sh-ring) 65%, var(--sh-border));
+            background: color-mix(in srgb, var(--sh-primary) 9%, var(--sh-card));
+            box-shadow: 0 0 0 2px color-mix(in srgb, var(--sh-ring) 10%, transparent);
+        }
+
+        .stable-layout-check {
+            margin-top: 3px;
+            width: 15px;
+            height: 15px;
+            accent-color: var(--sh-primary);
+        }
+
+        .stable-layout-title {
+            font-size: 13px;
+            font-weight: 650;
+            color: var(--sh-foreground);
+            line-height: 1.35;
+        }
+
+        .stable-layout-desc {
+            margin-top: 5px;
+            font-size: 11px;
+            line-height: 1.55;
+            color: var(--sh-muted-foreground);
+        }
+
+        .stable-layout-note {
+            margin-top: 8px;
+            font-size: 11px;
+            line-height: 1.5;
+            color: var(--sh-muted-foreground);
+        }
+
         .module-extra-title {
             font-size: 12px;
             color: var(--sh-foreground);
@@ -921,7 +1056,7 @@
             margin-top: 4px;
         }
 
-        /* ====== 全屏画廊模式 ====== */
+        /* ====== 鍏ㄥ睆鐢诲粖妯″紡 ====== */
         .gallery-overlay {
             position: fixed;
             top: 0;
@@ -1059,7 +1194,7 @@
             background: var(--sh-accent);
         }
 
-        /* ====== 历史项目抽屉 ====== */
+        /* ====== 鍘嗗彶椤圭洰鎶藉眽 ====== */
         .history-drawer {
             position: fixed;
             top: 0;
@@ -1178,7 +1313,7 @@
             background: color-mix(in srgb, var(--sh-destructive) 28%, transparent);
         }
 
-        /* ====== 骨架屏 ====== */
+        /* ====== 楠ㄦ灦灞?====== */
         .skeleton {
             background: linear-gradient(90deg, var(--sh-card) 25%, var(--sh-muted) 50%, var(--sh-card) 75%);
             background-size: 200% 100%;
@@ -1208,7 +1343,7 @@
             width: 60%;
         }
 
-        /* ====== 模板选择下拉 ====== */
+        /* ====== 妯℃澘閫夋嫨涓嬫媺 ====== */
         .template-dropdown {
             position: absolute;
             top: 100%;
@@ -1224,7 +1359,7 @@
             box-shadow: 0 18px 50px rgba(0, 0, 0, 0.34);
         }
 
-        /* 🔴 完美的下拉框透明遮罩层：它负责点击空白处关闭下拉框，而不会影响正常的冒泡 */
+        /* 馃敶 瀹岀編鐨勪笅鎷夋閫忔槑閬僵灞傦細瀹冭礋璐ｇ偣鍑荤┖鐧藉鍏抽棴涓嬫媺妗嗭紝鑰屼笉浼氬奖鍝嶆甯哥殑鍐掓场 */
         .dropdown-overlay {
             position: fixed;
             top: 0; left: 0; right: 0; bottom: 0;
@@ -1337,7 +1472,7 @@
             }
         }
 
-        /* ====== 动画 ====== */
+        /* ====== 鍔ㄧ敾 ====== */
         .fade-enter-active,
         .fade-leave-active {
             transition: opacity 0.3s ease;
@@ -1368,17 +1503,17 @@
             <div class="left-panel">
                 <div class="left-header">
                     <h1>A+ 套图生成</h1>
-                    <p>基于产品参考图和卖点，AI 自动生成 7 模块 A+ Content</p>
+                    <p>基于产品图、卖点和可选结构模板，生成 A+ 套图模块。</p>
                 </div>
 
                 <div class="left-content">
                     <div class="form-section">
                         <label class="form-label">选择模板（可选）</label>
                         <div style="position: relative;">
-                            <input class="form-input" :value="selectedTemplateName" placeholder="点击选择已有模板快速填充" readonly
+                            <input class="form-input" :value="selectedTemplateName" placeholder="选择已保存模板快速填充" readonly
                                    @click="showTemplatePicker = true; if(templates.length === 0) loadTemplates()" style="cursor: pointer;">
                             <span v-if="selectedTemplate" @click="clearTemplate"
-                                  style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); cursor: pointer; color: #f56c6c; font-size: 14px;">✕</span>
+                                  style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); cursor: pointer; color: #f56c6c; font-size: 14px;">x</span>
                         </div>
 
                         <div v-if="showTemplatePicker" class="template-dropdown" style="z-index: 100;">
@@ -1393,6 +1528,10 @@
                                 <div v-for="t in templates" :key="t.id" class="template-item"
                                      @click="applyTemplate(t)">
                                     <div class="template-item-name">{{ t.templateName }}</div>
+                                    <div style="margin-top: 4px;">
+                                        <span v-if="t.templateType === 'LAYOUT_REFERENCE'" class="module-tag">结构模板</span>
+                                        <span v-else class="module-tag">表单模板</span>
+                                    </div>
                                     <div class="template-item-meta">
                                         <span v-if="t.spu">SPU: {{ t.spu }}</span>
                                         <span>{{ t.createdAt }}</span>
@@ -1417,7 +1556,34 @@
                     </div>
 
                     <div class="form-section">
-                        <label class="form-label">参考图 <span style="color: #f56c6c;">*</span></label>
+                        <label class="form-label">模型配置</label>
+                        <div class="model-config-grid">
+                            <div>
+                                <span class="model-config-label">文本模型</span>
+                                <select class="form-input" v-model="form.textModel" disabled>
+                                    <option value="gpt">GPT 5.5</option>
+                                </select>
+                            </div>
+                            <div>
+                                <span class="model-config-label">分辨率</span>
+                                <select class="form-input" v-model="form.resolution">
+                                    <option value="1K">1K</option>
+                                    <option value="2K">2K</option>
+                                    <option value="4K">4K</option>
+                                </select>
+                            </div>
+                            <div class="model-config-field-wide">
+                                <span class="model-config-label">图片模型</span>
+                                <select class="form-input" v-model="form.imageModel">
+                                    <option value="nano-banana-pro">nano-banana-pro</option>
+                                    <option value="gpt-image-2-image-to-image">gpt-image-2-image</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-section">
+                        <label class="form-label">产品参考图 <span style="color: #f56c6c;">*</span></label>
                         <div class="upload-zone" :class="{'has-file': referenceFileList.length > 0}"
                              @click="triggerUpload"
                              @dragover.prevent="onDragOver"
@@ -1425,8 +1591,8 @@
                              @drop.prevent="handleDrop">
                             <template v-if="referenceFileList.length === 0">
                                 <div class="upload-icon">+</div>
-                                <div class="upload-text">点击或拖拽图片到此</div>
-                                <div style="font-size: 11px; color: #444; margin-top: 4px;">支持 JPG / PNG</div>
+                                <div class="upload-text">点击或拖拽上传产品参考图</div>
+                                <div style="font-size: 11px; color: #444; margin-top: 4px;">KIE 图片模型生成时以此图作为产品款式真相（服装类型/印花/颜色/面料）</div>
                             </template>
                             <template v-else>
                                 <div class="upload-preview">
@@ -1435,7 +1601,7 @@
                                         <div class="upload-preview-name">{{ referenceFileList[0].name }}</div>
                                         <div class="upload-preview-size">已选择</div>
                                     </div>
-                                    <span class="upload-remove" @click.stop="removeReference">✕</span>
+                                    <span class="upload-remove" @click.stop="removeReference">x</span>
                                 </div>
                             </template>
                         </div>
@@ -1443,9 +1609,54 @@
                     </div>
 
                     <div class="form-section">
-                        <label class="form-label">卖点 <span style="color: #f56c6c;">*</span></label>
+                        <label class="form-label">稳定版式模式</label>
+                        <div class="stable-layout-card" :class="{ active: form.stableAplusLayout }"
+                             @click="form.stableAplusLayout = !form.stableAplusLayout">
+                            <input class="stable-layout-check" type="checkbox" v-model="form.stableAplusLayout" @click.stop>
+                            <div>
+                                <div class="stable-layout-title">逐模块生成 A+（推荐）</div>
+                                <div class="stable-layout-desc">
+                                    产品参考图作为款式真相；版式参考图只学习结构风格，商品款式以卖点、模块补充文字和补充图片为准。
+                                </div>
+                            </div>
+                        </div>
+                        <div class="stable-layout-note">
+                            可选上传一张 A+ 长图或竞品结构图作为版式参考，系统只复刻结构，不复制产品、模特或品牌元素。
+                        </div>
+                        <div class="upload-zone" style="margin-top: 8px;" :class="{'has-file': layoutReferenceFileList.length > 0}"
+                             @click="triggerLayoutUpload"
+                             @dragover.prevent
+                             @drop.prevent="handleLayoutDrop">
+                            <template v-if="layoutReferenceFileList.length === 0">
+                                <div class="upload-icon">+</div>
+                                <div class="upload-text">上传整体版式参考图（可选）</div>
+                                <div style="font-size: 11px; color: #444; margin-top: 4px;">A+ 长图、竞品结构图、模板截图</div>
+                            </template>
+                            <template v-else>
+                                <div class="upload-preview">
+                                    <img :src="layoutReferenceFileList[0].url" alt="layout reference">
+                                    <div class="upload-preview-info">
+                                        <div class="upload-preview-name">{{ layoutReferenceFileList[0].name }}</div>
+                                        <div class="upload-preview-size">Layout reference</div>
+                                    </div>
+                                    <span class="upload-remove" @click.stop="removeLayoutReference">x</span>
+                                </div>
+                            </template>
+                        </div>
+                        <input type="file" ref="layoutFileInput" style="display: none;" accept="image/*" @change="handleLayoutFileSelect">
+                        <div style="display: flex; align-items: center; gap: 10px; margin-top: 10px;" v-if="layoutReferenceFileList.length > 0">
+                            <button class="btn btn-secondary" style="width: auto; padding: 8px 14px;"
+                                    @click="saveLayoutReferenceAsTemplate" :disabled="savingLayoutTemplate">
+                                {{ savingLayoutTemplate ? '解析保存中...' : '解析并保存为结构模板' }}
+                            </button>
+                            <span style="font-size: 12px; color: #666;">保存后可在模板选择器里复用该版式。</span>
+                        </div>
+                    </div>
+
+                    <div class="form-section">
+                        <label class="form-label">产品卖点 <span style="color: #f56c6c;">*</span></label>
                         <textarea class="form-input" v-model="form.sellingPoints" rows="4"
-                                  placeholder="衣服类型、季节、面料、核心卖点等，每行一个"></textarea>
+                                  placeholder="填写服装类型、季节、面料、版型、核心卖点等。建议每行一个卖点。"></textarea>
                     </div>
 
                     <div class="form-section">
@@ -1462,13 +1673,13 @@
                     </div>
 
                     <div class="form-section" v-if="form.selectedModules.length > 0">
-                        <label class="form-label">补充信息（可选）</label>
+                        <label class="form-label">模块补充信息（可选）</label>
                         <div v-for="code in form.selectedModules" :key="code" style="margin-bottom: 8px;">
                             <div class="module-item" @click="toggleExpand(code)" style="margin-bottom: 0;">
                                 <div style="display: flex; justify-content: space-between; align-items: center;">
                                     <span class="module-extra-title">{{ getModule(code).name }}</span>
                                     <span class="module-extra-meta">
-                                    {{ getModuleExtra(code).fileList.length > 0 ? getModuleExtra(code).fileList.length + '张照片 · ' : '' }}
+                                    {{ getModuleExtra(code).fileList.length > 0 ? getModuleExtra(code).fileList.length + ' 张图 - ' : '' }}
                                     {{ expandedModules.includes(code) ? '收起' : '展开' }}
                                 </span>
                                 </div>
@@ -1478,13 +1689,13 @@
                                 <textarea class="detail-input" v-model="getModuleExtra(code).text" rows="2"
                                           :placeholder="getModule(code).extraHint"></textarea>
                                 <div class="detail-label" style="margin-top: 8px;">
-                                    补充照片
-                                    <span style="font-size: 10px; color: #555; margin-left: 4px;">（可拖拽多张）</span>
+                                    补充图片
+                                    <span style="font-size: 10px; color: #555; margin-left: 4px;">支持多张</span>
                                 </div>
                                 <div v-if="getModuleExtra(code).fileList.length > 0" class="module-upload-grid">
                                     <div v-for="(file, idx) in getModuleExtra(code).fileList" :key="file.uid" class="module-upload-item">
                                         <img :src="file.url" alt="preview">
-                                        <span class="module-upload-remove" @click.stop="removeModuleFile(code, idx)">✕</span>
+                                        <span class="module-upload-remove" @click.stop="removeModuleFile(code, idx)">x</span>
                                     </div>
                                 </div>
                                 <div class="module-dropzone"
@@ -1493,7 +1704,7 @@
                                      @drop.prevent="handleModuleDrop($event, code)"
                                      @click="triggerModuleUpload(code)">
                                     <span style="font-size: 20px; color: #444;">+</span>
-                                    <span style="font-size: 11px; color: #555;">拖拽或点击上传</span>
+                                    <span style="font-size: 11px; color: #555;">点击或拖拽上传</span>
                                 </div>
                             </div>
                         </div>
@@ -1518,30 +1729,51 @@
                         </span>
                         </div>
                         <div class="right-header-right">
-                            <button class="icon-btn" @click="toggleViewMode" :title="viewMode === 'grid' ? '画廊模式' : '网格模式'">
-                                {{ viewMode === 'grid' ? '🖼' : '▦' }}
+                            <button class="icon-btn" @click="toggleViewMode" :title="viewMode === 'grid' ? '画廊视图' : '网格视图'">
+                                {{ viewMode === 'grid' ? '画廊' : '网格' }}
                             </button>
-                            <button class="icon-btn" @click="refreshProject" :disabled="refreshing">↻</button>
-                            <button class="icon-btn" @click="currentProject = null">✕</button>
+                            <button class="icon-btn" @click="refreshProject" :disabled="refreshing">R</button>
+                            <button class="icon-btn" @click="currentProject = null">x</button>
                         </div>
                     </div>
 
                     <div class="progress-container" v-if="isGenerating">
                         <div class="progress-bar">
-                            <div class="progress-fill" :style="{ width: progressPercent + '%' }"></div>
+                            <div class="progress-fill" :style="{ width: progressBarPercent + '%' }"></div>
                         </div>
                         <div class="progress-text">
-                            <span>{{ completedCount }} / {{ totalCount }} 模块完成</span>
-                            <span>{{ progressPercent }}%</span>
+                            <template v-if="isCopyGenerating">
+                                <span>正在生成文案</span>
+                                <span>文案完成后会进入确认流程</span>
+                            </template>
+                            <template v-else>
+                                <span>{{ completedCount }} / {{ totalCount }} 个模块完成</span>
+                                <span>{{ progressPercent }}%</span>
+                            </template>
                         </div>
                     </div>
 
                     <div class="right-content">
+                        <div v-if="isCopyGenerating" class="copy-loading-panel">
+                            <div class="copy-loading-content">
+                                <div class="copy-loading-spinner"></div>
+                                <div class="copy-loading-title">
+                                    {{ currentProject.status === 'CREATED' ? '任务已创建，正在启动文案生成' : '正在生成 A+ 文案' }}
+                                </div>
+                                <p class="copy-loading-desc">
+                                    系统正在根据产品参考图、卖点和模块补充信息，为每个模块生成英文文案和视觉描述。
+                                </p>
+                                <div class="copy-loading-meta">
+                                    {{ copyModuleCount }} 个模块等待生成文案
+                                </div>
+                            </div>
+                        </div>
+
                         <div v-if="isCopyReview" class="review-panel">
                             <div class="review-panel-header">
                                 <div>
                                     <div class="review-panel-title">文案确认</div>
-                                    <div class="review-panel-desc">确认或微调每个模块的文案和视觉描述后，再提交图片生成。</div>
+                                    <div class="review-panel-desc">提交生图前，可逐个模块检查或修改文案。</div>
                                 </div>
                                 <div class="review-panel-actions">
                                     <button class="btn btn-secondary !w-auto px-4" @click="saveCopy" :disabled="savingCopy">
@@ -1556,7 +1788,7 @@
                                 <div v-for="task in currentProject.imageTasks" :key="'copy-' + task.id" class="review-card">
                                     <div class="review-card-header">
                                         <span class="card-code">{{ task.moduleCode }}</span>
-                                        <span class="review-card-name">{{ task.moduleName }}</span>
+                                        <span class="review-card-name">{{ displayModuleName(task.moduleCode, task.moduleName) }}</span>
                                     </div>
                                     <textarea class="review-textarea" v-model="moduleCopyDrafts[task.moduleCode]" rows="5"></textarea>
                                 </div>
@@ -1566,14 +1798,14 @@
                         <div v-if="isPartialFailed" class="failed-panel">
                             <div>
                                 <div class="failed-panel-title">部分模块生成失败</div>
-                                <div class="failed-panel-desc">可以单独重试，也可以一键重试全部失败模块。</div>
+                                <div class="failed-panel-desc">可以逐个重试失败模块，也可以批量重试。</div>
                             </div>
                             <button class="btn btn-primary !w-auto px-4" @click="retryFailedModules" :disabled="retryingFailed">
                                 {{ retryingFailed ? '提交中...' : '重试失败模块' }}
                             </button>
                         </div>
 
-                        <div v-if="viewMode === 'grid'" class="result-grid">
+                        <div v-if="!isCopyGenerating && viewMode === 'grid'" class="result-grid">
                             <div v-for="task in currentProject.imageTasks" :key="task.id" class="result-card">
                                 <template v-if="task.status === 'SUCCESS' && (task.resultOssUrl || task.resultTempUrl)">
                                     <img :src="task.resultOssUrl || task.resultTempUrl" class="card-image"
@@ -1582,11 +1814,11 @@
                                 <template v-else>
                                     <div class="card-placeholder">
                                         <template v-if="task.status === 'PENDING'">
-                                            <span style="font-size: 24px; color: #8a8a8a;">•</span>
-                                            <span class="placeholder-text">{{ isCopyReview ? '待确认文案' : '待生成' }}</span>
+                                            <span style="font-size: 24px; color: #8a8a8a;">-</span>
+                                            <span class="placeholder-text">{{ isCopyReview ? '等待文案确认' : '待生成' }}</span>
                                         </template>
                                         <template v-else-if="task.status === 'FAILED'">
-                                            <span style="font-size: 24px; color: #f87171;">✕</span>
+                                            <span style="font-size: 24px; color: #f87171;">x</span>
                                             <span class="placeholder-text">生成失败</span>
                                         </template>
                                         <template v-else>
@@ -1598,7 +1830,7 @@
                                 <div class="card-footer">
                                     <div class="card-info">
                                         <span class="card-code">{{ task.moduleCode }}</span>
-                                        <span class="card-name">{{ task.moduleName }}</span>
+                                        <span class="card-name">{{ displayModuleName(task.moduleCode, task.moduleName) }}</span>
                                     </div>
                                     <div class="card-actions">
                                         <button v-if="task.status === 'SUCCESS'" class="card-btn card-btn-download"
@@ -1610,7 +1842,7 @@
                             </div>
                         </div>
 
-                        <div v-else class="gallery-grid">
+                        <div v-else-if="!isCopyGenerating" class="gallery-grid">
                             <div v-for="task in currentProject.imageTasks" :key="task.id" class="gallery-item">
                                 <template v-if="task.status === 'SUCCESS' && (task.resultOssUrl || task.resultTempUrl)">
                                     <img :src="task.resultOssUrl || task.resultTempUrl" @click="openGallery(task)">
@@ -1618,7 +1850,7 @@
                                 <template v-else>
                                     <div class="gallery-placeholder">
                                         <div v-if="task.status === 'FAILED'" style="text-align: center;">
-                                            <div style="font-size: 24px; color: #f87171;">✕</div>
+                                            <div style="font-size: 24px; color: #f87171;">x</div>
                                             <div class="gallery-placeholder-failed">失败</div>
                                         </div>
                                         <div v-else style="text-align: center;">
@@ -1630,7 +1862,7 @@
                                 <div class="gallery-item-footer">
                                     <div class="gallery-item-info">
                                         <span class="gallery-item-code">{{ task.moduleCode }}</span>
-                                        <span class="gallery-item-name">{{ task.moduleName }}</span>
+                                        <span class="gallery-item-name">{{ displayModuleName(task.moduleCode, task.moduleName) }}</span>
                                     </div>
                                     <div class="gallery-item-actions">
                                         <button v-if="task.status === 'SUCCESS'" class="gallery-btn gallery-btn-download"
@@ -1653,9 +1885,9 @@
                 <template v-else>
                     <div class="right-content">
                         <div class="empty-state">
-                            <div class="empty-icon">✨</div>
-                            <div class="empty-text">创建项目开始生成 A+ 套图</div>
-                            <div class="empty-hint">在左侧填写信息后点击"创建并生成"</div>
+                            <div class="empty-icon">+</div>
+                            <div class="empty-text">创建项目后开始生成 A+ 套图</div>
+                            <div class="empty-hint">填写左侧信息后，点击“创建并生成文案”。</div>
                         </div>
                     </div>
                 </template>
@@ -1665,7 +1897,7 @@
         <div class="history-drawer" :class="{ open: showHistory }">
             <div class="history-header">
                 <h3>历史项目</h3>
-                <button class="icon-btn" @click="showHistory = false">✕</button>
+                <button class="icon-btn" @click="showHistory = false">x</button>
             </div>
             <div style="padding: 16px 24px; border-bottom: 1px solid #1a1a1a;">
                 <div style="display: flex; gap: 8px;">
@@ -1705,15 +1937,16 @@
                             @size-change="loadProjects"
                             @current-change="loadProjects"
                             background
-                            small/>
+                            small>
+                    </el-pagination>
                 </div>
             </div>
         </div>
 
         <div v-if="galleryVisible" class="gallery-overlay">
             <div class="gallery-header">
-                <h3>{{ galleryTask?.moduleCode }} - {{ galleryTask?.moduleName }}</h3>
-                <button class="gallery-close" @click="galleryVisible = false">✕</button>
+                <h3>{{ galleryTask?.moduleCode }} - {{ displayModuleName(galleryTask?.moduleCode, galleryTask?.moduleName) }}</h3>
+                <button class="gallery-close" @click="galleryVisible = false">x</button>
             </div>
             <div class="gallery-content">
                 <div style="display: flex; justify-content: center; align-items: center; height: 100%;">
@@ -1726,6 +1959,7 @@
                 </div>
             </div>
         </div>
+    </div>
 
         <script>
             const icons = ElementPlusIconsVue;
@@ -1733,18 +1967,16 @@
 
             const app = createApp({
                 setup() {
-                    // 模块定义
+                    // Module definitions
                     const modules = [
-                        { code: 'AD-01', name: '品牌英雄图', desc: '宽幅生活方式横幅', extraHint: '品牌调性、目标人群描述' },
-                        { code: 'AD-02', name: '印花/面料故事图', desc: '左右分栏', extraHint: '面料成分、工艺说明' },
-                        { code: 'AD-03', name: '设计细节图', desc: '中心+四周', extraHint: '设计亮点（口袋/拉链/缝线）' },
-                        { code: 'AD-04', name: '多场景穿搭图', desc: '三宫格', extraHint: '场景描述（海滩/brunch/晚宴）' },
-                        { code: 'AD-05', name: '舒适体验图', desc: '主角+角落', extraHint: '穿着感受描述' },
-                        { code: 'AD-06', name: '尺码/版型指南', desc: '技术图表', extraHint: '具体尺码数据（S/M/L/XL）' },
-                        { code: 'AD-07', name: '护理/品牌收尾图', desc: '静物+说明', extraHint: '护理说明（洗涤方式、注意事项）' }
+                        { code: 'AD-01', name: '品牌首图', desc: '品牌氛围主视觉', extraHint: '品牌调性、目标人群、主标题方向' },
+                        { code: 'AD-02', name: '面料故事', desc: '面料与触感说明', extraHint: '面料成分、触感、厚薄、弹力、季节' },
+                        { code: 'AD-03', name: '设计细节', desc: '细节卖点拆解', extraHint: '领口、纽扣、袖口、下摆、走线等细节' },
+                        { code: 'AD-04', name: '多场景穿搭', desc: '通勤/居家/周末等场景', extraHint: '希望展示的场景、搭配、使用人群' },
+                        { code: 'AD-05', name: '舒适体验', desc: '版型、垂感、遮肉、活动感', extraHint: '穿着感受、版型优势、适合身材' },
+                        { code: 'AD-06', name: '尺码指南', desc: '尺码表与测量说明', extraHint: '具体尺码数据、模特信息、测量提示' },
+                        { code: 'AD-07', name: '护理收尾', desc: '护理方式与品牌收尾', extraHint: '洗护说明、搭配建议、售后提示' }
                     ];
-
-                    // 状态
                     const creating = ref(false);
                     const refreshing = ref(false);
                     const loadingProjects = ref(false);
@@ -1761,39 +1993,50 @@
                     const retryingFailed = ref(false);
                     const moduleCopyDrafts = reactive({});
 
-                    // 画廊
+                    // 鐢诲粖
                     const galleryVisible = ref(false);
                     const galleryTask = ref(null);
 
-                    // 表单
+                    // 琛ㄥ崟
                     const form = reactive({
                         projectName: '',
                         spu: '',
                         sellingPoints: '',
+                        textModel: 'gpt',
+                        imageModel: 'nano-banana-pro',
+                        resolution: '2K',
+                        stableAplusLayout: true,
+                        layoutTemplateId: null,
+                        layoutTemplateName: '',
+                        layoutReferenceImageUrl: '',
+                        layoutBlueprintJson: '',
                         selectedModules: ['AD-01', 'AD-02', 'AD-03', 'AD-04', 'AD-05', 'AD-06', 'AD-07']
                     });
 
-                    // 参考图上传
+                    // 鍙傝€冨浘涓婁紶
                     const referenceFileList = ref([]);
                     const fileInput = ref(null);
+                    const layoutReferenceFileList = ref([]);
+                    const layoutFileInput = ref(null);
                     const isDragging = ref(false);
 
-                    // 模块补充信息
+                    // 妯″潡琛ュ厖淇℃伅
                     const moduleExtras = reactive({});
                     const expandedModules = ref([]);
 
-                    // 轮询
+                    // 杞
                     let pollTimer = null;
 
-                    // 模板选择
+                    // 妯℃澘閫夋嫨
                     const showTemplatePicker = ref(false);
                     const selectedTemplate = ref(null);
                     const selectedTemplateName = ref('');
                     const templateSearch = ref('');
                     const loadingTemplates = ref(false);
                     const templates = ref([]);
+                    const savingLayoutTemplate = ref(false);
 
-                    // 解析模块
+                    // 瑙ｆ瀽妯″潡
                     const parseModules = (modulesStr) => {
                         try {
                             return JSON.parse(modulesStr || '[]');
@@ -1802,24 +2045,28 @@
                         }
                     };
 
-                    // 自动项目名称
+                    // 鑷姩椤圭洰鍚嶇О
                     const autoProjectName = computed(() => {
                         const spu = form.spu || 'SPU';
                         const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
                         return `${spu}-A+-${date}`;
                     });
 
-                    // 是否可创建
+                    // Can create
                     const canCreate = computed(() => {
-                        return form.spu.trim() && form.sellingPoints.trim() && referenceFileList.value.length > 0 && form.selectedModules.length > 0;
+                        return form.spu.trim() && form.sellingPoints.trim() && form.selectedModules.length > 0 && referenceFileList.value.length > 0;
                     });
 
-                    // 进度
+                    // 杩涘害
                     const terminalStatuses = ['COPY_DONE', 'COMPLETED', 'PARTIAL_FAILED', 'FAILED'];
                     const isTerminalStatus = (status) => terminalStatuses.includes(status);
 
+                    const isCopyGenerating = computed(() => {
+                        return currentProject.value && ['CREATED', 'GENERATING_COPY'].includes(currentProject.value.status);
+                    });
+
                     const isGenerating = computed(() => {
-                        return currentProject.value && ['GENERATING_COPY', 'GENERATING_IMAGES'].includes(currentProject.value.status);
+                        return currentProject.value && (isCopyGenerating.value || currentProject.value.status === 'GENERATING_IMAGES');
                     });
 
                     const isCopyReview = computed(() => {
@@ -1845,16 +2092,36 @@
                         return Math.round((completedCount.value / totalCount.value) * 100);
                     });
 
-                    // 是否有成功的任务
+                    const progressBarPercent = computed(() => {
+                        return isCopyGenerating.value ? 18 : progressPercent.value;
+                    });
+
+                    const copyModuleCount = computed(() => {
+                        if (!currentProject.value) return 0;
+                        if (currentProject.value.imageTasks && currentProject.value.imageTasks.length > 0) {
+                            return currentProject.value.imageTasks.length;
+                        }
+                        if (currentProject.value.selectedModuleList && currentProject.value.selectedModuleList.length > 0) {
+                            return currentProject.value.selectedModuleList.length;
+                        }
+                        return form.selectedModules.length;
+                    });
+
+                    // 鏄惁鏈夋垚鍔熺殑浠诲姟
                     const hasSuccessTasks = computed(() => {
                         if (!currentProject.value || !currentProject.value.imageTasks) return false;
                         return currentProject.value.imageTasks.some(t => t.status === 'SUCCESS');
                     });
 
-                    // 获取模块信息
+                    // 鑾峰彇妯″潡淇℃伅
                     const getModule = (code) => modules.find(m => m.code === code) || {};
 
-                    // 获取模块补充信息
+                    const displayModuleName = (code, fallback) => {
+                        const module = getModule(code);
+                        return module.name || fallback || '';
+                    };
+
+                    // 鑾峰彇妯″潡琛ュ厖淇℃伅
                     const getModuleExtra = (code) => {
                         if (!moduleExtras[code]) {
                             moduleExtras[code] = { fileList: [], text: '' };
@@ -1879,7 +2146,7 @@
                         return moduleCopies;
                     };
 
-                    // 切换模块选择
+                    // 鍒囨崲妯″潡閫夋嫨
                     const toggleModule = (code) => {
                         const idx = form.selectedModules.indexOf(code);
                         if (idx >= 0) {
@@ -1889,7 +2156,7 @@
                         }
                     };
 
-                    // 切换模块展开
+                    // 鍒囨崲妯″潡灞曞紑
                     const toggleExpand = (code) => {
                         const idx = expandedModules.value.indexOf(code);
                         if (idx >= 0) {
@@ -1899,14 +2166,14 @@
                         }
                     };
 
-                    // 触发上传
+                    // 瑙﹀彂涓婁紶
                     const triggerUpload = () => {
                         if (referenceFileList.value.length === 0) {
                             fileInput.value.click();
                         }
                     };
 
-                    // 文件选择
+                    // 鏂囦欢閫夋嫨
                     const handleFileSelect = (e) => {
                         const file = e.target.files[0];
                         if (file) {
@@ -1921,12 +2188,50 @@
                         e.target.value = '';
                     };
 
-                    // 移除参考图
+                    // 绉婚櫎鍙傝€冨浘
+                    const triggerLayoutUpload = () => {
+                        if (layoutReferenceFileList.value.length === 0) {
+                            layoutFileInput.value.click();
+                        }
+                    };
+
+                    const handleLayoutFileSelect = (e) => {
+                        const file = e.target.files[0];
+                        if (file) {
+                            layoutReferenceFileList.value = [{
+                                name: file.name,
+                                url: URL.createObjectURL(file),
+                                raw: file,
+                                uid: Date.now(),
+                                status: 'ready'
+                            }];
+                        }
+                        e.target.value = '';
+                    };
+
+                    const removeLayoutReference = () => {
+                        layoutReferenceFileList.value = [];
+                    };
+
+                    const handleLayoutDrop = (e) => {
+                        const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
+                        if (files.length) {
+                            const file = files[0];
+                            layoutReferenceFileList.value = [{
+                                name: file.name,
+                                url: URL.createObjectURL(file),
+                                raw: file,
+                                uid: Date.now(),
+                                status: 'ready'
+                            }];
+                        }
+                    };
+
                     const removeReference = () => {
                         referenceFileList.value = [];
                     };
 
-                    // 拖拽处理
+                    // 鎷栨嫿澶勭悊
                     const onDragOver = (e) => {
                         e.preventDefault();
                         isDragging.value = true;
@@ -1952,12 +2257,12 @@
                         }
                     };
 
-                    // 模块补充照片上传
+                    // 妯″潡琛ュ厖鐓х墖涓婁紶
                     const triggerModuleUpload = (code) => {
                         const input = document.createElement('input');
                         input.type = 'file';
                         input.accept = 'image/*';
-                        input.multiple = true; // 支持多选
+                        input.multiple = true; // 鏀寔澶氶€?                        input.onchange = (e) => {
                         input.onchange = (e) => {
                             const files = Array.from(e.target.files);
                             files.forEach(file => {
@@ -1973,12 +2278,12 @@
                         input.click();
                     };
 
-                    // 移除模块补充照片
+                    // 绉婚櫎妯″潡琛ュ厖鐓х墖
                     const removeModuleFile = (code, idx) => {
                         getModuleExtra(code).fileList.splice(idx, 1);
                     };
 
-                    // 模块拖拽上传
+                    // 妯″潡鎷栨嫿涓婁紶
                     const onModuleDragOver = (e, code) => {
                         e.preventDefault();
                         e.currentTarget.classList.add('drag-over');
@@ -2004,7 +2309,7 @@
                         });
                     };
 
-                    // OSS 上传
+                    // OSS 涓婁紶
                     const uploadToOss = async (fileObj) => {
                         const realFile = fileObj.raw;
                         if (!realFile) return fileObj.url;
@@ -2012,53 +2317,194 @@
                         const policyRes = await axios.get('/api/oss/policy');
                         if (!policyRes.data.success) throw new Error('获取上传签名失败');
                         const policy = policyRes.data.data;
+                        const suffix = realFile.name.includes('.') ? realFile.name.substring(realFile.name.lastIndexOf('.')) : '.jpg';
+                        const finalKey = `${policy.dir}${Date.now()}_${Math.random().toString(36).slice(2, 8)}${suffix}`;
+
                         const formData = new FormData();
-                        formData.append('key', policy.dir + Date.now() + '_' + realFile.name);
+                        formData.append('key', finalKey);
                         formData.append('policy', policy.policy);
-                        formData.append('OSSAccessKeyId', policy.accessId);
+                        formData.append('OSSAccessKeyId', policy.accessid);
                         formData.append('signature', policy.signature);
-                        formData.append('callback', policy.callback || '');
+                        formData.append('success_action_status', '200');
                         formData.append('file', realFile);
 
-                        const uploadRes = await axios.post(policy.host, formData);
-                        return uploadRes.data?.url || (policy.host + '/' + policy.dir + realFile.name);
+                        await axios.post(policy.host, formData, { timeout: 120000 });
+                        return `${policy.host}/${finalKey}`;
                     };
 
-                    // 创建项目
+                    const extractSupplementaryUrls = (extra) => {
+                        if (!extra) return [];
+                        const urls = [];
+                        if (Array.isArray(extra.supplementaryImageUrls)) {
+                            urls.push(...extra.supplementaryImageUrls);
+                        }
+                        if (extra.supplementaryImageUrl) {
+                            urls.push(...String(extra.supplementaryImageUrl).split(','));
+                        }
+                        return urls.map(url => String(url || '').trim()).filter(Boolean);
+                    };
+
+                    // Create layout template
+                    const saveLayoutReferenceAsTemplate = async () => {
+                        if (layoutReferenceFileList.value.length === 0) {
+                            ElementPlus.ElMessage.warning('请先上传结构参考图');
+                            return;
+                        }
+                        try {
+                            const promptResult = await ElementPlus.ElMessageBox.prompt(
+                                '请输入结构模板名称',
+                                '保存结构模板',
+                                {
+                                    confirmButtonText: '解析并保存',
+                                    cancelButtonText: '取消',
+                                    inputValue: selectedTemplateName.value || form.layoutTemplateName || `${form.spu || 'A+'}-layout-template`,
+                                    inputPattern: /\S+/,
+                                    inputErrorMessage: '模板名称不能为空'
+                                }
+                            );
+                            const templateName = (promptResult.value || '').trim();
+                            if (!templateName) return;
+
+                            savingLayoutTemplate.value = true;
+                            const layoutUrl = await uploadToOss(layoutReferenceFileList.value[0]);
+                            const r = await axios.post('/api/aplus/templates/parse-layout', {
+                                templateName,
+                                layoutReferenceImageUrl: layoutUrl,
+                                textModel: form.textModel,
+                                selectedModules: form.selectedModules,
+                                notes: 'Reusable A+ layout structure template. Use only for layout, not product identity.'
+                            }, { timeout: 180000 });
+
+                            if (r.data.success) {
+                                const template = r.data.data;
+                                selectedTemplate.value = template;
+                                selectedTemplateName.value = template.templateName;
+                                form.layoutTemplateId = template.id;
+                                form.layoutTemplateName = template.templateName;
+                                form.layoutReferenceImageUrl = template.layoutReferenceImageUrl || layoutUrl;
+                                form.layoutBlueprintJson = template.layoutBlueprintJson || '';
+                                form.stableAplusLayout = true;
+                                layoutReferenceFileList.value = [{
+                                    name: template.templateName,
+                                    url: form.layoutReferenceImageUrl,
+                                    raw: null,
+                                    uid: `layout-template-${template.id}`,
+                                    status: 'ready'
+                                }];
+                                await loadTemplates();
+                                ElementPlus.ElMessage.success('结构模板已保存');
+                            } else {
+                                ElementPlus.ElMessage.error(r.data.message || '保存结构模板失败');
+                            }
+                        } catch (e) {
+                            if (e !== 'cancel') {
+                                ElementPlus.ElMessage.error('保存结构模板失败');
+                            }
+                        } finally {
+                            savingLayoutTemplate.value = false;
+                        }
+                    };
+
+                    const stableAplusLayoutText = (code, hasLayoutReference) => {
+                        const base = [
+                            'Stable A+ layout mode:',
+                            '- Generate only this AD module as one standalone 16:9 image. Do not generate a full long infographic page.',
+                            '- If an A+ reference image is provided, use it only for A+ layout structure, visual hierarchy, card rhythm, typography placement, image crop rhythm, and information density.',
+                            '- Do not use the A+ reference image as the garment or product source of truth. Garment identity comes from selling points, module instructions, and supplementary product images when provided.',
+                            hasLayoutReference
+                                ? '- The attached A+ layout reference image is for layout structure only: card hierarchy, rounded panels, section rhythm, text placement, image crop rhythm, and information density.'
+                                : '- Follow the stable A+ layout recipe: premium rounded panels, clean white/neutral cards, readable English text, clear product hierarchy, and controlled spacing.',
+                            '- Never copy the layout reference product, male model, model gender, faces, poses, product colors, brand logo, beach identity, accessories, or exact photos.',
+                            '- Every page needs readable short English text. Keep text short, high contrast, and useful.',
+                            '- Do not render Chinese characters, Chinese labels, bilingual captions, or untranslated Chinese user text in the final image.'
+                        ];
+                        const moduleRules = {
+                            'AD-01': [
+                                'AD-01 layout: premium hero banner with one strong model/product scene and a short headline plus subline.',
+                                'Use text like: Effortless Everyday Comfort / Flowy fit with polished detail.'
+                            ],
+                            'AD-02': [
+                                'AD-02 layout: fabric and material story with product cutout, macro fabric close-up, and 2-4 fabric/feel labels.',
+                                'Use labels like: Soft Draping Fabric / Smooth Touch / Lightweight Feel / Everyday Easy.'
+                            ],
+                            'AD-03': [
+                                'AD-03 layout: product detail grid with close-up panels and connector lines.',
+                                'Use detail labels based on the real garment, such as neckline, buttons, seam, sleeve, hem, fabric, or stitching.'
+                            ],
+                            'AD-04': [
+                                'AD-04 layout: three scenario cards inspired by the reference page structure, each with one short caption.',
+                                'Use American women fashion scenes only, such as Coffee Run / Workday Casual / Weekend Ready.'
+                            ],
+                            'AD-05': [
+                                'AD-05 layout: large comfort/wearability visual with model-worn proof plus one detail inset.',
+                                'Use labels like: Relaxed Fit / Soft Drape / Comfortable Coverage / Moves With You.'
+                            ],
+                            'AD-06': [
+                                'AD-06 layout: size chart page with product cutout, measurement arrows, and a compact readable table.',
+                                'If the user provided size data, reproduce the exact numbers. If no data is provided, do not invent numbers.'
+                            ],
+                            'AD-07': [
+                                'AD-07 layout: recommended styling, care, or brand closing module with product still-life and short bullet text.',
+                                'Use text like: Easy Care / Gentle Machine Wash / Soft Drape / Made for Everyday Wear.'
+                            ]
+                        };
+                        return [...base, ...(moduleRules[code] || [])].join('\n');
+                    };
+
                     const createProject = async () => {
                         if (!canCreate.value) {
-                            ElementPlus.ElMessage.warning('请填写必填项');
+                            ElementPlus.ElMessage.warning('请填写款号、卖点，上传产品参考图，并至少选择一个模块');
                             return;
                         }
 
                         creating.value = true;
                         try {
-                            // 1. 上传参考图
-                            const referenceImageUrl = await uploadToOss(referenceFileList.value[0]);
+                            // 1. Upload optional product reference and layout reference.
+                            const referenceImageUrl = referenceFileList.value.length > 0
+                                ? await uploadToOss(referenceFileList.value[0])
+                                : null;
+                            const hasLayoutReference = form.stableAplusLayout && layoutReferenceFileList.value.length > 0;
+                            const layoutReferenceUrl = hasLayoutReference
+                                ? await uploadToOss(layoutReferenceFileList.value[0])
+                                : null;
 
-                            // 2. 上传各模块补充照片（支持多张）
+                            // 2. Upload module extra images.
                             const moduleExtrasData = {};
                             for (const code of form.selectedModules) {
                                 const extra = moduleExtras[code];
-                                if (extra && (extra.fileList.length > 0 || extra.text.trim())) {
+                                const fileList = extra?.fileList || [];
+                                const text = (extra?.text || '').trim();
+                                const stableText = form.stableAplusLayout ? stableAplusLayoutText(code, Boolean(layoutReferenceUrl)) : '';
+                                const mergedText = [stableText, text].filter(Boolean).join('\n\n');
+                                if (fileList.length > 0 || mergedText || layoutReferenceUrl) {
                                     const uploadedUrls = [];
-                                    for (const file of extra.fileList) {
+                                    if (layoutReferenceUrl) {
+                                        uploadedUrls.push(layoutReferenceUrl);
+                                    }
+                                    for (const file of fileList) {
                                         const url = await uploadToOss(file);
-                                        uploadedUrls.push(url);
+                                        if (url) uploadedUrls.push(url);
                                     }
                                     moduleExtrasData[code] = {
                                         supplementaryImageUrls: uploadedUrls,
-                                        supplementaryText: extra.text.trim() || null
+                                        supplementaryText: mergedText || null
                                     };
                                 }
                             }
 
-                            // 3. 创建项目
+                            // 3. 鍒涘缓椤圭洰
                             const r = await axios.post('/api/aplus/projects', {
                                 projectName: form.projectName || autoProjectName.value,
                                 spu: form.spu,
                                 referenceImageUrl,
                                 sellingPoints: form.sellingPoints,
+                                textModel: form.textModel,
+                                imageModel: form.imageModel,
+                                resolution: form.resolution,
+                                layoutTemplateId: form.layoutTemplateId,
+                                layoutTemplateName: form.layoutTemplateName,
+                                layoutReferenceImageUrl: form.layoutReferenceImageUrl || layoutReferenceUrl,
+                                layoutBlueprintJson: form.layoutBlueprintJson,
                                 selectedModules: form.selectedModules,
                                 moduleExtras: moduleExtrasData
                             });
@@ -2067,28 +2513,37 @@
                                 ElementPlus.ElMessage.success('项目创建成功');
                                 resetForm();
 
-                                // 4. 查看项目详情并开始轮询
+                                // 4. View project details and start polling.
                                 await viewProject(r.data.data.id);
 
-                                // 5. 刷新列表
+                                // 5. 鍒锋柊鍒楄〃
                                 await loadProjects();
                             } else {
                                 ElementPlus.ElMessage.error(r.data.message || '创建失败');
                             }
                         } catch (e) {
-                            ElementPlus.ElMessage.error('创建失败: ' + (e.response?.data?.message || e.message));
+                            ElementPlus.ElMessage.error('创建失败：' + (e.response?.data?.message || e.message));
                         } finally {
                             creating.value = false;
                         }
                     };
 
-                    // 重置表单
+                    // 閲嶇疆琛ㄥ崟
                     const resetForm = () => {
                         form.projectName = '';
                         form.spu = '';
                         form.sellingPoints = '';
+                        form.textModel = 'gpt';
+                        form.imageModel = 'nano-banana-pro';
+                        form.resolution = '2K';
+                        form.stableAplusLayout = true;
+                        form.layoutTemplateId = null;
+                        form.layoutTemplateName = '';
+                        form.layoutReferenceImageUrl = '';
+                        form.layoutBlueprintJson = '';
                         form.selectedModules = ['AD-01', 'AD-02', 'AD-03', 'AD-04', 'AD-05', 'AD-06', 'AD-07'];
                         referenceFileList.value = [];
+                        layoutReferenceFileList.value = [];
                         expandedModules.value = [];
                         Object.keys(moduleExtras).forEach(key => {
                             delete moduleExtras[key];
@@ -2097,58 +2552,102 @@
                         selectedTemplateName.value = '';
                     };
 
-                    // 加载模板列表
+                    // 鍔犺浇妯℃澘鍒楄〃
                     const loadTemplates = async () => {
                         loadingTemplates.value = true;
                         try {
                             const params = { page: 1, size: 50 };
-                            if (templateSearch.value) params.name = templateSearch.value;
+                            if (templateSearch.value) params.templateName = templateSearch.value;
                             const r = await axios.get('/api/aplus/templates', { params });
                             if (r.data.success) {
                                 templates.value = r.data.data.content || [];
                             }
                         } catch (e) {
-                            console.error('加载模板失败', e);
+                            console.error('鍔犺浇妯℃澘澶辫触', e);
                         } finally {
                             loadingTemplates.value = false;
                         }
                     };
 
-                    // 应用模板
+                    // 搴旂敤妯℃澘
                     const applyTemplate = async (template) => {
                         try {
                             const r = await axios.post(`/api/aplus/templates/${template.id}/apply`);
                             if (r.data.success) {
                                 const data = r.data.data;
+                                const isLayoutTemplate = Boolean(data.layoutTemplateId || template.templateType === 'LAYOUT_REFERENCE');
+                                if (!isLayoutTemplate) {
                                 form.projectName = data.projectName || template.templateName;
                                 form.spu = data.spu || '';
                                 form.sellingPoints = data.sellingPoints || '';
                                 form.selectedModules = data.selectedModules || [];
-                                if (data.moduleExtras) {
+                                form.layoutTemplateId = null;
+                                form.layoutTemplateName = '';
+                                form.layoutReferenceImageUrl = '';
+                                form.layoutBlueprintJson = '';
+                                layoutReferenceFileList.value = [];
+                                referenceFileList.value = data.referenceImageUrl ? [{
+                                    name: '产品参考图',
+                                    url: data.referenceImageUrl,
+                                    raw: null,
+                                    uid: `template-reference-${template.id}`,
+                                    status: 'ready'
+                                }] : [];
+                                } else {
+                                    form.selectedModules = data.selectedModules || [];
+                                    form.layoutTemplateId = data.layoutTemplateId || null;
+                                    form.layoutTemplateName = data.layoutTemplateName || '';
+                                    form.layoutReferenceImageUrl = data.layoutReferenceImageUrl || '';
+                                    form.layoutBlueprintJson = data.layoutBlueprintJson || '';
+                                    form.stableAplusLayout = true;
+                                    layoutReferenceFileList.value = data.layoutReferenceImageUrl ? [{
+                                        name: data.layoutTemplateName || template.templateName,
+                                        url: data.layoutReferenceImageUrl,
+                                        raw: null,
+                                        uid: `layout-template-${template.id}`,
+                                        status: 'ready'
+                                    }] : [];
+                                }
+                                Object.keys(moduleExtras).forEach(key => {
+                                    delete moduleExtras[key];
+                                });
+                                if (!isLayoutTemplate && data.moduleExtras) {
                                     Object.keys(data.moduleExtras).forEach(code => {
+                                        const extra = data.moduleExtras[code] || {};
+                                        const urls = extractSupplementaryUrls(extra);
                                         moduleExtras[code] = {
-                                            fileList: [],
-                                            text: data.moduleExtras[code].supplementaryText || ''
+                                            fileList: urls.map((url, idx) => ({
+                                                name: `模板补充图 ${idx + 1}`,
+                                                url,
+                                                raw: null,
+                                                uid: `template-${template.id}-${code}-${idx}`,
+                                                status: 'ready'
+                                            })),
+                                            text: extra.supplementaryText || ''
                                         };
                                     });
                                 }
                                 selectedTemplate.value = template;
                                 selectedTemplateName.value = template.templateName;
                                 showTemplatePicker.value = false;
-                                ElementPlus.ElMessage.success('模板已应用');
+                                ElementPlus.ElMessage.success(isLayoutTemplate ? '结构模板已应用' : '模板已应用');
                             }
                         } catch (e) {
                             ElementPlus.ElMessage.error('应用模板失败');
                         }
                     };
 
-                    // 清除模板选择
+                    // Clear template selection
                     const clearTemplate = () => {
                         selectedTemplate.value = null;
                         selectedTemplateName.value = '';
+                        form.layoutTemplateId = null;
+                        form.layoutTemplateName = '';
+                        form.layoutReferenceImageUrl = '';
+                        form.layoutBlueprintJson = '';
                     };
 
-                    // 查看项目详情
+                    // 鏌ョ湅椤圭洰璇︽儏
                     const viewProject = async (id) => {
                         try {
                             const r = await axios.get(`/api/aplus/projects/${id}`);
@@ -2156,17 +2655,15 @@
                                 currentProject.value = r.data.data;
                                 syncModuleCopyDrafts(currentProject.value);
                                 showHistory.value = false;
-                                // 如果项目还在生成中，开始轮询
                                 if (!isTerminalStatus(currentProject.value.status)) {
                                     startPolling();
                                 }
                             }
                         } catch (e) {
-                            ElementPlus.ElMessage.error('获取项目详情失败');
+                            ElementPlus.ElMessage.error('加载项目失败');
                         }
                     };
 
-                    // 刷新项目状态
                     const refreshProject = async () => {
                         if (!currentProject.value) return;
                         refreshing.value = true;
@@ -2177,7 +2674,7 @@
                         }
                     };
 
-                    // 轮询
+                    // 杞
                     const startPolling = () => {
                         stopPolling();
                         pollTimer = setInterval(async () => {
@@ -2227,7 +2724,7 @@
                             ElementPlus.ElMessage.error(r.data.message || '保存失败');
                             return false;
                         } catch (e) {
-                            ElementPlus.ElMessage.error('保存失败: ' + (e.response?.data?.message || e.message));
+                            ElementPlus.ElMessage.error('保存失败：' + (e.response?.data?.message || e.message));
                             return false;
                         } finally {
                             savingCopy.value = false;
@@ -2251,7 +2748,7 @@
                                 ElementPlus.ElMessage.error(r.data.message || '提交失败');
                             }
                         } catch (e) {
-                            ElementPlus.ElMessage.error('提交失败: ' + (e.response?.data?.message || e.message));
+                            ElementPlus.ElMessage.error('提交失败：' + (e.response?.data?.message || e.message));
                         } finally {
                             generatingImages.value = false;
                         }
@@ -2271,13 +2768,13 @@
                                 ElementPlus.ElMessage.error(r.data.message || '提交失败');
                             }
                         } catch (e) {
-                            ElementPlus.ElMessage.error('提交失败: ' + (e.response?.data?.message || e.message));
+                            ElementPlus.ElMessage.error('提交失败：' + (e.response?.data?.message || e.message));
                         } finally {
                             retryingFailed.value = false;
                         }
                     };
 
-                    // 下载单张
+                    // 涓嬭浇鍗曞紶
                     const downloadSingle = (task) => {
                         const url = task.resultOssUrl || task.resultTempUrl;
                         if (url) {
@@ -2285,7 +2782,7 @@
                         }
                     };
 
-                    // 批量下载 ZIP
+                    // 鎵归噺涓嬭浇 ZIP
                     const downloadZip = async () => {
                         if (!currentProject.value) return;
                         try {
@@ -2303,13 +2800,13 @@
                         }
                     };
 
-                    // 重新生成单个模块
+                    // 閲嶆柊鐢熸垚鍗曚釜妯″潡
                     const regenerateModule = async (moduleCode) => {
                         if (!currentProject.value) return;
                         try {
                             const r = await axios.post(`/api/aplus/projects/${currentProject.value.id}/modules/${moduleCode}/regenerate`);
                             if (r.data.success) {
-                                ElementPlus.ElMessage.success(`${moduleCode} 重新生成任务已提交`);
+                                ElementPlus.ElMessage.success(moduleCode + ' 已提交重新生成');
                                 startPolling();
                             } else {
                                 ElementPlus.ElMessage.error(r.data.message || '提交失败');
@@ -2319,18 +2816,18 @@
                         }
                     };
 
-                    // 打开画廊
+                    // 鎵撳紑鐢诲粖
                     const openGallery = (task) => {
                         galleryTask.value = task;
                         galleryVisible.value = true;
                     };
 
-                    // 切换视图模式
+                    // 鍒囨崲瑙嗗浘妯″紡
                     const toggleViewMode = () => {
                         viewMode.value = viewMode.value === 'grid' ? 'gallery' : 'grid';
                     };
 
-                    // 加载项目列表
+                    // 鍔犺浇椤圭洰鍒楄〃
                     const loadProjects = async () => {
                         loadingProjects.value = true;
                         try {
@@ -2346,24 +2843,24 @@
                                 totalProjects.value = r.data.data.totalElements || 0;
                             }
                         } catch (e) {
-                            ElementPlus.ElMessage.error('加载项目列表失败');
+                            ElementPlus.ElMessage.error('加载项目失败');
                         } finally {
                             loadingProjects.value = false;
                         }
                     };
 
-                    // 删除项目
+                    // 鍒犻櫎椤圭洰
                     const deleteProject = async (id) => {
                         try {
-                            await ElementPlus.ElMessageBox.confirm('确定删除该项目？', '确认删除', {
-                                confirmButtonText: '确定',
+                            await ElementPlus.ElMessageBox.confirm('确认删除这个项目？该操作不可恢复。', '确认删除', {
+                                confirmButtonText: '删除',
                                 cancelButtonText: '取消',
                                 type: 'warning'
                             });
 
-                            const r = await axios.delete(`/api/aplus/projects/${id}`);
+                            const r = await axios.delete('/api/aplus/projects/' + id);
                             if (r.data.success) {
-                                ElementPlus.ElMessage.success('删除成功');
+                                ElementPlus.ElMessage.success('已删除');
                                 if (currentProject.value && currentProject.value.id === id) {
                                     currentProject.value = null;
                                     stopPolling();
@@ -2379,7 +2876,7 @@
                         }
                     };
 
-                    // 状态显示
+                    // Status display
                     const getStatusClass = (status) => ({
                         CREATED: 'pending',
                         GENERATING_COPY: 'generating',
@@ -2391,7 +2888,7 @@
                     }[status] || 'pending');
 
                     const getStatusLabel = (status) => ({
-                        CREATED: '已创建',
+                        CREATED: '准备文案',
                         GENERATING_COPY: '生成文案中',
                         COPY_DONE: '文案待确认',
                         GENERATING_IMAGES: '生成图片中',
@@ -2400,10 +2897,26 @@
                         FAILED: '失败'
                     }[status] || status);
 
-                    // 初始化
+                    // Initial load
                     loadProjects();
 
-                    // 清理
+                    // 娓呯悊
+                    const applyTemplateFromQuery = async () => {
+                        const templateId = new URLSearchParams(window.location.search).get('templateId');
+                        if (!templateId) return;
+                        try {
+                            const r = await axios.get('/api/aplus/templates/' + templateId);
+                            if (r.data.success) {
+                                await applyTemplate(r.data.data);
+                            }
+                        } catch (e) {
+                            ElementPlus.ElMessage.error('自动应用模板失败');
+                        }
+                    };
+
+                    loadProjects();
+                    applyTemplateFromQuery();
+
                     onUnmounted(() => {
                         stopPolling();
                     });
@@ -2429,18 +2942,23 @@
                         moduleCopyDrafts,
                         form,
                         referenceFileList,
+                        layoutReferenceFileList,
                         fileInput,
+                        layoutFileInput,
                         isDragging,
                         moduleExtras,
                         expandedModules,
                         autoProjectName,
                         canCreate,
                         isGenerating,
+                        isCopyGenerating,
                         isCopyReview,
                         isPartialFailed,
                         completedCount,
                         totalCount,
                         progressPercent,
+                        progressBarPercent,
+                        copyModuleCount,
                         hasSuccessTasks,
                         showTemplatePicker,
                         selectedTemplate,
@@ -2448,12 +2966,18 @@
                         templateSearch,
                         loadingTemplates,
                         templates,
+                        savingLayoutTemplate,
                         getModule,
+                        displayModuleName,
                         getModuleExtra,
                         toggleModule,
                         toggleExpand,
                         triggerUpload,
                         handleFileSelect,
+                        triggerLayoutUpload,
+                        handleLayoutFileSelect,
+                        removeLayoutReference,
+                        handleLayoutDrop,
                         removeReference,
                         onDragOver,
                         onDragLeave,
@@ -2478,6 +3002,7 @@
                         loadTemplates,
                         applyTemplate,
                         clearTemplate,
+                        saveLayoutReferenceAsTemplate,
                         parseModules,
                         deleteProject,
                         getStatusClass,
@@ -2492,6 +3017,5 @@
 
             app.use(ElementPlus).mount('#app');
         </script>
-    </div>
 </body>
 </html>

@@ -62,17 +62,36 @@ public class AppProperties {
         public void setResultPublicHost(String resultPublicHost) { this.resultPublicHost = resultPublicHost; }
     }
 
+    // 腾讯云验证码配置
+    private Captcha captcha = new Captcha();
+
+    public Captcha getCaptcha() { return captcha; }
+    public void setCaptcha(Captcha captcha) { this.captcha = captcha; }
+
     public static class Kie {
         private String baseUrl;
         private String apiKey;
         private String model;
+        /** KIE 任务回调地址，为空则走轮询模式 */
+        private String callbackUrl;
 
-        // getters and setters
         public String getBaseUrl() { return baseUrl; }
         public void setBaseUrl(String baseUrl) { this.baseUrl = baseUrl; }
         public String getApiKey() { return apiKey; }
         public void setApiKey(String apiKey) { this.apiKey = apiKey; }
         public String getModel() { return model; }
         public void setModel(String model) { this.model = model; }
+        public String getCallbackUrl() { return callbackUrl; }
+        public void setCallbackUrl(String callbackUrl) { this.callbackUrl = callbackUrl; }
+    }
+
+    public static class Captcha {
+        private String appId;
+        private String appSecretKey;
+
+        public String getAppId() { return appId; }
+        public void setAppId(String appId) { this.appId = appId; }
+        public String getAppSecretKey() { return appSecretKey; }
+        public void setAppSecretKey(String appSecretKey) { this.appSecretKey = appSecretKey; }
     }
 }

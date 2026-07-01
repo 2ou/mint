@@ -12,6 +12,8 @@ import java.util.List;
 
 public interface ImageTaskRepository extends JpaRepository<ImageTask, Long>, JpaSpecificationExecutor<ImageTask> {
 
+    ImageTask findByTaskId(String taskId);
+
     // 🔴 极简版：只统计 spu 和 对应的总 cost
     @Query("SELECT new com.ai.dto.SpuStatDTO(" +
             "t.spu, " +

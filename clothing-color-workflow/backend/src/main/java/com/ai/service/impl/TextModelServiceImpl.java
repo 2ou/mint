@@ -19,7 +19,7 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * 文本模型服务实现
- * 调用 KIE 平台的 Claude / GPT 文本模型生成提示词
+ * 调用 KIE 平台的 GPT 文本模型生成提示词
  */
 @Service
 @RequiredArgsConstructor
@@ -36,32 +36,25 @@ public class TextModelServiceImpl implements TextModelService {
             .writeTimeout(60, TimeUnit.SECONDS)
             .build();
 
-    // Claude API 端点
-    private static final String CLAUDE_API_URL = "https://api.kie.ai/claude/v1/messages";
     // GPT API 端点
-    private static final String GPT_API_URL = "https://api.kie.ai/codex/v1/responses";
+    private static final String GPT_API_URL = KieGptModels.RESPONSES_API_URL;
 
     @Override
     public String generatePrompt(ModelGenerateRequest request, String modelType) {
-        if (modelType == null || modelType.isEmpty()) {
-            modelType = "claude"; // 默认使用 Claude
-        }
-
-        // 1. 构建系统提示词（基于 Skill 模板）
         String systemPrompt = buildSystemPrompt(request);
-
-        // 2. 构建用户提示词
         String userPrompt = buildUserPrompt(request);
-
-        // 3. 调用对应的文本模型
         try {
-            if ("claude".equalsIgnoreCase(modelType)) {
-                return callClaude(systemPrompt, userPrompt);
-            } else if ("gpt".equalsIgnoreCase(modelType)) {
-                return callGpt(systemPrompt, userPrompt);
-            } else {
-                throw new BusinessException("不支持的模型类型: " + modelType);
-            }
+            return callGpt(systemPrompt, userPrompt, request.getClothingImageUrl());
+        } catch (Exception e) {
+            log.error("调用文本模型失败: {}", e.getMessage(), e);
+            throw new BusinessException("生成提示词失败: " + e.getMessage());
+        }
+    }
+
+    @Override
+    public String generateRawPrompt(String systemPrompt, String userPrompt, String modelType) {
+        try {
+            return callGpt(systemPrompt, userPrompt);
         } catch (Exception e) {
             log.error("调用文本模型失败: {}", e.getMessage(), e);
             throw new BusinessException("生成提示词失败: " + e.getMessage());
@@ -175,13 +168,15 @@ public class TextModelServiceImpl implements TextModelService {
 
         // 新增参数 - 服装描述
         if (request.getClothingDescription() != null && !request.getClothingDescription().isEmpty()) {
-            sb.append("- Clothing: ").append(request.getClothingDescription()).append("\n");
+            sb.append("- LOCKED clothing description: ").append(request.getClothingDescription()).append("\n");
+            sb.append("  Clothing fidelity rule: the final prompt must explicitly preserve this garment category, colors, neckline/sleeves, bottoms, pattern/print, fit, and visible construction details. Do not replace it with a generic outfit, matching set, dress, long sleeves, pants, or unrelated colors.\n");
         }
 
         // 服装图 URL（参考图）
         if (request.getClothingImageUrl() != null && !request.getClothingImageUrl().isEmpty()) {
-            sb.append("- Clothing image URL (reference): ").append(request.getClothingImageUrl()).append("\n");
-            sb.append("Note: If an image-to-image model is used, this image should be used as reference input.\n");
+            sb.append("- CLOTHING_IMAGE_SOURCE_OF_TRUTH: inspect the attached clothing image in this same GPT request.\n");
+            sb.append("  The final prompt must preserve the visible garment category, colors, neckline, sleeve length, bottoms, print/pattern, fit, and construction details from the attached image. Do not invent a new outfit, matching set, dress, pants, sleeve length, color palette, or unrelated fabric.\n");
+            sb.append("  Reference URL: ").append(request.getClothingImageUrl()).append("\n");
         }
 
         // 特殊要求
@@ -273,74 +268,15 @@ public class TextModelServiceImpl implements TextModelService {
     }
 
     /**
-     * 调用 Claude API
-     */
-    private String callClaude(String systemPrompt, String userPrompt) throws IOException {
-        ObjectNode rootNode = objectMapper.createObjectNode();
-        rootNode.put("model", "claude-opus-4-7");
-        rootNode.put("stream", false);
-        rootNode.put("max_tokens", 2000);
-
-        // messages
-        ArrayNode messages = objectMapper.createArrayNode();
-
-        ObjectNode userMsg = objectMapper.createObjectNode();
-        userMsg.put("role", "user");
-        userMsg.put("content", userPrompt);
-        messages.add(userMsg);
-
-        rootNode.set("messages", messages);
-
-        // 将 system prompt 作为 developer 消息
-        // Claude API 支持 system 参数
-        rootNode.put("system", systemPrompt);
-
-        String jsonBody = objectMapper.writeValueAsString(rootNode);
-        log.info("调用 Claude API，请求体大小: {} bytes", jsonBody.length());
-
-        RequestBody body = RequestBody.create(jsonBody, MediaType.parse("application/json"));
-        Request request = new Request.Builder()
-                .url(CLAUDE_API_URL)
-                .addHeader("Authorization", "Bearer " + appProperties.getKie().getApiKey())
-                .addHeader("Content-Type", "application/json")
-                .post(body)
-                .build();
-
-        try (Response response = httpClient.newCall(request).execute()) {
-            String responseBody = response.body() != null ? response.body().string() : "";
-            log.info("Claude API 响应: {}", responseBody.substring(0, Math.min(500, responseBody.length())));
-
-            if (!response.isSuccessful()) {
-                throw new RuntimeException("Claude API 调用失败: HTTP " + response.code() + " " + responseBody);
-            }
-
-            JsonNode root = objectMapper.readTree(responseBody);
-
-            // 解析 Claude 响应格式
-            if (root.has("content") && root.get("content").isArray()) {
-                JsonNode content = root.get("content");
-                for (JsonNode block : content) {
-                    if ("text".equals(block.has("type") ? block.get("type").asText() : "")) {
-                        return block.get("text").asText().trim();
-                    }
-                }
-            }
-
-            // 兜底：尝试直接获取 text 字段
-            if (root.has("text")) {
-                return root.get("text").asText().trim();
-            }
-
-            throw new RuntimeException("无法解析 Claude 响应: " + responseBody.substring(0, Math.min(200, responseBody.length())));
-        }
-    }
-
-    /**
      * 调用 GPT API
      */
     private String callGpt(String systemPrompt, String userPrompt) throws IOException {
+        return callGpt(systemPrompt, userPrompt, null);
+    }
+
+    private String callGpt(String systemPrompt, String userPrompt, String imageUrl) throws IOException {
         ObjectNode rootNode = objectMapper.createObjectNode();
-        rootNode.put("model", "gpt-5-5");
+        rootNode.put("model", KieGptModels.GPT_5_5);
         rootNode.put("stream", false);
 
         // reasoning
@@ -370,6 +306,12 @@ public class TextModelServiceImpl implements TextModelService {
         userText.put("type", "input_text");
         userText.put("text", userPrompt);
         userContent.add(userText);
+        if (imageUrl != null && !imageUrl.isBlank()) {
+            ObjectNode image = objectMapper.createObjectNode();
+            image.put("type", "input_image");
+            image.put("image_url", imageUrl.trim());
+            userContent.add(image);
+        }
         userMsg.set("content", userContent);
         input.add(userMsg);
 
@@ -394,31 +336,7 @@ public class TextModelServiceImpl implements TextModelService {
                 throw new RuntimeException("GPT API 调用失败: HTTP " + response.code() + " " + responseBody);
             }
 
-            JsonNode root = objectMapper.readTree(responseBody);
-
-            // 解析 GPT 响应格式
-            if (root.has("output") && root.get("output").isArray()) {
-                JsonNode output = root.get("output");
-                for (JsonNode item : output) {
-                    if ("message".equals(item.has("type") ? item.get("type").asText() : "")) {
-                        JsonNode content = item.get("content");
-                        if (content != null && content.isArray()) {
-                            for (JsonNode block : content) {
-                                if ("output_text".equals(block.has("type") ? block.get("type").asText() : "")) {
-                                    return block.get("text").asText().trim();
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // 兜底
-            if (root.has("text")) {
-                return root.get("text").asText().trim();
-            }
-
-            throw new RuntimeException("无法解析 GPT 响应: " + responseBody.substring(0, Math.min(200, responseBody.length())));
+            return GptResponseParser.parseTextOrThrow(objectMapper, responseBody, "无法解析 GPT 响应");
         }
     }
 }

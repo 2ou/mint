@@ -67,14 +67,15 @@
                     <el-radio-group v-model="form.model" size="small">
                         <el-radio-button value="kling-3.0/motion-control">🌟 可灵 3.0 (运镜)</el-radio-button>
                         <el-radio-button value="kling-3.0/video">🎥 可灵 3.0 (标准)</el-radio-button>
-                        <el-radio-button value="happyhorse/image-to-video">🐴 HappyHorse</el-radio-button>
-                        <el-radio-button value="bytedance/seedance">💃 字节 Seedance</el-radio-button>
+                        <el-radio-button value="kling/v3-turbo-image-to-video">⚡ 可灵 V3 Turbo (图生视频)</el-radio-button>
+                        <el-radio-button value="bytedance/seedance">💃 Seedance 2.0</el-radio-button>
+                        <el-radio-button value="bytedance/seedance-2-mini">🚀 Seedance 2.0 Mini (低成本)</el-radio-button>
                     </el-radio-group>
                 </el-form-item>
 
-                <el-form-item label="核心提示词" v-show="!(form.model === 'kling-3.0/video' && form.klingShotMode === 'multi')">
+                    <el-form-item label="核心提示词" v-show="!(form.model === 'kling-3.0/video' && form.klingShotMode === 'multi')">
                     <el-input type="textarea" v-model="form.prompt" :rows="4"
-                              :placeholder="(form.model === 'kling-3.0/motion-control' || form.model === 'happyhorse/image-to-video') ? '描述视频画面、人物动作或环境光影' : '描述视频画面。输入 @ 自动唤出面板插入特征图或元素'"
+                              :placeholder="form.model === 'kling-3.0/motion-control' ? '描述视频画面、人物动作或环境光影' : '描述视频画面。输入 @ 自动唤出面板插入特征图或元素'"
                               @keyup="e => handlePromptInput(e, form, 'prompt')"
                               @click="e => handlePromptInput(e, form, 'prompt')"></el-input>
                 </el-form-item>
@@ -328,34 +329,124 @@
                 </el-form>
             </div>
 
-            <div v-if="form.model === 'happyhorse/image-to-video'">
-                <div class="app-section-title">2. HappyHorse 图生视频 参数</div>
+            <div v-if="form.model === 'kling/v3-turbo-image-to-video'">
+                <div class="app-section-title">2. 可灵 V3 Turbo 图生视频 参数</div>
                 <el-row :gutter="20">
                     <el-col :span="8">
-                        <div style="font-weight:bold; margin-bottom:10px; color:#606266; font-size: 13px;">首帧参考图 (必填)</div>
-                        <div class="upload-box" :class="{'is-dragover': drag.happyhorseImg}"
-                             @click="triggerUpload('happyhorseImg', 'image/*')"
-                             @dragover.prevent="drag.happyhorseImg = true" @dragleave.prevent="drag.happyhorseImg = false"
-                             @drop.prevent="e => handleDrop(e, 'happyhorseImg', 'image/*')">
-                            <img v-if="form.happyhorseImg" :src="form.happyhorseImg" class="media-preview">
-                            <div v-else>➕ 拖拽上传图 (支持 JPEG/PNG/WEBP)</div>
-                            <div v-if="form.happyhorseImg" class="remove-btn" @click.stop="form.happyhorseImg=''; filesToUpload.happyhorseImg=null">X</div>
+                        <div style="font-weight:bold; margin-bottom:10px; color:#606266; font-size: 13px;">输入图片 (必填)
+                            <el-tooltip effect="dark" placement="top" style="max-width: 300px;">
+                                <template #content>
+                                    <div style="line-height: 1.6;">
+                                        <b>格式:</b> JPEG / PNG<br/>
+                                        <b>大小:</b> 最大 10MB
+                                    </div>
+                                </template>
+                                <el-icon style="margin-left: 5px; color: #909399; cursor: help; font-size: 16px;"><info-filled></info-filled></el-icon>
+                            </el-tooltip>
+                        </div>
+                        <div class="upload-box" :class="{'is-dragover': drag.klingTurboImg}"
+                             @click="triggerUpload('klingTurboImg', 'image/*')"
+                             @dragover.prevent="drag.klingTurboImg = true" @dragleave.prevent="drag.klingTurboImg = false"
+                             @drop.prevent="e => handleDrop(e, 'klingTurboImg', 'image/*')">
+                            <img v-if="form.klingTurboImg" :src="form.klingTurboImg" class="media-preview">
+                            <div v-else>➕ 拖拽上传图片</div>
+                            <div v-if="form.klingTurboImg" class="remove-btn" @click.stop="form.klingTurboImg=''; filesToUpload.klingTurboImg=null">X</div>
                         </div>
                     </el-col>
                     <el-col :span="16">
                         <el-form label-width="100px">
+                            <el-form-item label="提示词">
+                                <el-input type="textarea" v-model="form.klingTurboPrompt" :rows="3"
+                                          placeholder="描述视频中物体的运动方式和场景变化...（最多2500字符）"></el-input>
+                            </el-form-item>
                             <el-form-item label="输出分辨率">
-                                <el-select v-model="form.happyhorseRes" style="width: 100%;">
-                                    <el-option label="1080p (超高清)" value="1080p"></el-option>
-                                    <el-option label="720p (标准高清)" value="720p"></el-option>
+                                <el-select v-model="form.klingTurboRes" style="width: 100%;">
+                                    <el-option label="1080p (高清)" value="1080p"></el-option>
+                                    <el-option label="720p (标准)" value="720p"></el-option>
                                 </el-select>
                             </el-form-item>
                             <el-form-item label="视频时长">
-                                <el-slider v-model="form.happyhorseDuration" :min="1" :max="10" :step="1" show-input style="margin-left: 10px;"></el-slider>
-                                <span style="font-size: 12px; color: #909399;">(单位: 秒)</span>
+                                <el-slider v-model="form.klingTurboDuration" :min="3" :max="15" :step="1" show-input style="margin-left: 10px;"></el-slider>
+                                <span style="font-size: 12px; color: #909399;">3-15 秒</span>
                             </el-form-item>
-                            <el-form-item label="随机种子">
-                                <el-input-number v-model="form.happyhorseSeed" :precision="0" placeholder="随机" style="width: 100%;"></el-input-number>
+                        </el-form>
+                    </el-col>
+                </el-row>
+            </div>
+
+            <div v-if="form.model === 'bytedance/seedance-2-mini'">
+                <div class="app-section-title">2. Seedance 2.0 Mini 参数（低成本）</div>
+
+                <el-row :gutter="20" style="margin-bottom: 20px;">
+                    <el-col :span="6">
+                        <div style="font-weight:bold; margin-bottom:10px; color:#606266; font-size: 13px;">首帧参考图 (可选)</div>
+                        <div class="upload-box" :class="{'is-dragover': drag.miniFirstImg}"
+                             @click="triggerUpload('miniFirstImg', 'image/*')"
+                             @dragover.prevent="drag.miniFirstImg = true" @dragleave.prevent="drag.miniFirstImg = false"
+                             @drop.prevent="e => handleDrop(e, 'miniFirstImg', 'image/*')">
+                            <img v-if="form.miniFirstImg" :src="form.miniFirstImg" class="media-preview">
+                            <div v-else>➕ 首帧</div>
+                            <div v-if="form.miniFirstImg" class="remove-btn" @click.stop="form.miniFirstImg=''; filesToUpload.miniFirstImg=null">X</div>
+                        </div>
+                    </el-col>
+                    <el-col :span="6">
+                        <div style="font-weight:bold; margin-bottom:10px; color:#606266; font-size: 13px;">尾帧参考图 (可选)</div>
+                        <div class="upload-box" :class="{'is-dragover': drag.miniLastImg}"
+                             @click="triggerUpload('miniLastImg', 'image/*')"
+                             @dragover.prevent="drag.miniLastImg = true" @dragleave.prevent="drag.miniLastImg = false"
+                             @drop.prevent="e => handleDrop(e, 'miniLastImg', 'image/*')">
+                            <img v-if="form.miniLastImg" :src="form.miniLastImg" class="media-preview">
+                            <div v-else>➕ 尾帧</div>
+                            <div v-if="form.miniLastImg" class="remove-btn" @click.stop="form.miniLastImg=''; filesToUpload.miniLastImg=null">X</div>
+                        </div>
+                    </el-col>
+                </el-row>
+
+                <div style="font-weight:bold; margin-bottom:10px;">多参考图 (支持多张)</div>
+                <div class="seedance-drop-zone" :class="{'is-dragover': drag.miniImages}"
+                     @dragover.prevent="drag.miniImages = true" @dragleave.prevent="drag.miniImages = false"
+                     @drop.prevent="e => handleDrop(e, 'miniImages', 'image/*', true)">
+                    <div v-for="(imgUrl, index) in form.miniImages" :key="index" class="ref-img-card">
+                        <img :src="imgUrl" style="height: 100%; border-radius: 8px;" />
+                        <div class="remove-btn" @click="removeMiniImage(index)">X</div>
+                    </div>
+                    <div class="upload-box" style="width: 110px; height: 140px; border-color: #dcdfe6; background: #fff;" @click="triggerUpload('miniImages', 'image/*', true)">
+                        <div style="font-size: 24px; margin-bottom: 5px;">➕</div>
+                        <div style="font-size: 12px; font-weight: bold; padding: 0 5px;">点击或拖拽</div>
+                    </div>
+                </div>
+
+                <el-row :gutter="20" style="margin-top: 15px;">
+                    <el-col :span="8">
+                        <div style="font-weight:bold; margin-bottom:10px;">动作参考视频 (可选)</div>
+                        <div class="upload-box" :class="{'is-dragover': drag.miniVid}"
+                             @click="triggerUpload('miniVid', 'video/*')"
+                             @dragover.prevent="drag.miniVid = true" @dragleave.prevent="drag.miniVid = false"
+                             @drop.prevent="e => handleDrop(e, 'miniVid', 'video/*')">
+                            <video v-if="form.miniVid" :src="form.miniVid" class="media-preview" autoplay muted loop></video>
+                            <div v-else>➕ 动作参考视频</div>
+                            <div v-if="form.miniVid" class="remove-btn" @click.stop="form.miniVid=''; filesToUpload.miniVid=null">X</div>
+                        </div>
+                    </el-col>
+                    <el-col :span="16">
+                        <el-form label-width="120px">
+                            <el-form-item label="画面比例">
+                                <el-select v-model="form.miniRatio" style="width: 100%;">
+                                    <el-option label="16:9 (标准横屏)" value="16:9"></el-option>
+                                    <el-option label="4:3 (复古横屏)" value="4:3"></el-option>
+                                    <el-option label="1:1 (正方形)" value="1:1"></el-option>
+                                    <el-option label="3:4 (复古竖屏)" value="3:4"></el-option>
+                                    <el-option label="9:16 (标准竖屏)" value="9:16"></el-option>
+                                    <el-option label="21:9 (宽荧幕)" value="21:9"></el-option>
+                                </el-select>
+                            </el-form-item>
+                            <el-form-item label="视频时长"><el-input-number v-model="form.miniDuration" :min="4" :max="15" style="width: 100%;"></el-input-number></el-form-item>
+                            <el-form-item label="画质与声音">
+                                <el-select v-model="form.miniRes" style="width: 150px; margin-right: 15px;">
+                                    <el-option label="480p (极低成本)" value="480p"></el-option>
+                                    <el-option label="720p (默认)" value="720p"></el-option>
+                                </el-select>
+                                <el-switch v-model="form.miniAudio" active-text="生成音频"></el-switch>
                             </el-form-item>
                         </el-form>
                     </el-col>
@@ -481,26 +572,30 @@
                 klingMultiPrompts: [{ prompt: '', duration: 5 }], klingRatio: '16:9', klingDuration: 5, klingMode: 'pro',
                 klingElements: [],
                 klingAudio: false,
-                happyhorseImg: '', happyhorseRes: '1080p', happyhorseDuration: 5, happyhorseSeed: null,
+                klingTurboImg: '', klingTurboPrompt: '', klingTurboRes: '720p', klingTurboDuration: 5,
                 seedanceVersion: 'bytedance/seedance-2',
                 seeImages: [], seeVid: '', seeRatio: '16:9', seeRes: '1080p', seeDuration: 15, seeAudio: true,
-                seeFirstImg: '', seeLastImg: ''
+                seeFirstImg: '', seeLastImg: '',
+                miniFirstImg: '', miniLastImg: '', miniImages: [], miniVid: '',
+                miniRatio: '16:9', miniRes: '720p', miniDuration: 5, miniAudio: false
             });
 
             const filesToUpload = reactive({
                 motionImg: null, motionVid: null,
                 klingFirstImg: null, klingLastImg: null, klingMultiImage: null,
-                happyhorseImg: null,
+                klingTurboImg: null,
                 seeImages: [], seeVid: null,
-                seeFirstImg: null, seeLastImg: null
+                seeFirstImg: null, seeLastImg: null,
+                miniFirstImg: null, miniLastImg: null, miniImages: [], miniVid: null
             });
 
             const drag = reactive({
                 motionImg: false, motionVid: false,
                 klingFirstImg: false, klingLastImg: false, klingMultiImage: false,
-                happyhorseImg: false,
+                klingTurboImg: false,
                 seeImages: false, seeVid: false,
-                seeFirstImg: false, seeLastImg: false
+                seeFirstImg: false, seeLastImg: false,
+                miniFirstImg: false, miniLastImg: false, miniImages: false, miniVid: false
             });
 
             const showVideoDialog = ref(false);
@@ -528,9 +623,9 @@
                         pricePerSec = form.klingAudio ? 0.64 : 0.44;
                     }
                 }
-                else if (form.model === 'happyhorse/image-to-video') {
-                    duration = form.happyhorseDuration;
-                    pricePerSec = form.happyhorseRes === '1080p' ? 1.53 : 0.89;
+                else if (form.model === 'kling/v3-turbo-image-to-video') {
+                    duration = form.klingTurboDuration;
+                    pricePerSec = form.klingTurboRes === '1080p' ? 0.81 : 0.648;
                 }
                 else if (form.model === 'bytedance/seedance') {
                     duration = form.seeDuration;
@@ -547,6 +642,13 @@
                         else if (res === '720p') pricePerSec = hasVid ? 0.80 : 1.31;
                         else if (res === '480p') pricePerSec = hasVid ? 0.36 : 0.60;
                     }
+                }
+                else if (form.model === 'bytedance/seedance-2-mini') {
+                    duration = form.miniDuration;
+                    const hasVid = !!filesToUpload.miniVid;
+                    const res = form.miniRes;
+                    if (res === '720p') pricePerSec = hasVid ? 0.45 : 0.738;
+                    else if (res === '480p') pricePerSec = hasVid ? 0.216 : 0.342;
                 }
                 return (pricePerSec * duration).toFixed(2);
             });
@@ -565,21 +667,22 @@
             const mentionItems = computed(() => {
                 if (form.model === 'kling-3.0/video') {
                     return form.klingElements.map(e => ({ value: e.name, label: e.name || '未命名 Element' }));
-                } else if (form.model === 'bytedance/seedance') {
-                    return form.seeImages.map((_, i) => ({ value: `Image${i + 1}`, label: `Image${i + 1}` }));
+                } else if (form.model === 'bytedance/seedance' || form.model === 'bytedance/seedance-2-mini') {
+                    const imgs = form.model === 'bytedance/seedance-2-mini' ? form.miniImages : form.seeImages;
+                    return imgs.map((_, i) => ({ value: `Image${i + 1}`, label: `Image${i + 1}` }));
                 }
                 return [];
             });
 
             const mentionEmptyText = computed(() => {
                 if (form.model === 'kling-3.0/video') return '请先在下方添加 Element 组';
-                if (form.model === 'bytedance/seedance') return '请先上传参考图，系统将自动生成 @Image 标签';
+                if (form.model === 'bytedance/seedance' || form.model === 'bytedance/seedance-2-mini') return '请先上传参考图，系统将自动生成 @Image 标签';
                 return '暂无可用元素';
             });
 
             const mentionTitle = computed(() => {
                 if (form.model === 'kling-3.0/video') return '选择插入 Element';
-                if (form.model === 'bytedance/seedance') return '选择插入参考图 (@Image)';
+                if (form.model === 'bytedance/seedance' || form.model === 'bytedance/seedance-2-mini') return '选择插入参考图 (@Image)';
                 return '选择元素';
             });
 
@@ -592,7 +695,7 @@
             const mention = reactive({ visible: false, targetObj: null, targetField: '', startPos: 0, endPos: 0, x: 0, y: 0, limitWarned: false });
 
             const handlePromptInput = (e, obj, field) => {
-                if (form.model !== 'kling-3.0/video' && form.model !== 'bytedance/seedance') {
+                if (form.model !== 'kling-3.0/video' && form.model !== 'bytedance/seedance' && form.model !== 'bytedance/seedance-2-mini') {
                     mention.visible = false;
                     return;
                 }
@@ -664,6 +767,7 @@
             };
 
             const removeSeeImage = (index) => { form.seeImages.splice(index, 1); filesToUpload.seeImages.splice(index, 1); };
+            const removeMiniImage = (index) => { form.miniImages.splice(index, 1); filesToUpload.miniImages.splice(index, 1); };
 
             const uploadSingleToOss = async (file, pd) => {
                 if (!file) return null;
@@ -746,13 +850,41 @@
                         }
                         validatePromptElements(form.prompt);
                     }
-                    else if (form.model === 'happyhorse/image-to-video') {
-                        if (!filesToUpload.happyhorseImg) throw new Error('HappyHorse 必须上传首帧图');
+                    else if (form.model === 'kling/v3-turbo-image-to-video') {
+                        if (!filesToUpload.klingTurboImg) throw new Error('可灵 V3 Turbo 必须上传图片');
                         uploadProgressMsg.value = '上传素材...';
-                        const imgUrl = await uploadSingleToOss(filesToUpload.happyhorseImg, pd);
-                        inputPayload = { prompt: form.prompt, image_urls: [imgUrl], duration: form.happyhorseDuration, resolution: form.happyhorseRes };
+                        const imgUrl = await uploadSingleToOss(filesToUpload.klingTurboImg, pd);
+                        inputPayload = {
+                            image_urls: [imgUrl],
+                            prompt: form.klingTurboPrompt || '',
+                            duration: String(form.klingTurboDuration),
+                            resolution: form.klingTurboRes
+                        };
                         reqInputImg = imgUrl;
-                        if (form.happyhorseSeed !== null) inputPayload.seed = form.happyhorseSeed;
+                    }
+                    else if (form.model === 'bytedance/seedance-2-mini') {
+                        inputPayload = {
+                            prompt: form.prompt,
+                            resolution: form.miniRes,
+                            aspect_ratio: form.miniRatio,
+                            duration: form.miniDuration,
+                            generate_audio: form.miniAudio
+                        };
+                        uploadProgressMsg.value = '上传素材...';
+
+                        if (filesToUpload.miniImages.length > 0) {
+                            inputPayload.reference_image_urls = await Promise.all(filesToUpload.miniImages.map(f => uploadSingleToOss(f, pd)));
+                            reqInputImg = inputPayload.reference_image_urls[0];
+                        }
+                        if (filesToUpload.miniVid) {
+                            inputPayload.reference_video_urls = [await uploadSingleToOss(filesToUpload.miniVid, pd)];
+                            reqColorImg = inputPayload.reference_video_urls[0];
+                        }
+                        if (filesToUpload.miniFirstImg) {
+                            inputPayload.first_frame_url = await uploadSingleToOss(filesToUpload.miniFirstImg, pd);
+                            reqInputImg = inputPayload.first_frame_url;
+                        }
+                        if (filesToUpload.miniLastImg) inputPayload.last_frame_url = await uploadSingleToOss(filesToUpload.miniLastImg, pd);
                     }
                     else if (form.model === 'bytedance/seedance') {
                         inputPayload = { prompt: form.prompt, resolution: form.seeRes, aspect_ratio: form.seeRatio, duration: form.seeDuration, generate_audio: form.seeAudio };
@@ -774,7 +906,7 @@
                     }
 
                     uploadProgressMsg.value = '任务派发中...';
-                    const targetModel = form.model === 'bytedance/seedance' ? form.seedanceVersion : form.model;
+                    const targetModel = (form.model === 'bytedance/seedance') ? form.seedanceVersion : form.model;
 
                     const res = await axios.post('/api/tasks/create-video', {
                         spu: form.spu,

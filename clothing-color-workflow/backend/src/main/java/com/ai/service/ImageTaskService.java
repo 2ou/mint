@@ -10,6 +10,10 @@ import java.util.List;
 
 public interface ImageTaskService {
 
+    /**
+     * 回调入口：通过 KIE taskId 刷新任务
+     */
+    boolean refreshTaskByKieTaskId(String kieTaskId);
 
     /**
      * 刷新任务状态

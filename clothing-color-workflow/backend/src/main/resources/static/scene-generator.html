@@ -258,10 +258,7 @@
                                 </el-col>
                                 <el-col :span="12">
                                     <el-form-item label="文本模型">
-                                        <el-select v-model="textModel" size="small" style="width: 100%;">
-                                            <el-option label="Claude" value="claude"></el-option>
-                                            <el-option label="GPT" value="gpt"></el-option>
-                                        </el-select>
+                                        <el-input model-value="GPT（视觉识别 + 提示词）" size="small" disabled/>
                                     </el-form-item>
                                 </el-col>
                             </el-row>
@@ -327,7 +324,7 @@
                                     </template>
                                     <input type="file" ref="fileInput" style="display:none" accept="image/*" @change="handleFileSelect"/>
                                 </div>
-                                <div class="upload-meta">JPG/PNG · ≤ 10MB</div>
+                                <div class="upload-meta">JPG/PNG · ≤ 10MB · 上传后自动识别服装</div>
                             </div>
 
                             <!-- 右侧：场景配置区 -->
@@ -517,7 +514,7 @@
     createApp({
         setup() {
             const step = ref(1);
-            const textModel = ref('claude');
+            const textModel = ref('gpt');
             const genModel = ref('nano-banana-pro');
             const genResolution = ref('4K');
             const genAspectRatio = ref('3:4');
@@ -551,6 +548,29 @@
             };
             const clearImage = () => { if (uploadedImage.value?.url) URL.revokeObjectURL(uploadedImage.value.url); uploadedImage.value = null; };
 
+            const uploadSceneImageIfNeeded = async () => {
+                if (!uploadedImage.value) throw new Error('请先上传图片');
+                if (uploadedImage.value.ossUrl) return uploadedImage.value.ossUrl;
+
+                const policyRes = await axios.get('/api/oss/policy?type=temp');
+                if (!policyRes.data?.success) throw new Error('OSS 凭证获取失败');
+                const pd = policyRes.data.data;
+                const file = uploadedImage.value.file;
+                const dot = file.name.lastIndexOf('.');
+                const ext = dot >= 0 ? file.name.substring(dot) : '.jpg';
+                const key = `${pd.dir}${Date.now()}_${Math.random().toString(36).substr(2,6)}${ext}`;
+                const fd = new FormData();
+                fd.append('key', key);
+                fd.append('policy', pd.policy);
+                fd.append('OSSAccessKeyId', pd.accessid);
+                fd.append('success_action_status', '200');
+                fd.append('signature', pd.signature);
+                fd.append('file', file);
+                await axios.post(pd.host, fd, { timeout: 120000 });
+                uploadedImage.value.ossUrl = `${pd.host}/${key}`;
+                return uploadedImage.value.ossUrl;
+            };
+
             // ===== 多选场景逻辑数据结构 =====
             const aiScenes = ref([]);
             const selectedScenes = ref([]);
@@ -579,19 +599,23 @@
 
             const handleGenerate = async () => {
                 if (!uploadedImage.value) { ElementPlus.ElMessage.warning('请先上传图片'); return; }
+                if (sceneMode.value === 'custom' && !customScene.value.trim()) {
+                    ElementPlus.ElMessage.warning('请输入场景描述');
+                    return;
+                }
                 loadingGenerate.value = true;
                 try {
+                    const clothingImageUrl = await uploadSceneImageIfNeeded();
                     let rawData;
                     if (sceneMode.value === 'ai') {
                         const res = await axios.post('/api/scene-generator/recommend', {
-                            clothingDesc: clothingDesc.value || 'fashion clothing', count: aiRecommendCount.value, textModel: textModel.value
+                            clothingDesc: clothingDesc.value || '', count: aiRecommendCount.value, textModel: textModel.value, clothingImageUrl
                         });
                         if (!res.data.success) throw new Error('推荐失败');
                         rawData = res.data.data;
                     } else {
-                        if (!customScene.value.trim()) { ElementPlus.ElMessage.warning('请输入场景描述'); loadingGenerate.value = false; return; }
                         const res = await axios.post('/api/scene-generator/generate-prompt', {
-                            sceneDesc: customScene.value, clothingDesc: clothingDesc.value || 'fashion clothing', count: promptCount.value, textModel: textModel.value
+                            sceneDesc: customScene.value, clothingDesc: clothingDesc.value || '', count: promptCount.value, textModel: textModel.value, clothingImageUrl
                         });
                         if (!res.data.success) throw new Error('生成提示词失败');
                         rawData = res.data.data;
@@ -647,17 +671,7 @@
 
                 loadingSubmit.value = true;
                 try {
-                    const policyRes = await axios.get('/api/oss/policy');
-                    if (!policyRes.data?.success) throw new Error('OSS 凭证获取失败');
-                    const pd = policyRes.data.data;
-                    const file = uploadedImage.value.file;
-                    const ext = file.name.substring(file.name.lastIndexOf('.'));
-                    const key = `${pd.dir}${Date.now()}_${Math.random().toString(36).substr(2,6)}${ext}`;
-                    const fd = new FormData();
-                    fd.append('key', key); fd.append('policy', pd.policy); fd.append('OSSAccessKeyId', pd.accessid);
-                    fd.append('success_action_status', '200'); fd.append('signature', pd.signature); fd.append('file', file);
-                    await axios.post(pd.host, fd, { timeout: 120000 });
-                    const url = `${pd.host}/${key}`;
+                    const url = await uploadSceneImageIfNeeded();
 
                     const reqs = [];
                     const promptMap = []; // 跟踪每个请求对应的 prompt

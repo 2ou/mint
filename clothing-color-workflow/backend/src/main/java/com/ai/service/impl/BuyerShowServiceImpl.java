@@ -35,8 +35,7 @@ public class BuyerShowServiceImpl implements BuyerShowService {
             .writeTimeout(60, TimeUnit.SECONDS)
             .build();
 
-    private static final String CLAUDE_API_URL = "https://api.kie.ai/claude/v1/messages";
-    private static final String GPT_API_URL = "https://api.kie.ai/codex/v1/responses";
+    private static final String GPT_API_URL = KieGptModels.RESPONSES_API_URL;
 
     @Override
     public String generateBuyerShow(String spu, String clothingDesc, List<String> imageUrls,
@@ -53,7 +52,7 @@ public class BuyerShowServiceImpl implements BuyerShowService {
         if (countPerImage < 1) countPerImage = 1;
         if (countPerImage > 5) countPerImage = 5;
         if (textModel == null || textModel.isEmpty()) {
-            textModel = "claude";
+            textModel = "gpt";
         }
 
         int totalPrompts = imageUrls.size() * countPerImage;
@@ -61,13 +60,7 @@ public class BuyerShowServiceImpl implements BuyerShowService {
         String userPrompt = buildUserPrompt(clothingDesc, imageUrls, scenePreference, countPerImage);
 
         try {
-            if ("claude".equalsIgnoreCase(textModel)) {
-                return callClaude(systemPrompt, userPrompt);
-            } else if ("gpt".equalsIgnoreCase(textModel)) {
-                return callGpt(systemPrompt, userPrompt);
-            } else {
-                throw new BusinessException("不支持的模型类型: " + textModel);
-            }
+            return callGpt(systemPrompt, userPrompt);
         } catch (BusinessException e) {
             throw e;
         } catch (Exception e) {
@@ -203,65 +196,12 @@ public class BuyerShowServiceImpl implements BuyerShowService {
     }
 
     /**
-     * 调用 Claude API
-     */
-    private String callClaude(String systemPrompt, String userPrompt) throws IOException {
-        ObjectMapper om = objectMapper;
-        ObjectNode rootNode = om.createObjectNode();
-        rootNode.put("model", "claude-opus-4-7");
-        rootNode.put("stream", false);
-        rootNode.put("max_tokens", 8000);
-        rootNode.put("system", systemPrompt);
-
-        ArrayNode messages = om.createArrayNode();
-        ObjectNode userMsg = om.createObjectNode();
-        userMsg.put("role", "user");
-        userMsg.put("content", userPrompt);
-        messages.add(userMsg);
-        rootNode.set("messages", messages);
-
-        String jsonBody = om.writeValueAsString(rootNode);
-        log.info("调用 Claude API (买家秀生成)，请求体大小: {} bytes", jsonBody.length());
-
-        RequestBody body = RequestBody.create(jsonBody, MediaType.parse("application/json"));
-        Request request = new Request.Builder()
-                .url(CLAUDE_API_URL)
-                .addHeader("Authorization", "Bearer " + appProperties.getKie().getApiKey())
-                .addHeader("Content-Type", "application/json")
-                .post(body)
-                .build();
-
-        try (Response response = httpClient.newCall(request).execute()) {
-            String responseBody = response.body() != null ? response.body().string() : "";
-            log.info("Claude API 响应(买家秀): {}", responseBody.substring(0, Math.min(500, responseBody.length())));
-
-            if (!response.isSuccessful()) {
-                throw new RuntimeException("Claude API 调用失败: HTTP " + response.code() + " " + responseBody);
-            }
-
-            JsonNode root = om.readTree(responseBody);
-
-            if (root.has("content") && root.get("content").isArray()) {
-                for (JsonNode block : root.get("content")) {
-                    if ("text".equals(block.has("type") ? block.get("type").asText() : "")) {
-                        return block.get("text").asText().trim();
-                    }
-                }
-            }
-            if (root.has("text")) {
-                return root.get("text").asText().trim();
-            }
-            throw new RuntimeException("无法解析 Claude 响应");
-        }
-    }
-
-    /**
      * 调用 GPT API
      */
     private String callGpt(String systemPrompt, String userPrompt) throws IOException {
         ObjectMapper om = objectMapper;
         ObjectNode rootNode = om.createObjectNode();
-        rootNode.put("model", "gpt-5-5");
+        rootNode.put("model", KieGptModels.GPT_5_5);
         rootNode.put("stream", false);
 
         ObjectNode reasoning = om.createObjectNode();
@@ -311,26 +251,7 @@ public class BuyerShowServiceImpl implements BuyerShowService {
                 throw new RuntimeException("GPT API 调用失败: HTTP " + response.code() + " " + responseBody);
             }
 
-            JsonNode root = om.readTree(responseBody);
-
-            if (root.has("output") && root.get("output").isArray()) {
-                for (JsonNode item : root.get("output")) {
-                    if ("message".equals(item.has("type") ? item.get("type").asText() : "")) {
-                        JsonNode content = item.get("content");
-                        if (content != null && content.isArray()) {
-                            for (JsonNode block : content) {
-                                if ("output_text".equals(block.has("type") ? block.get("type").asText() : "")) {
-                                    return block.get("text").asText().trim();
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            if (root.has("text")) {
-                return root.get("text").asText().trim();
-            }
-            throw new RuntimeException("无法解析 GPT 响应");
+            return GptResponseParser.parseTextOrThrow(om, responseBody, "无法解析 GPT 响应");
         }
     }
 }

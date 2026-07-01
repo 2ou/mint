@@ -1,133 +1,245 @@
-/* ===== AI 时尚视觉设计平台 - 共享布局样式 ===== */
+/* Shared product UI shell */
 
-/* ---- 页面整体布局 ---- */
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+html {
+    background: var(--app-bg-page);
+}
+
+body {
+    margin: 0;
+    color: var(--app-text-primary);
+    font-family: var(--app-font-family);
+    font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+}
+
+/* ---- Page shell ---- */
 .app-layout {
     display: flex;
     min-height: 100vh;
-    background: var(--app-bg-page);
+    background:
+        radial-gradient(circle at 18% 0%, rgba(37, 99, 235, 0.08), transparent 28%),
+        linear-gradient(180deg, #f7f9fd 0%, var(--app-bg-page) 42%, #eef3f9 100%);
 }
 
 .app-main {
     flex: 1;
-    margin-left: 220px;  /* 侧边栏宽度 */
+    margin-left: var(--app-sidebar-width);
     padding: 24px;
     min-width: 0;
 }
 
-/* ---- 卡片容器 ---- */
-.app-card {
+.app-main::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.018;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.74' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.7'/%3E%3C/svg%3E");
+}
+
+/* ---- Cards ---- */
+.app-card,
+.el-card {
     background: var(--app-bg-card);
+    border: 1px solid var(--app-border-light);
     border-radius: var(--app-radius-lg);
     box-shadow: var(--app-shadow-card);
     overflow: visible;
     margin-bottom: 24px;
 }
 
+.app-card {
+    transition: box-shadow 0.18s ease, border-color 0.18s ease;
+}
+
+.app-card:hover {
+    border-color: var(--app-border-color);
+    box-shadow: var(--app-shadow-hover);
+}
+
 .app-card__header {
-    padding: 16px var(--app-space-xl);
+    min-height: 58px;
+    padding: 14px var(--app-space-xl);
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 16px;
     border-bottom: 1px solid var(--app-border-light);
+    background: rgba(248, 250, 252, 0.72);
+    color: var(--app-text-primary);
     font-size: 16px;
-    font-weight: 600;
+    font-weight: 700;
+    line-height: 1.4;
+    text-wrap: balance;
 }
 
-/* 各模块卡片头部色调 */
-.app-card__header--module-color {
-    background: linear-gradient(90deg, rgba(30, 136, 229, 0.06), transparent);
-    border-left: 4px solid #1e88e5;
-}
-
-.app-card__header--module-scene {
-    background: linear-gradient(90deg, rgba(64, 158, 255, 0.06), transparent);
-    border-left: 4px solid #409EFF;
-}
-
-.app-card__header--module-video {
-    background: linear-gradient(90deg, rgba(156, 39, 176, 0.06), transparent);
-    border-left: 4px solid #9c27b0;
-}
-
+.app-card__header--module-color,
+.app-card__header--module-scene,
+.app-card__header--module-video,
 .app-card__header--module-manage {
-    background: linear-gradient(90deg, rgba(138, 43, 226, 0.06), transparent);
-    border-left: 4px solid #8a2be2;
+    background: rgba(248, 250, 252, 0.72);
+    border-left: 0;
 }
 
 .app-card__body {
     padding: var(--app-space-xl);
 }
 
-/* ---- 区块标题 ---- */
+/* ---- Section titles ---- */
 .app-section-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 16px;
+    color: var(--app-text-primary);
     font-size: 15px;
-    font-weight: 600;
-    color: #303133;
-    margin-bottom: 16px;
-    padding-left: 12px;
-    border-left: 3px solid var(--app-brand-primary);
+    font-weight: 700;
     line-height: 1.4;
+    text-wrap: balance;
 }
 
-/* ---- 上传区域 ---- */
+.app-section-title::before {
+    content: "";
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+    background: var(--app-brand-primary);
+    box-shadow: 0 0 0 4px var(--app-brand-primary-soft);
+    flex: 0 0 auto;
+}
+
+/* ---- Upload zones ---- */
 .app-upload-zone {
     flex: 1;
-    border: 2px dashed #dcdfe6;
-    border-radius: var(--app-radius-md);
+    border: 1px dashed rgba(37, 99, 235, 0.34);
+    border-radius: var(--app-radius-lg);
     padding: 25px 20px;
     text-align: center;
     cursor: pointer;
-    transition: all 0.3s;
-    background: #fafafa;
-    color: #909399;
+    transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+    background: linear-gradient(180deg, #f8fbff 0%, #f2f6fc 100%);
+    color: var(--app-text-secondary);
 }
 
 .app-upload-zone:hover {
     border-color: var(--app-brand-primary);
     color: var(--app-brand-primary);
-    background: #f0f7ff;
+    background: var(--app-brand-primary-soft);
+    box-shadow: var(--app-shadow-focus);
 }
 
 .app-upload-zone.is-dragover {
     border-color: var(--app-brand-success);
-    background: #f0f9eb;
+    background: #eefbf3;
     color: var(--app-brand-success);
 }
 
-/* ---- 空状态 ---- */
+/* ---- Empty states ---- */
 .app-empty-state {
     text-align: center;
     padding: 48px 20px;
-    color: #909399;
-    background: #fafafa;
-    border-radius: var(--app-radius-md);
-    border: 2px dashed #e4e7ed;
+    color: var(--app-text-muted);
+    background: var(--app-bg-elevated);
+    border-radius: var(--app-radius-lg);
+    border: 1px dashed var(--app-border-color);
 }
 
-/* ---- 提交按钮 ---- */
+/* ---- Submit buttons ---- */
 .app-btn-submit {
     width: 100%;
-    height: 48px;
-    font-size: 16px;
-    font-weight: 600;
+    min-height: 48px;
+    font-size: 15px;
+    font-weight: 700;
     margin-top: 20px;
     border-radius: var(--app-radius-md);
-    letter-spacing: 1px;
+    letter-spacing: 0;
 }
 
-/* ---- 筛选栏 ---- */
+/* ---- Filter bars ---- */
 .app-filter-bar {
     display: flex;
     gap: 12px;
     margin-bottom: 16px;
     flex-wrap: wrap;
     align-items: center;
-    background: var(--app-bg-section);
+    background: rgba(241, 245, 249, 0.82);
     padding: 12px 16px;
-    border-radius: var(--app-radius-md);
+    border: 1px solid var(--app-border-light);
+    border-radius: var(--app-radius-lg);
 }
 
-/* ---- 响应式 ---- */
+/* ---- Element Plus baseline ---- */
+.el-button {
+    border-radius: var(--app-radius-md);
+    font-weight: 600;
+    letter-spacing: 0;
+}
+
+.el-button--primary {
+    --el-button-bg-color: var(--app-brand-primary);
+    --el-button-border-color: var(--app-brand-primary);
+    --el-button-hover-bg-color: var(--app-brand-primary-hover);
+    --el-button-hover-border-color: var(--app-brand-primary-hover);
+}
+
+.el-input__wrapper,
+.el-textarea__inner,
+.el-select__wrapper {
+    border-radius: var(--app-radius-md);
+    box-shadow: 0 0 0 1px var(--app-border-light) inset;
+}
+
+.el-input__wrapper:hover,
+.el-select__wrapper:hover,
+.el-textarea__inner:hover {
+    box-shadow: 0 0 0 1px var(--app-border-color) inset;
+}
+
+.el-input__wrapper.is-focus,
+.el-select__wrapper.is-focused,
+.el-textarea__inner:focus {
+    box-shadow: var(--app-shadow-focus), 0 0 0 1px var(--app-brand-primary) inset;
+}
+
+.el-table {
+    --el-table-header-bg-color: #f8fafc;
+    --el-table-header-text-color: var(--app-text-secondary);
+    --el-table-row-hover-bg-color: var(--app-brand-primary-soft);
+    --el-table-border-color: var(--app-border-light);
+    color: var(--app-text-primary);
+    font-size: 13px;
+}
+
+.el-table th.el-table__cell {
+    font-weight: 700;
+}
+
+.el-table .cell {
+    line-height: 1.45;
+}
+
+.el-pagination {
+    margin-top: 16px;
+}
+
+.el-tag {
+    border-radius: 999px;
+    font-weight: 600;
+}
+
+.el-dialog,
+.el-drawer {
+    border-radius: var(--app-radius-lg);
+}
+
+/* ---- Responsive ---- */
 @media (max-width: 900px) {
     .app-main {
         margin-left: 0;
@@ -136,6 +248,11 @@
 
     .app-card__header {
         flex-direction: column;
+        align-items: stretch;
         gap: 12px;
+    }
+
+    .app-filter-bar {
+        align-items: stretch;
     }
 }

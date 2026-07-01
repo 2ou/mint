@@ -1,6 +1,7 @@
 package com.ai.controller;
 
 import com.ai.dto.ApiResponse;
+import com.ai.dto.AplusLayoutTemplateParseRequest;
 import com.ai.dto.AplusProjectCreateRequest;
 import com.ai.dto.AplusTemplateResponse;
 import com.ai.dto.AplusTemplateSaveRequest;
@@ -39,6 +40,16 @@ public class AplusTemplateController {
     /**
      * 2. 获取模板列表（分页）
      */
+    @PostMapping("/parse-layout")
+    public ApiResponse<AplusTemplateResponse> parseLayoutTemplate(
+            @RequestBody AplusLayoutTemplateParseRequest request,
+            HttpServletRequest httpRequest) {
+        String operator = (String) httpRequest.getAttribute("operator");
+        String shopName = (String) httpRequest.getAttribute("shopName");
+        AplusTemplateResponse response = templateService.parseLayoutTemplate(request, operator, shopName);
+        return ApiResponse.ok("结构模板已解析并保存", response);
+    }
+
     @GetMapping
     public ApiResponse<Page<AplusTemplateResponse>> getTemplatePage(
             @RequestParam(value = "page", defaultValue = "1") int page,
@@ -53,7 +64,7 @@ public class AplusTemplateController {
      * 3. 获取模板详情
      */
     @GetMapping("/{id}")
-    public ApiResponse<AplusTemplateResponse> getTemplate(@PathVariable Long id) {
+    public ApiResponse<AplusTemplateResponse> getTemplate(@PathVariable("id") Long id) {
         AplusTemplateResponse response = templateService.getTemplateById(id);
         return ApiResponse.ok("ok", response);
     }
@@ -62,7 +73,7 @@ public class AplusTemplateController {
      * 4. 删除模板
      */
     @DeleteMapping("/{id}")
-    public ApiResponse<String> deleteTemplate(@PathVariable Long id) {
+    public ApiResponse<String> deleteTemplate(@PathVariable("id") Long id) {
         templateService.deleteTemplate(id);
         return ApiResponse.ok("模板删除成功", null);
     }
@@ -71,7 +82,7 @@ public class AplusTemplateController {
      * 5. 应用模板（返回可直接填入创建请求的数据）
      */
     @PostMapping("/{id}/apply")
-    public ApiResponse<AplusProjectCreateRequest> applyTemplate(@PathVariable Long id) {
+    public ApiResponse<AplusProjectCreateRequest> applyTemplate(@PathVariable("id") Long id) {
         AplusProjectCreateRequest request = templateService.applyTemplate(id);
         return ApiResponse.ok("模板应用成功", request);
     }

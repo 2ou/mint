@@ -11,4 +11,5 @@ public interface AplusImageTaskRepository extends JpaRepository<AplusImageTask, 
     List<AplusImageTask> findByProjectId(Long projectId);
     List<AplusImageTask> findByStatus(String status);
     List<AplusImageTask> findByProjectIdAndModuleCode(Long projectId, String moduleCode);
+    AplusImageTask findByKieTaskId(String kieTaskId);
 }

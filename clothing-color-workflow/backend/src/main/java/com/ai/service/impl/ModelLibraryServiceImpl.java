@@ -1,5 +1,6 @@
 package com.ai.service.impl;
 
+import com.ai.config.AppProperties;
 import com.ai.dto.KieTaskResult;
 import com.ai.dto.ModelCreateTaskRequest;
 import com.ai.dto.ModelGenerateRequest;
@@ -29,21 +30,43 @@ import java.util.stream.Collectors;
 @Slf4j
 public class ModelLibraryServiceImpl implements ModelLibraryService {
 
+    private final AppProperties appProperties;
     private final ModelLibraryRepository modelLibraryRepository;
     private final ModelPromptGenerator modelPromptGenerator;
     private final KieClientService kieClientService;
     private final TextModelService textModelService;
     private final OssService ossService;
 
+    /**
+     * 回调入口：通过 KIE taskId 查找任务并刷新状态
+     */
+    public boolean refreshTaskByKieTaskId(String kieTaskId) {
+        ModelLibrary model = modelLibraryRepository.findByTaskId(kieTaskId);
+        if (model == null) {
+            return false;
+        }
+        try {
+            KieTaskResult result = kieClientService.getFullResult(kieTaskId);
+            if (result.isFinished()) {
+                if (result.isSuccess()) {
+                    model.setTaskStatus("SUCCESS");
+                    model.setResultUrl(result.getResultUrl());
+                    model.setCoverImageUrl(result.getResultUrl());
+                } else {
+                    model.setTaskStatus("FAILED");
+                }
+                modelLibraryRepository.save(model);
+            }
+            return true;
+        } catch (Exception e) {
+            log.error("[Model] callback refresh failed: taskId={}, error={}", kieTaskId, e.getMessage());
+            return false;
+        }
+    }
+
     @Override
     public String generatePrompt(ModelGenerateRequest request) {
-        // 优先使用文本模型生成提示词
-        String textModel = request.getTextModel();
-        if (textModel != null && !textModel.isEmpty()) {
-            return textModelService.generatePrompt(request, textModel);
-        }
-        // 默认使用本地模板生成
-        return modelPromptGenerator.generatePrompt(request);
+        return textModelService.generatePrompt(request, "gpt");
     }
 
     @Override
@@ -67,7 +90,8 @@ public class ModelLibraryServiceImpl implements ModelLibraryService {
             aspectRatio,
             model,
             null, // inputUrl 文生图不需要
-            null  // colorUrl 不需要
+            null, // colorUrl 不需要
+            appProperties.getKie().getCallbackUrl()
         );
 
         // 4. 创建或更新模特记录
@@ -328,7 +352,8 @@ public class ModelLibraryServiceImpl implements ModelLibraryService {
                         aspectRatio,                        // aspectRatio
                         imageModel,                         // model
                         request.getClothingImageUrl(),      // inputUrl（服装参考图）
-                        null                                // colorUrl
+                        null,                               // colorUrl
+                        appProperties.getKie().getCallbackUrl()
                 );
                 model.setTaskId(taskId);
                 model.setTaskStatus("CREATED");

@@ -28,7 +28,7 @@ public class AplusProject {
     @Column(nullable = false, length = 100)
     private String spu;
 
-    /** 产品参考图 OSS URL */
+    /** 产品参考图 OSS URL（KIE 图片模型以此作为产品款式真相） */
     @Column(nullable = false, length = 500)
     private String referenceImageUrl;
 
@@ -39,6 +39,21 @@ public class AplusProject {
     /** AI 生成的 A+ MD 文档 */
     @Column(columnDefinition = "text")
     private String aplusMarkdown;
+
+    /** Applied structure template id, if any. */
+    private Long layoutTemplateId;
+
+    /** Applied structure template name, if any. */
+    @Column(length = 200)
+    private String layoutTemplateName;
+
+    /** Applied layout reference image URL, if any. */
+    @Column(length = 500)
+    private String layoutReferenceImageUrl;
+
+    /** Applied parsed layout blueprint JSON, if any. */
+    @Column(columnDefinition = "text")
+    private String layoutBlueprintJson;
 
     /** 选择的模块列表，JSON 数组 ["AD-01","AD-03","AD-05"] */
     @Column(columnDefinition = "text")

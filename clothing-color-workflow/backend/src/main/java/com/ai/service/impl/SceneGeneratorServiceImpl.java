@@ -3,7 +3,6 @@ package com.ai.service.impl;
 import com.ai.exception.BusinessException;
 import com.ai.service.SceneGeneratorService;
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -60,8 +59,7 @@ public class SceneGeneratorServiceImpl implements SceneGeneratorService {
             .writeTimeout(60, TimeUnit.SECONDS)
             .build();
 
-    private static final String CLAUDE_API_URL = "https://api.kie.ai/claude/v1/messages";
-    private static final String GPT_API_URL = "https://api.kie.ai/codex/v1/responses";
+    private static final String GPT_API_URL = KieGptModels.RESPONSES_API_URL;
 
     /**
      * 启动时加载场景库 skill
@@ -148,27 +146,17 @@ public class SceneGeneratorServiceImpl implements SceneGeneratorService {
     }
 
     @Override
-    public String recommendScenes(String clothingDesc, int count, String textModel) {
+    public String recommendScenes(String clothingDesc, int count, String textModel, String clothingImageUrl) {
         if (clothingDesc == null || clothingDesc.trim().isEmpty()) {
             clothingDesc = "fashion clothing";
         }
         if (count < 1) count = 3;
         if (count > 5) count = 5;
-        if (textModel == null || textModel.isEmpty()) {
-            textModel = "claude";
-        }
-
         String systemPrompt = buildRecommendSystemPrompt();
-        String userPrompt = "服装描述：" + clothingDesc + "\n\n请推荐 " + count + " 个最适合该服装的拍摄场景，并为每个场景生成1条完整的英文场景图提示词（放在prompts数组中）。\n\n直接返回JSON对象，不要任何其他文字。";
+        String userPrompt = buildRecommendUserPrompt(clothingDesc, count, clothingImageUrl);
 
         try {
-            if ("claude".equalsIgnoreCase(textModel)) {
-                return callClaude(systemPrompt, userPrompt);
-            } else if ("gpt".equalsIgnoreCase(textModel)) {
-                return callGpt(systemPrompt, userPrompt);
-            } else {
-                throw new BusinessException("不支持的模型类型: " + textModel);
-            }
+            return callGpt(systemPrompt, userPrompt, clothingImageUrl);
         } catch (BusinessException e) {
             throw e;
         } catch (Exception e) {
@@ -178,7 +166,7 @@ public class SceneGeneratorServiceImpl implements SceneGeneratorService {
     }
 
     @Override
-    public String generatePrompt(String sceneDesc, String clothingDesc, int count, String textModel) {
+    public String generatePrompt(String sceneDesc, String clothingDesc, int count, String textModel, String clothingImageUrl) {
         if (count < 1) count = 1;
         if (count > 10) count = 10;
         if (clothingDesc == null || clothingDesc.trim().isEmpty()) {
@@ -187,33 +175,11 @@ public class SceneGeneratorServiceImpl implements SceneGeneratorService {
         if (sceneDesc == null || sceneDesc.trim().isEmpty()) {
             throw new BusinessException("请提供场景描述");
         }
-        if (textModel == null || textModel.isEmpty()) {
-            textModel = "claude";
-        }
-
         String systemPrompt = buildGenerateSystemPrompt();
-
-        StringBuilder userPb = new StringBuilder();
-        userPb.append("## 场景描述\n").append(sceneDesc).append("\n\n");
-        userPb.append("## 服装描述\n").append(clothingDesc).append("\n\n");
-
-        if (count > 1) {
-            userPb.append("## 要求\n");
-            userPb.append("请生成 ").append(count).append(" 条不同的提示词，每条从不同角度/构图/光线描述同一场景，放在prompts数组中。\n\n");
-        }
-
-        userPb.append("直接返回JSON对象，不要任何其他文字。");
+        String userPrompt = buildGenerateUserPrompt(sceneDesc, clothingDesc, count, clothingImageUrl);
 
         try {
-            String result;
-            if ("claude".equalsIgnoreCase(textModel)) {
-                result = callClaude(systemPrompt, userPb.toString());
-            } else if ("gpt".equalsIgnoreCase(textModel)) {
-                result = callGpt(systemPrompt, userPb.toString());
-            } else {
-                throw new BusinessException("不支持的模型类型: " + textModel);
-            }
-            return result;
+            return callGpt(systemPrompt, userPrompt, clothingImageUrl);
         } catch (BusinessException e) {
             throw e;
         } catch (Exception e) {
@@ -223,6 +189,53 @@ public class SceneGeneratorServiceImpl implements SceneGeneratorService {
     }
 
     // ========== 私有方法 ==========
+
+    private String buildRecommendUserPrompt(String clothingDesc, int count, String clothingImageUrl) {
+        StringBuilder sb = new StringBuilder();
+        appendClothingSource(sb, clothingDesc, clothingImageUrl);
+        sb.append("""
+
+                ## Task
+                请推荐 %d 个最适合该服装的拍摄场景，并为每个场景生成1条完整的英文场景图提示词（放在prompts数组中）。
+                每条英文提示词必须明确写出服装图或服装描述中的真实服装细节。
+                场景库模板只能参考环境、光线和构图，不能替换衣服颜色、款式、图案或上下装结构。
+
+                直接返回JSON对象，不要任何其他文字。
+                """.formatted(count));
+        return sb.toString();
+    }
+
+    private String buildGenerateUserPrompt(String sceneDesc, String clothingDesc, int count, String clothingImageUrl) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("## 场景描述\n").append(sceneDesc).append("\n\n");
+        appendClothingSource(sb, clothingDesc, clothingImageUrl);
+        sb.append("\n提示词必须明确保留上述服装细节；不得把服装改成同色套装、sage green、terracotta、长袖、长裤或其他未提供款式。\n\n");
+
+        if (count > 1) {
+            sb.append("## 要求\n");
+            sb.append("请生成 ").append(count).append(" 条不同的提示词，每条从不同角度/构图/光线描述同一场景，放在prompts数组中。\n\n");
+        }
+
+        sb.append("直接返回JSON对象，不要任何其他文字。");
+        return sb.toString();
+    }
+
+    private void appendClothingSource(StringBuilder sb, String clothingDesc, String clothingImageUrl) {
+        if (hasText(clothingImageUrl)) {
+            sb.append("""
+                    ## CLOTHING_IMAGE_SOURCE_OF_TRUTH
+                    The attached clothing image is the garment source of truth. Analyze the visible clothing internally, then generate scene prompts that preserve the visible garment exactly.
+                    Preserve visible garment category, top/bottom structure, colors, neckline, sleeve length, hem, fit, fabric appearance, pattern/print, trims, and construction details.
+                    Do not invent a matching set, dress, robe, pants, long sleeves, sage green, terracotta, or any garment detail not visible in the image.
+                    """);
+            if (hasText(clothingDesc) && !"fashion clothing".equalsIgnoreCase(clothingDesc.trim())) {
+                sb.append("User clothing notes: ").append(clothingDesc.trim()).append("\n");
+            }
+        } else {
+            sb.append("## LOCKED_CLOTHING_DESCRIPTION\n");
+            sb.append(clothingDesc).append("\n");
+        }
+    }
 
     /**
      * 构建推荐场景的系统提示词（场景由 AI 自由创意生成，skill 辅助提升质量）
@@ -234,6 +247,12 @@ public class SceneGeneratorServiceImpl implements SceneGeneratorService {
 
         sb.append("You are an expert fashion e-commerce scene advisor for Amazon US market.\n\n");
         sb.append("Your task: Based on the clothing description, recommend 3-5 BEST shooting scenes. You should creatively generate scenes that best showcase the clothing, considering location, lighting, atmosphere, props, and model poses.\n\n");
+        sb.append("## Clothing Fidelity Rules\n");
+        sb.append("- The user prompt contains either CLOTHING_IMAGE_SOURCE_OF_TRUTH or LOCKED_CLOTHING_DESCRIPTION. This is the garment source of truth.\n");
+        sb.append("- Every generated English prompt must explicitly include the source garment category, colors, neckline/sleeves, bottoms, pattern/print, and fit details when provided or visible.\n");
+        sb.append("- Scene-library examples are environment and composition references only. Never copy example garment colors or invented clothing from the templates.\n");
+        sb.append("- Do not replace the source garment with generic loungewear, a matching set, sage green, terracotta, long sleeves, long pants, dresses, robes, or accessories unless those details are visible in the clothing image or written in LOCKED_CLOTHING_DESCRIPTION.\n");
+        sb.append("- If the clothing is a two-piece set, preserve each visible component separately.\n\n");
 
         // 注入 skill: styleGuide
         if (skill.styleGuide != null && !skill.styleGuide.isEmpty()) {
@@ -320,6 +339,7 @@ public class SceneGeneratorServiceImpl implements SceneGeneratorService {
         sb.append("- scenes array must contain exactly the requested number of scenes\n");
         sb.append("- Each scene MUST have a prompts array with exactly 1 element (the full English prompt)\n");
         sb.append("- prompts must be complete English scene image generation prompts, following all style requirements\n");
+        sb.append("- each prompt must preserve the source garment exactly before adding scene, lighting, camera, and mood details\n");
         sb.append("- Do NOT wrap in markdown code blocks — return PURE JSON only\n");
         sb.append("- Sort by match_score descending\n");
 
@@ -336,6 +356,12 @@ public class SceneGeneratorServiceImpl implements SceneGeneratorService {
 
         sb.append("You are an expert AI fashion photographer prompt engineer specializing in Amazon product scene images.\n\n");
         sb.append("Your task: Generate a professional, detailed English prompt for AI image generation to create a scene photo.\n\n");
+        sb.append("## Clothing Fidelity Rules\n");
+        sb.append("- The user prompt contains either CLOTHING_IMAGE_SOURCE_OF_TRUTH or LOCKED_CLOTHING_DESCRIPTION. This is the garment source of truth.\n");
+        sb.append("- Every generated English prompt must explicitly include the source garment category, colors, neckline/sleeves, bottoms, pattern/print, and fit details when provided or visible.\n");
+        sb.append("- Scene-library examples are environment and composition references only. Never copy example garment colors or invented clothing from the templates.\n");
+        sb.append("- Do not replace the source garment with generic loungewear, a matching set, sage green, terracotta, long sleeves, long pants, dresses, robes, or accessories unless those details are visible in the clothing image or written in LOCKED_CLOTHING_DESCRIPTION.\n");
+        sb.append("- If the clothing is a two-piece set, preserve each visible component separately.\n\n");
 
         // 注入 skill: styleGuide
         if (skill.styleGuide != null && !skill.styleGuide.isEmpty()) {
@@ -431,74 +457,19 @@ public class SceneGeneratorServiceImpl implements SceneGeneratorService {
         sb.append("- prompts array MUST contain exactly the requested number of prompts\n");
         sb.append("- Each prompt must be from a DIFFERENT angle/composition/vibe (e.g., different camera distance, lighting, or pose)\n");
         sb.append("- ALL prompts must be complete English scene image generation prompts\n");
+        sb.append("- each prompt must preserve the source garment exactly before adding scene, lighting, camera, and mood details\n");
         sb.append("- Do NOT wrap in markdown code blocks — return PURE JSON only\n");
 
         return sb.toString();
     }
 
     /**
-     * 调用 Claude API
-     */
-    private String callClaude(String systemPrompt, String userPrompt) throws IOException {
-        ObjectMapper om = objectMapper;
-        ObjectNode rootNode = om.createObjectNode();
-        rootNode.put("model", "claude-opus-4-7");
-        rootNode.put("stream", false);
-        rootNode.put("max_tokens", 2000);
-        rootNode.put("system", systemPrompt);
-
-        ArrayNode messages = om.createArrayNode();
-        ObjectNode userMsg = om.createObjectNode();
-        userMsg.put("role", "user");
-        userMsg.put("content", userPrompt);
-        messages.add(userMsg);
-        rootNode.set("messages", messages);
-
-        String jsonBody = om.writeValueAsString(rootNode);
-        log.info("调用 Claude API (场景生成)，请求体大小: {} bytes", jsonBody.length());
-
-        RequestBody body = RequestBody.create(jsonBody, MediaType.parse("application/json"));
-        Request request = new Request.Builder()
-                .url(CLAUDE_API_URL)
-                .addHeader("Authorization", "Bearer " + appProperties.getKie().getApiKey())
-                .addHeader("Content-Type", "application/json")
-                .post(body)
-                .build();
-
-        try (Response response = httpClient.newCall(request).execute()) {
-            String responseBody = response.body() != null ? response.body().string() : "";
-            log.info("Claude API 响应: {}", responseBody.substring(0, Math.min(500, responseBody.length())));
-
-            if (!response.isSuccessful()) {
-                throw new RuntimeException("Claude API 调用失败: HTTP " + response.code() + " " + responseBody);
-            }
-
-            JsonNode root = om.readTree(responseBody);
-
-            if (root.has("content") && root.get("content").isArray()) {
-                for (JsonNode block : root.get("content")) {
-                    if ("text".equals(block.has("type") ? block.get("type").asText() : "")) {
-                        return block.get("text").asText().trim();
-                    }
-                }
-            }
-
-            if (root.has("text")) {
-                return root.get("text").asText().trim();
-            }
-
-            log.warn("Claude API 响应无法解析：content 数组和 text 字段均未找到。响应: {}", responseBody.substring(0, Math.min(500, responseBody.length())));
-            throw new RuntimeException("无法解析 Claude 响应");
-        }
-    }
-
-    /**
      * 调用 GPT API
      */
-    private String callGpt(String systemPrompt, String userPrompt) throws IOException {
+    private String callGpt(String systemPrompt, String userPrompt, String clothingImageUrl) throws IOException {
         ObjectMapper om = objectMapper;
         ObjectNode rootNode = om.createObjectNode();
-        rootNode.put("model", "gpt-5-5");  // kie.ai 模型别名，请确认是否正确
+        rootNode.put("model", KieGptModels.GPT_5_5);
         rootNode.put("stream", false);
 
         ObjectNode reasoning = om.createObjectNode();
@@ -524,6 +495,12 @@ public class SceneGeneratorServiceImpl implements SceneGeneratorService {
         userText.put("type", "input_text");
         userText.put("text", userPrompt);
         userContent.add(userText);
+        if (hasText(clothingImageUrl)) {
+            ObjectNode image = om.createObjectNode();
+            image.put("type", "input_image");
+            image.put("image_url", clothingImageUrl.trim());
+            userContent.add(image);
+        }
         userMsg.set("content", userContent);
         input.add(userMsg);
 
@@ -548,28 +525,11 @@ public class SceneGeneratorServiceImpl implements SceneGeneratorService {
                 throw new RuntimeException("GPT API 调用失败: HTTP " + response.code() + " " + responseBody);
             }
 
-            JsonNode root = om.readTree(responseBody);
-
-            if (root.has("output") && root.get("output").isArray()) {
-                for (JsonNode item : root.get("output")) {
-                    if ("message".equals(item.has("type") ? item.get("type").asText() : "")) {
-                        JsonNode content = item.get("content");
-                        if (content != null && content.isArray()) {
-                            for (JsonNode block : content) {
-                                if ("output_text".equals(block.has("type") ? block.get("type").asText() : "")) {
-                                    return block.get("text").asText().trim();
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            if (root.has("text")) {
-                return root.get("text").asText().trim();
-            }
-
-            throw new RuntimeException("无法解析 GPT 响应");
+            return GptResponseParser.parseTextOrThrow(om, responseBody, "无法解析 GPT 响应");
         }
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 }

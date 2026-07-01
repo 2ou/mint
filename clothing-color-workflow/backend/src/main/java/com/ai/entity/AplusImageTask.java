@@ -53,6 +53,10 @@ public class AplusImageTask {
     @Column(length = 20)
     private String aspectRatio;
 
+    /** Resolution used for image generation. */
+    @Column(length = 20)
+    private String resolution;
+
     /** KIE 平台任务 ID */
     @Column(length = 128)
     private String kieTaskId;
