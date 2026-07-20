@@ -1560,8 +1560,10 @@
                         <div class="model-config-grid">
                             <div>
                                 <span class="model-config-label">文本模型</span>
-                                <select class="form-input" v-model="form.textModel" disabled>
-                                    <option value="gpt">GPT 5.5</option>
+                                <select class="form-input" v-model="form.textModel">
+                                    <option value="gpt-5.6-sol">GPT 5.6 Sol（高质量）</option>
+                                    <option value="gpt-5.6-terra">GPT 5.6 Terra（均衡）</option>
+                                    <option value="gpt-5.6-luna">GPT 5.6 Luna（快速）</option>
                                 </select>
                             </div>
                             <div>
@@ -2002,7 +2004,7 @@
                         projectName: '',
                         spu: '',
                         sellingPoints: '',
-                        textModel: 'gpt',
+                        textModel: 'gpt-5.6-terra',
                         imageModel: 'nano-banana-pro',
                         resolution: '2K',
                         stableAplusLayout: true,
@@ -2533,7 +2535,7 @@
                         form.projectName = '';
                         form.spu = '';
                         form.sellingPoints = '';
-                        form.textModel = 'gpt';
+                        form.textModel = 'gpt-5.6-terra';
                         form.imageModel = 'nano-banana-pro';
                         form.resolution = '2K';
                         form.stableAplusLayout = true;

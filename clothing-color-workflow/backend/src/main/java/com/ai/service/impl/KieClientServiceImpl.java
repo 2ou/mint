@@ -258,7 +258,10 @@ public class KieClientServiceImpl implements KieClientService {
         // 1. 构造 KIE 任务请求体
         KieCreateTaskRequest request = new KieCreateTaskRequest();
         request.setModel(model);
-        request.setCallBackUrl(appProperties.getKie().getCallbackUrl());
+        String callbackUrl = appProperties.getKie().getCallbackUrl();
+        if (callbackUrl != null && !callbackUrl.isBlank()) {
+            request.setCallBackUrl(callbackUrl.trim());
+        }
         request.setInput(input);
 
         String jsonBody = gson.toJson(request);

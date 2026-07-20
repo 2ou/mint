@@ -15,6 +15,7 @@ public class AplusProjectCreateRequest {
     /** 产品参考图 URL（KIE 图片模型以此作为产品款式真相） */
     private String referenceImageUrl;
     private String sellingPoints;
+    /** GPT 5.6 文本模型：gpt-5.6-sol / gpt-5.6-terra / gpt-5.6-luna */
     private String textModel;
     private String imageModel;
     private String resolution;

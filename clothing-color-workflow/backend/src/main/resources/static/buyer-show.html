@@ -256,10 +256,11 @@
                                 <el-row :gutter="16">
                                     <el-col :span="8">
                                         <el-form-item label="文本模型">
-                                            <el-radio-group v-model="textModel">
-                                                <el-radio-button value="claude">Claude</el-radio-button>
-                                                <el-radio-button value="gpt">GPT</el-radio-button>
-                                            </el-radio-group>
+                                            <el-select v-model="textModel" style="width:100%">
+                                                <el-option label="GPT 5.6 Sol（高质量）" value="gpt-5.6-sol"/>
+                                                <el-option label="GPT 5.6 Terra（均衡）" value="gpt-5.6-terra"/>
+                                                <el-option label="GPT 5.6 Luna（快速）" value="gpt-5.6-luna"/>
+                                            </el-select>
                                         </el-form-item>
                                     </el-col>
                                     <el-col :span="8">
@@ -392,7 +393,7 @@
             const spu = ref('');
             const clothingDesc = ref('');
             const scenePreference = ref('');
-            const textModel = ref('claude');
+            const textModel = ref('gpt-5.6-terra');
             const countPerImage = ref(1);
             const loading = ref(false);
             const groups = ref([]);

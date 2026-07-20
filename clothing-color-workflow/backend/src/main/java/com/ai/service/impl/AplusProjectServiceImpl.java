@@ -56,6 +56,7 @@ public class AplusProjectServiceImpl implements AplusProjectService {
     public AplusProjectResponse createProject(AplusProjectCreateRequest request, String operator, String shopName) {
         validateCreateRequest(request);
         List<String> selectedModules = normalizeSelectedModules(request.getSelectedModules());
+        String textModel = KieGptModels.normalizeTextModel(request.getTextModel());
         String imageModel = normalizeImageModel(request.getImageModel());
         String resolution = normalizeResolution(request.getResolution());
         LayoutTemplateData layoutTemplate = resolveLayoutTemplate(request);
@@ -100,14 +101,14 @@ public class AplusProjectServiceImpl implements AplusProjectService {
         imageTaskRepository.saveAll(tasks);
 
         Long projectId = project.getId();
-        CompletableFuture.runAsync(() -> copyService.generateCopy(projectId), aplusAsyncExecutor)
+        CompletableFuture.runAsync(() -> copyService.generateCopy(projectId, textModel), aplusAsyncExecutor)
                 .exceptionally(ex -> {
                     log.error("[A+] copy generation failed: projectId={}, error={}", projectId, ex.getMessage(), ex);
                     return null;
                 });
 
-        log.info("[A+] project created: id={}, spu={}, modules={}, imageModel={}, resolution={}",
-                project.getId(), project.getSpu(), tasks.size(), imageModel, resolution);
+        log.info("[A+] project created: id={}, spu={}, modules={}, textModel={}, imageModel={}, resolution={}",
+                project.getId(), project.getSpu(), tasks.size(), textModel, imageModel, resolution);
         return AplusProjectResponse.from(project);
     }
 

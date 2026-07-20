@@ -457,7 +457,7 @@ public class AplusTemplateServiceImpl implements AplusTemplateService {
     }
 
     private String normalizeTextModel(String textModel) {
-        return "gpt";
+        return KieGptModels.normalizeTextModel(textModel);
     }
 
     private String normalizeBlueprintOrNull(String blueprintJson) {

@@ -13,6 +13,7 @@ import com.ai.repository.AplusProjectRepository;
 import com.ai.service.AplusCopyService;
 import com.ai.service.AplusImageService;
 import com.ai.service.AplusProjectService;
+import com.ai.service.CanvasTaskService;
 import com.ai.service.ImageTaskService;
 import com.ai.service.ModelLibraryService;
 import jakarta.annotation.Resource;
@@ -57,6 +58,7 @@ public class AplusController {
     private final AplusImageService imageService;
     private final ImageTaskService imageTaskService;
     private final ModelLibraryService modelLibraryService;
+    private final CanvasTaskService canvasTaskService;
     private final AplusProjectRepository projectRepository;
     private final AplusImageTaskRepository imageTaskRepository;
 
@@ -204,17 +206,19 @@ public class AplusController {
     @PostMapping("/callback")
     public ApiResponse<String> kieCallback(@RequestBody Map<String, Object> payload) {
         log.info("[Callback] KIE callback received: {}", payload);
-        if (payload == null || !payload.containsKey("taskId")) {
+        String taskId = extractKieTaskId(payload);
+        if (taskId.isBlank()) {
             log.warn("[Callback] missing taskId");
             return ApiResponse.ok("missing taskId", null);
         }
-        String taskId = String.valueOf(payload.get("taskId"));
         try {
-            // 按优先级依次尝试：A+ → 普通生图 → 模特库
+            // 按优先级依次尝试：A+ → 普通生图 → 模特库 → AI 画布
             if (imageTaskService.refreshTaskByKieTaskId(taskId)) {
                 log.info("[Callback] handled by ImageTask: {}", taskId);
             } else if (modelLibraryService.refreshTaskByKieTaskId(taskId)) {
                 log.info("[Callback] handled by ModelLibrary: {}", taskId);
+            } else if (canvasTaskService.refreshTaskByCallback(payload)) {
+                log.info("[Callback] handled by AiCanvas: {}", taskId);
             } else {
                 log.warn("[Callback] taskId not found in any service: {}", taskId);
             }
@@ -222,6 +226,36 @@ public class AplusController {
             log.error("[Callback]处理失败: taskId={}, error={}", taskId, e.getMessage(), e);
         }
         return ApiResponse.ok("ok", null);
+    }
+
+    private String extractKieTaskId(Map<String, Object> payload) {
+        if (payload == null) return "";
+        String taskId = firstNonBlank(
+                textValue(payload.get("taskId")),
+                textValue(payload.get("task_id")),
+                textValue(payload.get("id"))
+        );
+        if (!taskId.isBlank()) return taskId;
+        Object data = payload.get("data");
+        if (data instanceof Map<?, ?> dataMap) {
+            return firstNonBlank(
+                    textValue(dataMap.get("taskId")),
+                    textValue(dataMap.get("task_id")),
+                    textValue(dataMap.get("id"))
+            );
+        }
+        return "";
+    }
+
+    private String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) return value.trim();
+        }
+        return "";
+    }
+
+    private String textValue(Object value) {
+        return value == null ? "" : String.valueOf(value);
     }
 
     @DeleteMapping("/projects/{id}")

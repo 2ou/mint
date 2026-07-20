@@ -15,9 +15,10 @@
         var userName = window.AppAuth.getUserName();
         var shopName = window.AppAuth.getShopName();
         var isAdmin = window.AppAuth.isAdmin();
+        var onAplus = isActive('aplus.html') || isActive('aplus-templates.html') || isActive('aplus-history.html');
         var onModelLib = isActive('model-library.html');
         var currentView = getViewParam();
-        var onAplus = isActive('aplus.html') || isActive('aplus-templates.html') || isActive('aplus-history.html');
+        var onAiCanvas = isActive('ai-canvas.html') || isActive('ai-canvas-templates.html');
 
         var sidebar = document.createElement('div');
         sidebar.className = 'sidebar-global';
@@ -35,7 +36,8 @@
             navLink('scene.html', 'SC', '批量场景', isActive('scene.html')),
             navLink('scene-generator.html', 'AI', 'AI 场景生成', isActive('scene-generator.html')),
             navLink('buyer-show.html', 'BS', 'AI 买家秀', isActive('buyer-show.html')),
-            isAdmin ? aplusMenu(onAplus) : '',
+            aplusMenu(onAplus),
+            aiCanvasMenu(onAiCanvas),
             navLink('video.html', 'VD', '视频生成', isActive('video.html')),
             modelLibraryMenu(onModelLib, currentView),
             navLink('template-manage.html', 'TP', '场景库', isActive('template-manage.html')),
@@ -100,9 +102,25 @@
             '    <span class="sidebar-arrow">v</span>',
             '  </div>',
             '  <div class="sidebar-submenu">',
-            subLink('aplus.html', 'N', '创建项目', isActive('aplus.html')),
-            subLink('aplus-templates.html', 'T', '模板库', isActive('aplus-templates.html')),
-            subLink('aplus-history.html', 'H', '历史记录', isActive('aplus-history.html')),
+            subLink('aplus.html', 'P', '套图项目', isActive('aplus.html')),
+            subLink('aplus-templates.html', 'T', '套图模板', isActive('aplus-templates.html')),
+            subLink('aplus-history.html', 'H', '生成记录', isActive('aplus-history.html')),
+            '  </div>',
+            '</div>'
+        ].join('');
+    }
+
+    function aiCanvasMenu(onAiCanvas) {
+        return [
+            '<div class="sidebar-parent' + (onAiCanvas ? ' expanded' : '') + '">',
+            '  <div class="sidebar-link sidebar-parent-toggle' + (onAiCanvas ? ' active-parent' : '') + '" onclick="this.parentElement.classList.toggle(\'expanded\')">',
+            '    <span class="sidebar-link-icon">CV</span>',
+            '    <span>AI 画布</span>',
+            '    <span class="sidebar-arrow">v</span>',
+            '  </div>',
+            '  <div class="sidebar-submenu">',
+            subLink('ai-canvas.html', 'C', '画布工作台', isActive('ai-canvas.html')),
+            subLink('ai-canvas-templates.html', 'T', '画布模板', isActive('ai-canvas-templates.html')),
             '  </div>',
             '</div>'
         ].join('');

@@ -2,6 +2,7 @@ package com.ai.controller;
 
 import com.ai.dto.ApiResponse;
 import com.ai.service.BuyerShowService;
+import com.ai.service.impl.KieGptModels;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
@@ -42,6 +43,7 @@ public class BuyerShowController {
         }
 
         String scenePreference = (String) request.getOrDefault("scenePreference", "");
+        String textModel = KieGptModels.normalizeTextModel((String) request.getOrDefault("textModel", KieGptModels.DEFAULT_TEXT_MODEL));
 
         int countPerImage = 1;
         if (request.containsKey("countPerImage")) {
@@ -49,8 +51,6 @@ public class BuyerShowController {
                 countPerImage = Integer.parseInt(request.get("countPerImage").toString());
             } catch (NumberFormatException ignored) {}
         }
-
-        String textModel = (String) request.getOrDefault("textModel", "gpt");
 
         String result = buyerShowService.generateBuyerShow(spu, clothingDesc, imageUrls, scenePreference, countPerImage, textModel);
         return ApiResponse.ok("生成成功", result);

@@ -43,8 +43,9 @@ public class TextModelServiceImpl implements TextModelService {
     public String generatePrompt(ModelGenerateRequest request, String modelType) {
         String systemPrompt = buildSystemPrompt(request);
         String userPrompt = buildUserPrompt(request);
+        String selectedModel = firstNonBlank(request.getTextModel(), modelType);
         try {
-            return callGpt(systemPrompt, userPrompt, request.getClothingImageUrl());
+            return callGpt(systemPrompt, userPrompt, request.getClothingImageUrl(), selectedModel);
         } catch (Exception e) {
             log.error("调用文本模型失败: {}", e.getMessage(), e);
             throw new BusinessException("生成提示词失败: " + e.getMessage());
@@ -54,7 +55,7 @@ public class TextModelServiceImpl implements TextModelService {
     @Override
     public String generateRawPrompt(String systemPrompt, String userPrompt, String modelType) {
         try {
-            return callGpt(systemPrompt, userPrompt);
+            return callGpt(systemPrompt, userPrompt, null, modelType);
         } catch (Exception e) {
             log.error("调用文本模型失败: {}", e.getMessage(), e);
             throw new BusinessException("生成提示词失败: " + e.getMessage());
@@ -271,12 +272,13 @@ public class TextModelServiceImpl implements TextModelService {
      * 调用 GPT API
      */
     private String callGpt(String systemPrompt, String userPrompt) throws IOException {
-        return callGpt(systemPrompt, userPrompt, null);
+        return callGpt(systemPrompt, userPrompt, null, KieGptModels.DEFAULT_TEXT_MODEL);
     }
 
-    private String callGpt(String systemPrompt, String userPrompt, String imageUrl) throws IOException {
+    private String callGpt(String systemPrompt, String userPrompt, String imageUrl, String textModel) throws IOException {
+        String model = KieGptModels.normalizeTextModel(textModel);
         ObjectNode rootNode = objectMapper.createObjectNode();
-        rootNode.put("model", KieGptModels.GPT_5_5);
+        rootNode.put("model", model);
         rootNode.put("stream", false);
 
         // reasoning
@@ -318,7 +320,7 @@ public class TextModelServiceImpl implements TextModelService {
         rootNode.set("input", input);
 
         String jsonBody = objectMapper.writeValueAsString(rootNode);
-        log.info("调用 GPT API，请求体大小: {} bytes", jsonBody.length());
+        log.info("调用 GPT API，model={}，请求体大小: {} bytes", model, jsonBody.length());
 
         RequestBody body = RequestBody.create(jsonBody, MediaType.parse("application/json"));
         Request request = new Request.Builder()
@@ -338,5 +340,14 @@ public class TextModelServiceImpl implements TextModelService {
 
             return GptResponseParser.parseTextOrThrow(objectMapper, responseBody, "无法解析 GPT 响应");
         }
+    }
+
+    private String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value.trim();
+            }
+        }
+        return KieGptModels.DEFAULT_TEXT_MODEL;
     }
 }

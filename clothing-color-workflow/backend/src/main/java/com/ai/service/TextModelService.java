@@ -10,7 +10,7 @@ public interface TextModelService {
     /**
      * 调用文本模型生成提示词
      * @param request 用户需求
-     * @param modelType 使用的模型：gpt
+     * @param modelType 使用的 GPT 5.6 文本模型
      * @return 生成的提示词
      */
     String generatePrompt(ModelGenerateRequest request, String modelType);

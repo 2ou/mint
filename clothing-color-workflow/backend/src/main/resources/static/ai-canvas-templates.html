@@ -1,0 +1,952 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <title>画布模板 - AI 时尚视觉平台</title>
+    <link rel="stylesheet" href="css/variables.css">
+    <link rel="stylesheet" href="css/shared.css">
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <script src="auth.js"></script>
+    <script src="js/sidebar.js"></script>
+    <style>
+        :root {
+            --page-bg: #f5f7fb;
+            --surface: #ffffff;
+            --surface-soft: #f9fafb;
+            --border: #e5e7eb;
+            --text: #111827;
+            --muted: #6b7280;
+            --muted-soft: #9ca3af;
+            --primary: #2563eb;
+            --primary-soft: #eff6ff;
+            --success: #059669;
+            --warning: #d97706;
+            --radius: 8px;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: var(--app-font-family);
+            background: var(--page-bg);
+            color: var(--text);
+            letter-spacing: 0;
+        }
+
+        .app-main {
+            min-height: 100vh;
+            padding: 0;
+            background:
+                radial-gradient(circle at top left, rgba(37, 99, 235, 0.07), transparent 32%),
+                linear-gradient(180deg, #f8fafc 0%, var(--page-bg) 100%);
+        }
+
+        .page-shell {
+            min-height: 100vh;
+            padding: 24px 28px 32px;
+        }
+
+        .page-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 18px;
+        }
+
+        .page-title {
+            margin: 0;
+            font-size: 22px;
+            line-height: 1.3;
+            font-weight: 750;
+            color: var(--text);
+        }
+
+        .page-subtitle {
+            margin: 6px 0 0;
+            color: var(--muted);
+            font-size: 13px;
+            line-height: 1.6;
+        }
+
+        .toolbar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+
+        .btn {
+            height: 34px;
+            padding: 0 12px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            background: var(--surface);
+            color: #374151;
+            font-size: 13px;
+            font-weight: 650;
+            cursor: pointer;
+            transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease;
+        }
+
+        .btn:hover {
+            border-color: #bfdbfe;
+            background: var(--primary-soft);
+            color: #1d4ed8;
+        }
+
+        .btn.primary {
+            background: var(--primary);
+            border-color: var(--primary);
+            color: #ffffff;
+        }
+
+        .btn.primary:hover {
+            background: #1d4ed8;
+            border-color: #1d4ed8;
+            color: #ffffff;
+        }
+
+        .btn.danger {
+            border-color: #fecaca;
+            background: #fef2f2;
+            color: #b91c1c;
+        }
+
+        .btn.danger:hover {
+            border-color: #fca5a5;
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .btn:disabled {
+            opacity: 0.55;
+            cursor: not-allowed;
+        }
+
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .summary-card {
+            min-width: 0;
+            padding: 14px 16px;
+            border: 1px solid rgba(226, 232, 240, 0.9);
+            border-radius: var(--radius);
+            background: rgba(255, 255, 255, 0.86);
+            box-shadow: 0 10px 26px rgba(15, 23, 42, 0.06);
+            backdrop-filter: blur(10px);
+        }
+
+        .summary-label {
+            color: var(--muted);
+            font-size: 12px;
+            line-height: 1.4;
+        }
+
+        .summary-value {
+            margin-top: 6px;
+            font-size: 24px;
+            line-height: 1;
+            font-weight: 750;
+            color: var(--text);
+        }
+
+        .summary-hint {
+            margin-top: 6px;
+            color: var(--muted-soft);
+            font-size: 12px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .content-grid {
+            display: grid;
+            grid-template-columns: minmax(340px, 440px) minmax(0, 1fr);
+            gap: 18px;
+            align-items: start;
+        }
+
+        .panel {
+            overflow: hidden;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            background: var(--surface);
+            box-shadow: 0 12px 30px rgba(15, 23, 42, 0.06);
+        }
+
+        .panel-header {
+            min-height: 54px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .panel-title {
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--text);
+        }
+
+        .panel-body {
+            padding: 16px;
+        }
+
+        .search-bar {
+            padding: 12px;
+            border-bottom: 1px solid var(--border);
+            background: linear-gradient(180deg, #ffffff 0%, var(--surface-soft) 100%);
+        }
+
+        .search-input {
+            width: 100%;
+            height: 34px;
+            padding: 0 12px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            background: #ffffff;
+            color: var(--text);
+            outline: none;
+            font-size: 13px;
+        }
+
+        .search-input:focus {
+            border-color: #93c5fd;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+        }
+
+        .template-list {
+            min-height: 360px;
+            max-height: calc(100vh - 290px);
+            overflow: auto;
+            padding: 10px;
+        }
+
+        .template-card {
+            width: 100%;
+            display: block;
+            text-align: left;
+            padding: 12px;
+            border: 1px solid transparent;
+            border-radius: var(--radius);
+            background: transparent;
+            color: var(--text);
+            cursor: pointer;
+            transition: transform 0.16s ease, background 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+        }
+
+        .template-card:hover {
+            transform: translateY(-1px);
+            border-color: var(--border);
+            background: var(--surface-soft);
+            box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
+        }
+
+        .template-card.active {
+            border-color: #bfdbfe;
+            background: var(--primary-soft);
+            box-shadow: inset 3px 0 0 var(--primary);
+        }
+
+        .template-card + .template-card {
+            margin-top: 8px;
+        }
+
+        .template-card-title {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+
+        .template-name {
+            min-width: 0;
+            color: var(--text);
+            font-size: 14px;
+            line-height: 1.35;
+            font-weight: 700;
+            word-break: break-word;
+        }
+
+        .template-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            color: var(--muted);
+            font-size: 12px;
+            line-height: 1.5;
+        }
+
+        .tag {
+            display: inline-flex;
+            align-items: center;
+            height: 22px;
+            padding: 0 8px;
+            border: 1px solid #dbeafe;
+            border-radius: 999px;
+            background: #eff6ff;
+            color: #1d4ed8;
+            font-size: 12px;
+            font-weight: 650;
+            white-space: nowrap;
+        }
+
+        .tag.success {
+            border-color: #bbf7d0;
+            background: #f0fdf4;
+            color: var(--success);
+        }
+
+        .tag.warning {
+            border-color: #fde68a;
+            background: #fffbeb;
+            color: var(--warning);
+        }
+
+        .detail-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 16px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .detail-name {
+            margin: 0;
+            color: var(--text);
+            font-size: 18px;
+            line-height: 1.35;
+            font-weight: 750;
+            word-break: break-word;
+        }
+
+        .detail-actions {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+
+        .section {
+            padding: 16px 0;
+            border-top: 1px solid var(--border);
+        }
+
+        .section:first-child {
+            border-top: 0;
+        }
+
+        .section-title {
+            margin: 0 0 12px;
+            color: var(--text);
+            font-size: 13px;
+            line-height: 1.4;
+            font-weight: 700;
+        }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 10px;
+        }
+
+        .info-item {
+            min-width: 0;
+            padding: 10px 12px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            background: var(--surface-soft);
+        }
+
+        .info-label {
+            margin-bottom: 4px;
+            color: var(--muted);
+            font-size: 12px;
+            line-height: 1.4;
+        }
+
+        .info-value {
+            color: var(--text);
+            font-size: 13px;
+            line-height: 1.45;
+            word-break: break-word;
+        }
+
+        .snapshot-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 8px;
+        }
+
+        .snapshot-key {
+            min-width: 0;
+            padding: 9px 10px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            background: #ffffff;
+            color: #4b5563;
+            font-size: 12px;
+            line-height: 1.45;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .text-block {
+            padding: 12px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            background: var(--surface-soft);
+            color: #374151;
+            font-size: 13px;
+            line-height: 1.7;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .empty-state {
+            min-height: 280px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 30px 16px;
+            text-align: center;
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .empty-icon {
+            width: 42px;
+            height: 42px;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid var(--border);
+            border-radius: 50%;
+            background: var(--surface-soft);
+            color: var(--muted-soft);
+            font-weight: 750;
+        }
+
+        .status-line {
+            margin-top: 10px;
+            color: var(--muted);
+            font-size: 12px;
+            line-height: 1.5;
+        }
+
+        .toast {
+            position: fixed;
+            right: 24px;
+            bottom: 24px;
+            z-index: 2000;
+            max-width: 360px;
+            padding: 10px 12px;
+            border: 1px solid #bfdbfe;
+            border-radius: var(--radius);
+            background: #eff6ff;
+            color: #1e40af;
+            font-size: 13px;
+            line-height: 1.5;
+            box-shadow: 0 16px 40px rgba(15, 23, 42, 0.18);
+        }
+
+        .toast[hidden] {
+            display: none;
+        }
+
+        .toast.error {
+            border-color: #fecaca;
+            background: #fef2f2;
+            color: #b91c1c;
+        }
+
+        @media (max-width: 1100px) {
+            .content-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .summary-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .template-list {
+                max-height: 440px;
+            }
+
+            .info-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+
+        @media (max-width: 680px) {
+            .page-shell {
+                padding: 18px 14px 24px;
+            }
+
+            .page-header,
+            .detail-header {
+                flex-direction: column;
+            }
+
+            .toolbar,
+            .detail-actions {
+                width: 100%;
+                justify-content: flex-start;
+            }
+
+            .summary-grid,
+            .info-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .btn {
+                max-width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+<div class="app-layout">
+    <main class="app-main">
+        <div class="page-shell">
+            <header class="page-header">
+                <div>
+                    <h1 class="page-title">画布模板</h1>
+                    <p class="page-subtitle">管理从 AI 画布工作台保存出来的模板，支持分类、标签、复用和复制为新画布。</p>
+                </div>
+                <div class="toolbar">
+                    <button id="refreshBtn" class="btn" type="button">刷新</button>
+                    <button class="btn primary" type="button" onclick="window.location.href='ai-canvas.html'">进入画布工作台</button>
+                </div>
+            </header>
+
+            <section class="summary-grid">
+                <div class="summary-card">
+                    <div class="summary-label">模板总数</div>
+                    <div id="templateTotal" class="summary-value">0</div>
+                    <div class="summary-hint">来自当前账号模板库</div>
+                </div>
+                <div class="summary-card">
+                    <div class="summary-label">当前筛选</div>
+                    <div id="filteredTotal" class="summary-value">0</div>
+                    <div class="summary-hint">列表内可见模板</div>
+                </div>
+                <div class="summary-card">
+                    <div class="summary-label">最近更新</div>
+                    <div id="latestDate" class="summary-value">-</div>
+                    <div id="latestName" class="summary-hint">暂无记录</div>
+                </div>
+                <div class="summary-card">
+                    <div class="summary-label">模板来源</div>
+                    <div class="summary-value">画布</div>
+                    <div class="summary-hint">独立模板表，可复用</div>
+                </div>
+            </section>
+
+            <div class="content-grid">
+                <section class="panel">
+                    <div class="panel-header">
+                        <div class="panel-title">模板列表</div>
+                        <span id="loadingTag" class="tag">读取中</span>
+                    </div>
+                    <div class="search-bar">
+                        <input id="searchInput" class="search-input" type="search" placeholder="搜索模板名称">
+                    </div>
+                    <div id="templateList" class="template-list"></div>
+                </section>
+
+                <section class="panel">
+                    <div id="detailPanel" class="panel-body">
+                        <div class="empty-state">
+                            <div class="empty-icon">T</div>
+                            <div>选择一个模板查看详情</div>
+                            <div class="status-line">在画布工作台点击「保存为模板」后会出现在这里。</div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </div>
+    </main>
+</div>
+
+<div id="toast" class="toast" hidden></div>
+
+<script>
+    (function () {
+        'use strict';
+
+        var CURRENT_PROJECT_KEY = 'ai_canvas_project_id';
+        var state = {
+            loading: false,
+            templates: [],
+            filtered: [],
+            selectedId: null
+        };
+
+        var els = {
+            refreshBtn: document.getElementById('refreshBtn'),
+            searchInput: document.getElementById('searchInput'),
+            templateList: document.getElementById('templateList'),
+            detailPanel: document.getElementById('detailPanel'),
+            templateTotal: document.getElementById('templateTotal'),
+            filteredTotal: document.getElementById('filteredTotal'),
+            latestDate: document.getElementById('latestDate'),
+            latestName: document.getElementById('latestName'),
+            loadingTag: document.getElementById('loadingTag'),
+            toast: document.getElementById('toast')
+        };
+
+        function apiData(response) {
+            var body = response && response.data;
+            if (body && body.success === false) {
+                throw new Error(body.message || '请求失败');
+            }
+            return body && Object.prototype.hasOwnProperty.call(body, 'data') ? body.data : body;
+        }
+
+        function loadTemplates() {
+            state.loading = true;
+            renderLoading();
+            axios.get('/api/canvas/templates')
+                .then(function (response) {
+                    state.templates = apiData(response) || [];
+                    state.templates.sort(function (a, b) {
+                        return new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime();
+                    });
+                    applyFilter();
+                    if (!state.selectedId && state.filtered.length > 0) {
+                        state.selectedId = state.filtered[0].id;
+                    }
+                    renderAll();
+                })
+                .catch(function (error) {
+                    state.templates = [];
+                    state.filtered = [];
+                    renderAll();
+                    showToast('读取画布模板失败：' + errorMessage(error), true);
+                })
+                .finally(function () {
+                    state.loading = false;
+                    renderLoading();
+                });
+        }
+
+        function applyFilter() {
+            var keyword = (els.searchInput.value || '').trim().toLowerCase();
+            state.filtered = state.templates.filter(function (item) {
+                if (!keyword) return true;
+                return [
+                    item.templateName,
+                    item.category,
+                    item.description,
+                    (item.tags || []).join(',')
+                ].join(' ').toLowerCase().indexOf(keyword) !== -1;
+            });
+            if (state.selectedId && !state.filtered.some(function (item) { return String(item.id) === String(state.selectedId); })) {
+                state.selectedId = state.filtered.length > 0 ? state.filtered[0].id : null;
+            }
+        }
+
+        function renderAll() {
+            renderSummary();
+            renderList();
+            renderDetail();
+        }
+
+        function renderLoading() {
+            els.loadingTag.textContent = state.loading ? '读取中' : (state.filtered.length + ' 个');
+            els.loadingTag.className = state.loading ? 'tag warning' : 'tag';
+            if (els.refreshBtn) els.refreshBtn.disabled = state.loading;
+        }
+
+        function renderSummary() {
+            els.templateTotal.textContent = state.templates.length;
+            els.filteredTotal.textContent = state.filtered.length;
+            var latest = state.templates[0];
+            els.latestDate.textContent = latest ? compactDate(latest.updatedAt) : '-';
+            els.latestName.textContent = latest ? (latest.templateName || '画布模板') : '暂无模板';
+        }
+
+        function renderList() {
+            if (state.loading && state.templates.length === 0) {
+                els.templateList.innerHTML = emptyHtml('读取模板中', '正在同步当前账号的画布模板。');
+                return;
+            }
+            if (state.filtered.length === 0) {
+                els.templateList.innerHTML = emptyHtml('暂无画布模板', '先在画布工作台保存为模板，再回到这里复用。');
+                return;
+            }
+            els.templateList.innerHTML = state.filtered.map(function (item) {
+                var active = String(item.id) === String(state.selectedId);
+                var tags = Array.isArray(item.tags) ? item.tags.slice(0, 3) : [];
+                return [
+                    '<button type="button" class="template-card' + (active ? ' active' : '') + '" data-id="' + item.id + '">',
+                    '  <div class="template-card-title">',
+                    '    <div class="template-name">' + escapeHtml(item.templateName || '画布模板') + '</div>',
+                    '    <span class="tag success">' + escapeHtml(item.category || '未分类') + '</span>',
+                    '  </div>',
+                    '  <div class="template-meta">',
+                    '    <span>更新：' + escapeHtml(formatDate(item.updatedAt)) + '</span>',
+                    '    <span>创建：' + escapeHtml(formatDate(item.createdAt)) + '</span>',
+                    '  </div>',
+                    tags.length ? '<div class="template-meta" style="margin-top: 8px;">' + tags.map(function (tag) {
+                        return '<span class="tag">' + escapeHtml(tag) + '</span>';
+                    }).join('') + '</div>' : '',
+                    '</button>'
+                ].join('');
+            }).join('');
+        }
+
+        function renderDetail() {
+            var selected = state.filtered.find(function (item) {
+                return String(item.id) === String(state.selectedId);
+            });
+            if (!selected) {
+                els.detailPanel.innerHTML = emptyHtml('选择一个模板查看详情', '使用模板会生成一张新画布，不会覆盖原模板。');
+                return;
+            }
+            var meta = selected.meta || {};
+            var source = meta.source === 'canvas-template' ? '工作台保存' : '模板库';
+            var tags = Array.isArray(selected.tags) ? selected.tags : [];
+            els.detailPanel.innerHTML = [
+                '<div class="detail-header">',
+                '  <div>',
+                '    <h2 class="detail-name">' + escapeHtml(selected.templateName || '画布模板') + '</h2>',
+                '    <div class="template-meta" style="margin-top: 8px;">',
+                '      <span class="tag success">' + escapeHtml(selected.category || '未分类') + '</span>',
+                '      <span class="tag">' + escapeHtml(source) + '</span>',
+                '    </div>',
+                '  </div>',
+                '  <div class="detail-actions">',
+                '    <button class="btn primary" type="button" data-action="use" data-id="' + selected.id + '">使用模板</button>',
+                '    <button class="btn" type="button" data-action="copy" data-id="' + selected.id + '">复制为新画布</button>',
+                '    <button class="btn danger" type="button" data-action="delete" data-id="' + selected.id + '">删除</button>',
+                '  </div>',
+                '</div>',
+                '<div class="section">',
+                '  <h3 class="section-title">基础信息</h3>',
+                '  <div class="info-grid">',
+                infoItem('模板 ID', selected.id),
+                infoItem('分类', selected.category || '未分类'),
+                infoItem('标签', tags.length ? tags.join('，') : '-'),
+                infoItem('创建时间', formatDate(selected.createdAt)),
+                infoItem('更新时间', formatDate(selected.updatedAt)),
+                infoItem('保存来源', source),
+                '  </div>',
+                '</div>',
+                selected.description ? [
+                    '<div class="section">',
+                    '  <h3 class="section-title">备注</h3>',
+                    '  <div class="text-block">' + escapeHtml(selected.description) + '</div>',
+                    '</div>'
+                ].join('') : '',
+                selected.coverImageUrl ? [
+                    '<div class="section">',
+                    '  <h3 class="section-title">封面图</h3>',
+                    '  <div class="snapshot-list"><div class="snapshot-key">' + escapeHtml(selected.coverImageUrl) + '</div></div>',
+                    '</div>'
+                ].join('') : '',
+                '<div class="section">',
+                '  <h3 class="section-title">快照摘要</h3>',
+                '  <div id="snapshotSummary" class="snapshot-list">',
+                '    <div class="snapshot-key">使用模板时会读取完整画布快照</div>',
+                '  </div>',
+                '</div>'
+            ].join('');
+        }
+
+        function useTemplate(id) {
+            loadTemplate(id).then(function (template) {
+                if (!template || !template.snapshot) return;
+                restoreSnapshot(template.snapshot);
+                localStorage.removeItem(CURRENT_PROJECT_KEY);
+                localStorage.setItem('tapnow_project_name', template.templateName || 'AI 画布');
+                window.location.href = 'ai-canvas.html';
+            }).catch(function (error) {
+                showToast('使用模板失败：' + errorMessage(error), true);
+            });
+        }
+
+        function copyTemplate(id) {
+            loadTemplate(id).then(function (template) {
+                if (!template || !template.snapshot) return;
+                restoreSnapshot(template.snapshot);
+                localStorage.removeItem(CURRENT_PROJECT_KEY);
+                localStorage.setItem('tapnow_project_name', buildCopyName(template.templateName));
+                window.location.href = 'ai-canvas.html';
+            }).catch(function (error) {
+                showToast('复制模板失败：' + errorMessage(error), true);
+            });
+        }
+
+        function deleteTemplate(id) {
+            var selected = state.templates.find(function (item) { return String(item.id) === String(id); });
+            var name = selected ? selected.templateName : '该模板';
+            if (!window.confirm('确定删除「' + name + '」吗？')) return;
+            axios.delete('/api/canvas/templates/' + encodeURIComponent(id))
+                .then(function (response) {
+                    apiData(response);
+                    showToast('模板已删除', false);
+                    state.selectedId = null;
+                    loadTemplates();
+                })
+                .catch(function (error) {
+                    showToast('删除模板失败：' + errorMessage(error), true);
+                });
+        }
+
+        function loadTemplate(id) {
+            showToast('正在读取模板快照...', false);
+            return axios.get('/api/canvas/templates/' + encodeURIComponent(id)).then(function (response) {
+                var template = apiData(response);
+                renderSnapshotSummary(template && template.snapshot);
+                return template;
+            });
+        }
+
+        function renderSnapshotSummary(snapshot) {
+            var wrap = document.getElementById('snapshotSummary');
+            if (!wrap) return;
+            var keys = Object.keys(snapshot || {}).filter(function (key) {
+                return key.indexOf('tapnow_') === 0;
+            }).slice(0, 18);
+            if (keys.length === 0) {
+                wrap.innerHTML = '<div class="snapshot-key">该模板暂无可读取的画布状态</div>';
+                return;
+            }
+            wrap.innerHTML = keys.map(function (key) {
+                return '<div class="snapshot-key" title="' + escapeHtml(key) + '">' + escapeHtml(key) + '</div>';
+            }).join('');
+        }
+
+        function restoreSnapshot(snapshot) {
+            var keys = [];
+            for (var i = 0; i < localStorage.length; i += 1) {
+                var key = localStorage.key(i);
+                if (key && key.indexOf('tapnow_') === 0) keys.push(key);
+            }
+            keys.forEach(function (key) {
+                localStorage.removeItem(key);
+            });
+            Object.keys(snapshot || {}).forEach(function (key) {
+                if (key.indexOf('tapnow_') === 0) {
+                    localStorage.setItem(key, snapshot[key] || '');
+                }
+            });
+        }
+
+        function buildCopyName(name) {
+            var base = name || 'AI 画布模板';
+            return base + ' 副本 ' + new Date().toLocaleString('zh-CN');
+        }
+
+        function infoItem(label, value) {
+            return [
+                '<div class="info-item">',
+                '  <div class="info-label">' + escapeHtml(label) + '</div>',
+                '  <div class="info-value">' + escapeHtml(value == null || value === '' ? '-' : value) + '</div>',
+                '</div>'
+            ].join('');
+        }
+
+        function emptyHtml(title, hint) {
+            return [
+                '<div class="empty-state">',
+                '  <div class="empty-icon">T</div>',
+                '  <div>' + escapeHtml(title) + '</div>',
+                '  <div class="status-line">' + escapeHtml(hint || '') + '</div>',
+                '</div>'
+            ].join('');
+        }
+
+        function formatDate(value) {
+            if (!value) return '-';
+            try {
+                return new Date(value).toLocaleString('zh-CN');
+            } catch (error) {
+                return value;
+            }
+        }
+
+        function compactDate(value) {
+            if (!value) return '-';
+            try {
+                var date = new Date(value);
+                return (date.getMonth() + 1) + '/' + date.getDate();
+            } catch (error) {
+                return '-';
+            }
+        }
+
+        function showToast(text, isError) {
+            if (!els.toast) return;
+            els.toast.textContent = text;
+            els.toast.className = 'toast' + (isError ? ' error' : '');
+            els.toast.hidden = false;
+            clearTimeout(showToast.timer);
+            showToast.timer = setTimeout(function () {
+                els.toast.hidden = true;
+            }, isError ? 4200 : 1800);
+        }
+
+        function errorMessage(error) {
+            return (error && error.response && error.response.data && error.response.data.message)
+                || (error && error.message)
+                || '未知错误';
+        }
+
+        function escapeHtml(value) {
+            return String(value || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
+        els.refreshBtn.addEventListener('click', loadTemplates);
+        els.searchInput.addEventListener('input', function () {
+            applyFilter();
+            renderAll();
+            renderLoading();
+        });
+        els.templateList.addEventListener('click', function (event) {
+            var card = event.target.closest('.template-card');
+            if (!card) return;
+            state.selectedId = card.getAttribute('data-id');
+            renderAll();
+        });
+        els.detailPanel.addEventListener('click', function (event) {
+            var target = event.target;
+            if (!target || !target.dataset) return;
+            var action = target.dataset.action;
+            var id = target.dataset.id;
+            if (action === 'use') useTemplate(id);
+            if (action === 'copy') copyTemplate(id);
+            if (action === 'delete') deleteTemplate(id);
+        });
+
+        loadTemplates();
+    })();
+</script>
+</body>
+</html>

@@ -66,7 +66,7 @@ public class ModelLibraryServiceImpl implements ModelLibraryService {
 
     @Override
     public String generatePrompt(ModelGenerateRequest request) {
-        return textModelService.generatePrompt(request, "gpt");
+        return textModelService.generatePrompt(request, KieGptModels.normalizeTextModel(request.getTextModel()));
     }
 
     @Override

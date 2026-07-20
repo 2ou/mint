@@ -76,7 +76,7 @@ public class ClothingImageAnalysisServiceImpl implements ClothingImageAnalysisSe
 
     private String callGptVision(String imageUrl) throws IOException {
         ObjectNode rootNode = objectMapper.createObjectNode();
-        rootNode.put("model", KieGptModels.GPT_5_5);
+        rootNode.put("model", KieGptModels.DEFAULT_TEXT_MODEL);
         rootNode.put("stream", false);
 
         ObjectNode reasoning = objectMapper.createObjectNode();

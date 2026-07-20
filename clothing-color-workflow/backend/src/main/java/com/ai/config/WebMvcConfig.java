@@ -21,6 +21,8 @@ public class WebMvcConfig implements WebMvcConfigurer {
         registry.addInterceptor(tokenInterceptor)
                 .addPathPatterns("/api/**") // 🔴 拦截所有以 /api 开头的请求
                 .excludePathPatterns("/api/auth/login") // 排除登录接口
+                .excludePathPatterns("/api/aplus/callback") // KIE 任务回调不带系统登录态
+                .excludePathPatterns("/api/canvas/callback") // AI 画布独立回调入口
                 .excludePathPatterns("/api/tasks/proxy-download"); // 排除下载接口
     }
 

@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 画布</title>
+    <link rel="stylesheet" href="css/variables.css">
+    <link rel="stylesheet" href="css/shared.css">
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <script src="auth.js"></script>
+    <script src="js/sidebar.js"></script>
+    <script src="js/ai-canvas-bridge.js"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #09090b;
+        }
+
+        .canvas-main {
+            height: 100vh;
+            padding: 0;
+            background: #09090b;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .canvas-toolbar {
+            height: 54px;
+            flex: 0 0 54px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 14px;
+            padding: 0 16px;
+            background: #111827;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            color: #f8fafc;
+        }
+
+        .canvas-title {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            min-width: 0;
+            font-size: 15px;
+            font-weight: 700;
+        }
+
+        .canvas-badge {
+            width: 28px;
+            height: 28px;
+            border-radius: 8px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(37, 99, 235, 0.24);
+            border: 1px solid rgba(147, 197, 253, 0.28);
+            color: #bfdbfe;
+            font-size: 11px;
+            font-weight: 800;
+            flex-shrink: 0;
+        }
+
+        .canvas-status {
+            color: rgba(226, 232, 240, 0.62);
+            font-size: 12px;
+            font-weight: 500;
+            white-space: nowrap;
+        }
+
+        .canvas-status[data-type="ok"] {
+            color: #86efac;
+        }
+
+        .canvas-status[data-type="error"] {
+            color: #fca5a5;
+        }
+
+        .canvas-status[data-type="saving"] {
+            color: #93c5fd;
+        }
+
+        .canvas-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+
+        .canvas-action {
+            height: 32px;
+            padding: 0 12px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            background: rgba(255, 255, 255, 0.06);
+            color: rgba(248, 250, 252, 0.88);
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .canvas-action:hover {
+            background: rgba(37, 99, 235, 0.22);
+            border-color: rgba(147, 197, 253, 0.28);
+            color: #ffffff;
+        }
+
+        .canvas-action.primary {
+            background: #2563eb;
+            border-color: #3b82f6;
+            color: #ffffff;
+        }
+
+        .canvas-action.primary:hover {
+            background: #1d4ed8;
+        }
+
+        .canvas-frame-shell {
+            flex: 1;
+            min-height: 0;
+            background: #09090b;
+        }
+
+        .canvas-frame {
+            width: 100%;
+            height: 100%;
+            display: block;
+            border: 0;
+            background: #09090b;
+        }
+
+        .canvas-modal {
+            position: fixed;
+            inset: 0;
+            z-index: 2000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            background: rgba(2, 6, 23, 0.68);
+            backdrop-filter: blur(8px);
+        }
+
+        .canvas-modal[hidden] {
+            display: none;
+        }
+
+        .canvas-modal-panel {
+            width: min(760px, calc(100vw - 32px));
+            max-height: min(720px, calc(100vh - 48px));
+            display: flex;
+            flex-direction: column;
+            background: #111827;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 8px;
+            box-shadow: 0 24px 80px rgba(0, 0, 0, 0.42);
+            color: #f8fafc;
+            overflow: hidden;
+        }
+
+        .canvas-modal-header {
+            height: 52px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 0 16px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            font-size: 15px;
+            font-weight: 700;
+        }
+
+        .canvas-modal-close {
+            width: 30px;
+            height: 30px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: rgba(255, 255, 255, 0.06);
+            color: #e5e7eb;
+            cursor: pointer;
+            font-size: 18px;
+            line-height: 1;
+        }
+
+        .canvas-record-list {
+            padding: 12px;
+            overflow: auto;
+        }
+
+        .canvas-record-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            background: rgba(255, 255, 255, 0.04);
+        }
+
+        .canvas-record-item + .canvas-record-item {
+            margin-top: 10px;
+        }
+
+        .canvas-record-info {
+            min-width: 0;
+        }
+
+        .canvas-record-title {
+            font-size: 14px;
+            font-weight: 700;
+            color: #f8fafc;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .canvas-record-meta {
+            margin-top: 4px;
+            font-size: 12px;
+            color: rgba(226, 232, 240, 0.58);
+        }
+
+        .canvas-record-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+
+        .canvas-record-actions button {
+            height: 30px;
+            padding: 0 10px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            background: rgba(255, 255, 255, 0.06);
+            color: #e5e7eb;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .canvas-record-actions button:hover {
+            background: rgba(37, 99, 235, 0.22);
+        }
+
+        .canvas-record-empty {
+            padding: 40px 12px;
+            text-align: center;
+            color: rgba(226, 232, 240, 0.62);
+            font-size: 13px;
+        }
+
+        .canvas-modal-body {
+            padding: 16px;
+            overflow: auto;
+        }
+
+        .canvas-form-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
+        }
+
+        .canvas-form-field {
+            min-width: 0;
+        }
+
+        .canvas-form-field.full {
+            grid-column: 1 / -1;
+        }
+
+        .canvas-form-label {
+            display: block;
+            margin-bottom: 6px;
+            color: rgba(226, 232, 240, 0.7);
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .canvas-input,
+        .canvas-textarea {
+            width: 100%;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.06);
+            color: #f8fafc;
+            outline: none;
+            font-size: 13px;
+        }
+
+        .canvas-input {
+            height: 34px;
+            padding: 0 10px;
+        }
+
+        .canvas-textarea {
+            min-height: 84px;
+            padding: 9px 10px;
+            resize: vertical;
+        }
+
+        .canvas-input:focus,
+        .canvas-textarea:focus {
+            border-color: rgba(147, 197, 253, 0.55);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.18);
+        }
+
+        .canvas-modal-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+            padding: 12px 16px 16px;
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        @media (max-width: 900px) {
+            .canvas-main {
+                margin-left: 0;
+            }
+
+            .canvas-toolbar {
+                height: auto;
+                min-height: 54px;
+                flex-wrap: wrap;
+                padding: 10px 12px;
+            }
+
+            .canvas-actions {
+                width: 100%;
+                overflow-x: auto;
+                padding-bottom: 2px;
+            }
+
+            .canvas-form-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+<div class="app-layout">
+    <main class="app-main canvas-main">
+        <div class="canvas-toolbar">
+            <div class="canvas-title">
+                <span class="canvas-badge">AI</span>
+                <span>AI 画布</span>
+                <span id="canvasSaveStatus" class="canvas-status">初始化中...</span>
+            </div>
+            <div class="canvas-actions">
+                <button id="canvasSaveBtn" class="canvas-action primary" type="button">保存</button>
+                <button id="canvasSaveTemplateBtn" class="canvas-action" type="button">保存为模板</button>
+                <button id="canvasRecordsBtn" class="canvas-action" type="button">保存记录</button>
+                <button id="canvasNewBtn" class="canvas-action" type="button">新建</button>
+                <button class="canvas-action" type="button" onclick="reloadCanvas()">刷新</button>
+                <button class="canvas-action" type="button" onclick="openCanvasWindow()">新窗口打开</button>
+            </div>
+        </div>
+        <div class="canvas-frame-shell">
+            <iframe id="canvasFrame" class="canvas-frame" data-src="ai-canvas/index.html" title="AI 画布"></iframe>
+        </div>
+    </main>
+</div>
+
+<div id="canvasRecordsModal" class="canvas-modal" hidden>
+    <div class="canvas-modal-panel">
+        <div class="canvas-modal-header">
+            <span>保存记录</span>
+            <button id="canvasRecordsCloseBtn" class="canvas-modal-close" type="button" aria-label="关闭">×</button>
+        </div>
+        <div id="canvasRecordsList" class="canvas-record-list"></div>
+    </div>
+</div>
+
+<div id="canvasTemplateModal" class="canvas-modal" hidden>
+    <div class="canvas-modal-panel">
+        <div class="canvas-modal-header">
+            <span>保存为画布模板</span>
+            <button id="canvasTemplateCloseBtn" class="canvas-modal-close" type="button" aria-label="关闭">×</button>
+        </div>
+        <div class="canvas-modal-body">
+            <div class="canvas-form-grid">
+                <label class="canvas-form-field">
+                    <span class="canvas-form-label">模板名称</span>
+                    <input id="canvasTemplateName" class="canvas-input" type="text" maxlength="200" placeholder="例如：服装海报模板">
+                </label>
+                <label class="canvas-form-field">
+                    <span class="canvas-form-label">分类</span>
+                    <input id="canvasTemplateCategory" class="canvas-input" type="text" maxlength="80" placeholder="海报 / 商品图 / 视频脚本">
+                </label>
+                <label class="canvas-form-field full">
+                    <span class="canvas-form-label">标签</span>
+                    <input id="canvasTemplateTags" class="canvas-input" type="text" placeholder="用逗号分隔，例如：女装,夏季,促销">
+                </label>
+                <label class="canvas-form-field full">
+                    <span class="canvas-form-label">封面图 URL</span>
+                    <input id="canvasTemplateCover" class="canvas-input" type="text" placeholder="可选，后续用于模板卡片封面">
+                </label>
+                <label class="canvas-form-field full">
+                    <span class="canvas-form-label">备注</span>
+                    <textarea id="canvasTemplateDescription" class="canvas-textarea" maxlength="1000" placeholder="可选，写清这个模板适合什么场景"></textarea>
+                </label>
+            </div>
+        </div>
+        <div class="canvas-modal-footer">
+            <button id="canvasTemplateCancelBtn" class="canvas-action" type="button">取消</button>
+            <button id="canvasTemplateSaveBtn" class="canvas-action primary" type="button">保存模板</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    function reloadCanvas() {
+        if (window.AiCanvasBridge) {
+            window.AiCanvasBridge.reload();
+        }
+    }
+
+    function openCanvasWindow() {
+        window.open('ai-canvas.html?standalone=1', '_blank', 'noopener');
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        window.AiCanvasBridge.init({ frameId: 'canvasFrame' });
+    });
+</script>
+</body>
+</html>

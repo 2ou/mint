@@ -258,7 +258,11 @@
                                 </el-col>
                                 <el-col :span="12">
                                     <el-form-item label="文本模型">
-                                        <el-input model-value="GPT（视觉识别 + 提示词）" size="small" disabled/>
+                                        <el-select v-model="textModel" size="small" style="width: 100%;">
+                                            <el-option label="GPT 5.6 Sol（高质量）" value="gpt-5.6-sol"></el-option>
+                                            <el-option label="GPT 5.6 Terra（均衡）" value="gpt-5.6-terra"></el-option>
+                                            <el-option label="GPT 5.6 Luna（快速）" value="gpt-5.6-luna"></el-option>
+                                        </el-select>
                                     </el-form-item>
                                 </el-col>
                             </el-row>
@@ -514,7 +518,7 @@
     createApp({
         setup() {
             const step = ref(1);
-            const textModel = ref('gpt');
+            const textModel = ref('gpt-5.6-terra');
             const genModel = ref('nano-banana-pro');
             const genResolution = ref('4K');
             const genAspectRatio = ref('3:4');

@@ -50,13 +50,13 @@ public class AplusCopyServiceImpl implements AplusCopyService {
     @Override
     @Transactional
     public void generateCopy(Long projectId) {
-        generateCopy(projectId, "gpt");
+        generateCopy(projectId, KieGptModels.DEFAULT_TEXT_MODEL);
     }
 
     @Override
     @Transactional
     public void generateCopy(Long projectId, String textModel) {
-        String normalizedTextModel = "gpt";
+        String normalizedTextModel = KieGptModels.normalizeTextModel(textModel);
         AplusProject project = projectRepository.findById(projectId)
                 .orElseThrow(() -> new RuntimeException("A+ 项目不存在: " + projectId));
 

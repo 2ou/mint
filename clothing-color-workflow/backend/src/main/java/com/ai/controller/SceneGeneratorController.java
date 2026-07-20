@@ -2,6 +2,7 @@ package com.ai.controller;
 
 import com.ai.dto.ApiResponse;
 import com.ai.service.SceneGeneratorService;
+import com.ai.service.impl.KieGptModels;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
@@ -32,7 +33,7 @@ public class SceneGeneratorController {
                 // 使用默认值
             }
         }
-        String textModel = (String) request.getOrDefault("textModel", "gpt");
+        String textModel = KieGptModels.normalizeTextModel((String) request.getOrDefault("textModel", KieGptModels.DEFAULT_TEXT_MODEL));
         String clothingImageUrl = (String) request.getOrDefault("clothingImageUrl", "");
         String result = sceneGeneratorService.recommendScenes(clothingDesc, count, textModel, clothingImageUrl);
         return ApiResponse.ok("推荐成功", result);
@@ -56,7 +57,7 @@ public class SceneGeneratorController {
                 // 使用默认值
             }
         }
-        String textModel = (String) request.getOrDefault("textModel", "gpt");
+        String textModel = KieGptModels.normalizeTextModel((String) request.getOrDefault("textModel", KieGptModels.DEFAULT_TEXT_MODEL));
         String clothingImageUrl = (String) request.getOrDefault("clothingImageUrl", "");
 
         String prompt = sceneGeneratorService.generatePrompt(sceneDesc, clothingDesc, count, textModel, clothingImageUrl);

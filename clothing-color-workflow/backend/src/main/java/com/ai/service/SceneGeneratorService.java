@@ -10,7 +10,7 @@ public interface SceneGeneratorService {
      * 根据服装描述，AI 推荐最适合的 N 个场景
      * @param clothingDesc 服装描述
      * @param count 推荐数量
-     * @param textModel 使用的文本模型: gpt
+     * @param textModel 使用的 GPT 5.6 文本模型
      * @return 推荐结果 JSON
      */
     String recommendScenes(String clothingDesc, int count, String textModel, String clothingImageUrl);
@@ -20,7 +20,7 @@ public interface SceneGeneratorService {
      * @param sceneDesc 场景描述（AI推荐场景的description或用户自定义输入）
      * @param clothingDesc 服装描述
      * @param count 生成提示词数量
-     * @param textModel 使用的文本模型: gpt
+     * @param textModel 使用的 GPT 5.6 文本模型
      * @return 生成的提示词 JSON
      */
     String generatePrompt(String sceneDesc, String clothingDesc, int count, String textModel, String clothingImageUrl);

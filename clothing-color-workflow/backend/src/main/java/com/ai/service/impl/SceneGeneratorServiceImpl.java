@@ -156,7 +156,7 @@ public class SceneGeneratorServiceImpl implements SceneGeneratorService {
         String userPrompt = buildRecommendUserPrompt(clothingDesc, count, clothingImageUrl);
 
         try {
-            return callGpt(systemPrompt, userPrompt, clothingImageUrl);
+            return callGpt(systemPrompt, userPrompt, clothingImageUrl, textModel);
         } catch (BusinessException e) {
             throw e;
         } catch (Exception e) {
@@ -179,7 +179,7 @@ public class SceneGeneratorServiceImpl implements SceneGeneratorService {
         String userPrompt = buildGenerateUserPrompt(sceneDesc, clothingDesc, count, clothingImageUrl);
 
         try {
-            return callGpt(systemPrompt, userPrompt, clothingImageUrl);
+            return callGpt(systemPrompt, userPrompt, clothingImageUrl, textModel);
         } catch (BusinessException e) {
             throw e;
         } catch (Exception e) {
@@ -466,10 +466,11 @@ public class SceneGeneratorServiceImpl implements SceneGeneratorService {
     /**
      * 调用 GPT API
      */
-    private String callGpt(String systemPrompt, String userPrompt, String clothingImageUrl) throws IOException {
+    private String callGpt(String systemPrompt, String userPrompt, String clothingImageUrl, String textModel) throws IOException {
         ObjectMapper om = objectMapper;
+        String model = KieGptModels.normalizeTextModel(textModel);
         ObjectNode rootNode = om.createObjectNode();
-        rootNode.put("model", KieGptModels.GPT_5_5);
+        rootNode.put("model", model);
         rootNode.put("stream", false);
 
         ObjectNode reasoning = om.createObjectNode();
@@ -507,7 +508,7 @@ public class SceneGeneratorServiceImpl implements SceneGeneratorService {
         rootNode.set("input", input);
 
         String jsonBody = om.writeValueAsString(rootNode);
-        log.info("调用 GPT API (场景生成)，请求体大小: {} bytes", jsonBody.length());
+        log.info("调用 GPT API (场景生成)，model={}，请求体大小: {} bytes", model, jsonBody.length());
 
         RequestBody body = RequestBody.create(jsonBody, MediaType.parse("application/json"));
         Request request = new Request.Builder()

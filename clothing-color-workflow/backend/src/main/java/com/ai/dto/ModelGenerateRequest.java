@@ -38,7 +38,7 @@ public class ModelGenerateRequest {
     private String styleTags;
 
     /**
-     * 使用的文本模型：gpt（可选，默认 gpt）
+     * 使用的 GPT 5.6 文本模型：gpt-5.6-sol / gpt-5.6-terra / gpt-5.6-luna
      */
     private String textModel;
 
