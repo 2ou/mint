@@ -776,11 +776,7 @@
 
         function useTemplate(id) {
             loadTemplate(id).then(function (template) {
-                if (!template || !template.snapshot) return;
-                restoreSnapshot(template.snapshot);
-                localStorage.removeItem(CURRENT_PROJECT_KEY);
-                localStorage.setItem('tapnow_project_name', template.templateName || 'AI 画布');
-                window.location.href = 'ai-canvas.html';
+                return createCanvasFromTemplate(template, false);
             }).catch(function (error) {
                 showToast('使用模板失败：' + errorMessage(error), true);
             });
@@ -788,14 +784,46 @@
 
         function copyTemplate(id) {
             loadTemplate(id).then(function (template) {
-                if (!template || !template.snapshot) return;
-                restoreSnapshot(template.snapshot);
-                localStorage.removeItem(CURRENT_PROJECT_KEY);
-                localStorage.setItem('tapnow_project_name', buildCopyName(template.templateName));
-                window.location.href = 'ai-canvas.html';
+                return createCanvasFromTemplate(template, true);
             }).catch(function (error) {
                 showToast('复制模板失败：' + errorMessage(error), true);
             });
+        }
+
+        function createCanvasFromTemplate(template, asCopy) {
+            if (!template || !template.snapshot) {
+                showToast('该模板没有可复用的画布快照', true);
+                return Promise.resolve();
+            }
+            var canvas = readInfiniteCanvasSnapshot(template.snapshot);
+            if (!canvas) {
+                showToast('该模板不是 Infinite-Canvas 模板，无法直接复用', true);
+                return Promise.resolve();
+            }
+            delete canvas.id;
+            delete canvas.created_at;
+            delete canvas.updated_at;
+            delete canvas.deleted_at;
+            canvas.deleted = false;
+            canvas.project = canvas.project || 'default';
+            canvas.title = asCopy ? buildCopyName(template.templateName) : (template.templateName || canvas.title || 'AI 画布');
+            showToast('正在创建新画布...', false);
+            return axios.post('/api/canvases', canvas).then(function (response) {
+                var created = (response.data && response.data.canvas) || {};
+                var page = created.kind === 'smart' ? '/infinite-canvas/smart-canvas.html' : '/infinite-canvas/canvas.html';
+                window.location.href = page + '?id=' + encodeURIComponent(created.id) + '&project=' + encodeURIComponent(created.project || 'default') + '&v=ai-project-20260722';
+            });
+        }
+
+        function readInfiniteCanvasSnapshot(snapshot) {
+            var raw = snapshot && (snapshot.infinite_canvas || snapshot.canvas || snapshot.infiniteCanvas);
+            if (!raw) return null;
+            if (typeof raw === 'object') return JSON.parse(JSON.stringify(raw));
+            try {
+                return JSON.parse(raw);
+            } catch (error) {
+                return null;
+            }
         }
 
         function deleteTemplate(id) {
@@ -827,7 +855,7 @@
             var wrap = document.getElementById('snapshotSummary');
             if (!wrap) return;
             var keys = Object.keys(snapshot || {}).filter(function (key) {
-                return key.indexOf('tapnow_') === 0;
+                return key.indexOf('infinite') === 0 || key === 'canvas';
             }).slice(0, 18);
             if (keys.length === 0) {
                 wrap.innerHTML = '<div class="snapshot-key">该模板暂无可读取的画布状态</div>';
@@ -839,19 +867,7 @@
         }
 
         function restoreSnapshot(snapshot) {
-            var keys = [];
-            for (var i = 0; i < localStorage.length; i += 1) {
-                var key = localStorage.key(i);
-                if (key && key.indexOf('tapnow_') === 0) keys.push(key);
-            }
-            keys.forEach(function (key) {
-                localStorage.removeItem(key);
-            });
-            Object.keys(snapshot || {}).forEach(function (key) {
-                if (key.indexOf('tapnow_') === 0) {
-                    localStorage.setItem(key, snapshot[key] || '');
-                }
-            });
+            return readInfiniteCanvasSnapshot(snapshot);
         }
 
         function buildCopyName(name) {

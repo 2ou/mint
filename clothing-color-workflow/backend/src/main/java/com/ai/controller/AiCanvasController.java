@@ -77,6 +77,7 @@ public class AiCanvasController {
         List<CanvasProjectResponse> responses = canvasProjectRepository
                 .findByShopNameAndOperatorOrderByUpdatedAtDesc(shopName, operator)
                 .stream()
+                .filter(project -> !isInfiniteCanvasInternalProject(project))
                 .map(project -> CanvasProjectResponse.from(project, objectMapper, false))
                 .toList();
         return ApiResponse.ok("ok", responses);
@@ -86,13 +87,16 @@ public class AiCanvasController {
     public ApiResponse<CanvasProjectResponse> latestProject(HttpServletRequest request) {
         String operator = currentOperator(request);
         String shopName = currentShopName(request);
-        return canvasProjectRepository.findTopByShopNameAndOperatorOrderByUpdatedAtDesc(shopName, operator)
+        return canvasProjectRepository.findByShopNameAndOperatorOrderByUpdatedAtDesc(shopName, operator)
+                .stream()
+                .filter(project -> !isInfiniteCanvasInternalProject(project))
+                .findFirst()
                 .map(project -> ApiResponse.ok("ok", CanvasProjectResponse.from(project, objectMapper, true)))
                 .orElseGet(() -> ApiResponse.ok("empty", null));
     }
 
     @GetMapping("/projects/{id}")
-    public ApiResponse<CanvasProjectResponse> getProject(@PathVariable Long id, HttpServletRequest request) {
+    public ApiResponse<CanvasProjectResponse> getProject(@PathVariable("id") Long id, HttpServletRequest request) {
         CanvasProject project = loadOwnedProject(id, request);
         return ApiResponse.ok("ok", CanvasProjectResponse.from(project, objectMapper, true));
     }
@@ -116,7 +120,7 @@ public class AiCanvasController {
     }
 
     @DeleteMapping("/projects/{id}")
-    public ApiResponse<String> deleteProject(@PathVariable Long id, HttpServletRequest request) {
+    public ApiResponse<String> deleteProject(@PathVariable("id") Long id, HttpServletRequest request) {
         CanvasProject project = loadOwnedProject(id, request);
         canvasProjectRepository.delete(project);
         return ApiResponse.ok("deleted", null);
@@ -135,7 +139,7 @@ public class AiCanvasController {
     }
 
     @GetMapping("/templates/{id}")
-    public ApiResponse<CanvasTemplateResponse> getTemplate(@PathVariable Long id, HttpServletRequest request) {
+    public ApiResponse<CanvasTemplateResponse> getTemplate(@PathVariable("id") Long id, HttpServletRequest request) {
         CanvasTemplate template = loadOwnedTemplate(id, request);
         return ApiResponse.ok("ok", CanvasTemplateResponse.from(template, objectMapper, true));
     }
@@ -150,7 +154,7 @@ public class AiCanvasController {
     }
 
     @DeleteMapping("/templates/{id}")
-    public ApiResponse<String> deleteTemplate(@PathVariable Long id, HttpServletRequest request) {
+    public ApiResponse<String> deleteTemplate(@PathVariable("id") Long id, HttpServletRequest request) {
         CanvasTemplate template = loadOwnedTemplate(id, request);
         canvasTemplateRepository.delete(template);
         return ApiResponse.ok("deleted", null);
@@ -225,7 +229,7 @@ public class AiCanvasController {
     }
 
     @GetMapping("/kie/v1/images/tasks/{taskId}")
-    public Map<String, Object> getImageTask(@PathVariable String taskId) {
+    public Map<String, Object> getImageTask(@PathVariable("taskId") String taskId) {
         return toAsyncTaskResponse(taskId, "image");
     }
 
@@ -259,7 +263,7 @@ public class AiCanvasController {
     }
 
     @GetMapping({"/kie/v1/videos/generations/{taskId}", "/kie/v2/videos/generations/{taskId}", "/kie/v1/videos/tasks/{taskId}"})
-    public Map<String, Object> getVideoTask(@PathVariable String taskId) {
+    public Map<String, Object> getVideoTask(@PathVariable("taskId") String taskId) {
         Map<String, Object> task = toAsyncTaskResponse(taskId, "video");
         String status = textValue(task.get("status"));
         @SuppressWarnings("unchecked")
@@ -443,6 +447,14 @@ public class AiCanvasController {
         project.setOperator(currentOperator(request));
         project.setShopName(currentShopName(request));
         return project;
+    }
+
+    private boolean isInfiniteCanvasInternalProject(CanvasProject project) {
+        if (project == null) return false;
+        String projectName = project.getProjectName();
+        if ("__infinite_canvas_workspace__".equals(projectName)) return true;
+        String metaJson = project.getMetaJson();
+        return metaJson != null && (metaJson.contains("\"kind\":\"infinite-canvas\"") || metaJson.contains("\"kind\":\"infinite-canvas-workspace\""));
     }
 
     private void applyProjectPayload(CanvasProject project, CanvasProjectSaveRequest saveRequest, HttpServletRequest request) {

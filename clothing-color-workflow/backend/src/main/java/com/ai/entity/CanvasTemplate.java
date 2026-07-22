@@ -52,6 +52,18 @@ public class CanvasTemplate {
     @Column(columnDefinition = "longtext")
     private String metaJson;
 
+    @Column(nullable = false)
+    private Integer schemaVersion = 1;
+
+    @Column(nullable = false, length = 32)
+    private String status = "ACTIVE";
+
+    @Column(nullable = false)
+    private Integer usageCount = 0;
+
+    @Column(nullable = false, length = 32)
+    private String visibility = "PRIVATE";
+
     @CreationTimestamp
     private LocalDateTime createdAt;
 

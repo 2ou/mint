@@ -39,6 +39,15 @@ public class CanvasProject {
     @Column(columnDefinition = "longtext")
     private String metaJson;
 
+    @Column(nullable = false)
+    private Integer currentSnapshotVersion = 1;
+
+    @Column(nullable = false)
+    private Integer schemaVersion = 1;
+
+    @Column(nullable = false, length = 32)
+    private String status = "ACTIVE";
+
     @CreationTimestamp
     private LocalDateTime createdAt;
 
