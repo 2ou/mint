@@ -15,6 +15,63 @@ public class ModelLibrary {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column
+    private Long identityId;
+
+    @Column(length = 32)
+    private String identityView;
+
+    @Column
+    private Integer variantIndex;
+
+    @Column(columnDefinition = "TEXT")
+    private String negativePrompt;
+
+    @Column(length = 80)
+    private String hairstyle;
+
+    @Column(length = 40)
+    private String skinTone;
+
+    @Column(length = 40)
+    private String cameraAngle;
+
+    @Column(length = 80)
+    private String background;
+
+    @Column(columnDefinition = "TEXT")
+    private String clothingDescription;
+
+    @Column(length = 500)
+    private String clothingImageUrl;
+
+    @Column(length = 80)
+    private String imageModel;
+
+    @Column(length = 80)
+    private String modelVersion;
+
+    @Column(length = 20)
+    private String resolution;
+
+    @Column(length = 20)
+    private String aspectRatio;
+
+    private Long seed;
+
+    @Column(columnDefinition = "TEXT")
+    private String generationParamsJson;
+
+    @Column(length = 32)
+    private String storageStatus = "NOT_REQUESTED";
+
+    @Column(length = 500)
+    private String storageError;
+
+    private Integer storageRetryCount = 0;
+
+    private LocalDateTime nextStorageRetryAt;
+
     @Column(length = 100, nullable = false)
     private String modelName;  // 模特名称/编号
 

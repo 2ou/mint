@@ -4,7 +4,13 @@
     var TOKEN_KEY = 'user_token';
     var TEXT_MODELS = ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna'];
     var IMAGE_MODELS = ['project-image'];
-    var VIDEO_MODELS = ['project-video'];
+    var VIDEO_MODELS = [
+        'bytedance/seedance-2-5',
+        'bytedance/seedance-2',
+        'minimax-h3/text-to-video',
+        'minimax-h3/image-to-video',
+        'minimax-h3/reference-to-video'
+    ];
 
     function token() {
         try {

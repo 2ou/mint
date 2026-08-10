@@ -50,6 +50,14 @@ public class CanvasTask {
     @Column(columnDefinition = "longtext")
     private String callbackPayloadJson;
 
+    /**
+     * A normalized canvas request is kept with the task so a user can retry it
+     * after refreshing the page. It contains no provider secret.
+     */
+    @Lob
+    @Column(columnDefinition = "longtext")
+    private String requestPayloadJson;
+
     @CreationTimestamp
     private LocalDateTime createdAt;
 

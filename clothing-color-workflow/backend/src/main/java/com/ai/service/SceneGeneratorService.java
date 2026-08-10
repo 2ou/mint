@@ -1,5 +1,7 @@
 package com.ai.service;
 
+import com.ai.dto.ModelIdentityContext;
+
 /**
  * 场景生成服务
  * 场景由 AI 文本模型生成，场景库 skill 辅助提升提示词质量
@@ -13,7 +15,8 @@ public interface SceneGeneratorService {
      * @param textModel 使用的 GPT 5.6 文本模型
      * @return 推荐结果 JSON
      */
-    String recommendScenes(String clothingDesc, int count, String textModel, String clothingImageUrl);
+    String recommendScenes(String clothingDesc, int count, String textModel, String clothingImageUrl,
+                           ModelIdentityContext modelIdentity);
 
     /**
      * 根据场景描述生成场景提示词
@@ -23,7 +26,8 @@ public interface SceneGeneratorService {
      * @param textModel 使用的 GPT 5.6 文本模型
      * @return 生成的提示词 JSON
      */
-    String generatePrompt(String sceneDesc, String clothingDesc, int count, String textModel, String clothingImageUrl);
+    String generatePrompt(String sceneDesc, String clothingDesc, int count, String textModel, String clothingImageUrl,
+                          ModelIdentityContext modelIdentity);
 
     /**
      * 重新加载场景库 skill 辅助知识

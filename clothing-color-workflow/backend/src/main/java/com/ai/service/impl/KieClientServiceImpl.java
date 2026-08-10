@@ -81,7 +81,11 @@ public class KieClientServiceImpl implements KieClientService {
                 }
             }
 
-            inputNode.set("image_input", imageArray);
+            if ("gpt-image-2-image-to-image".equals(model)) {
+                inputNode.set("input_urls", imageArray);
+            } else {
+                inputNode.set("image_input", imageArray);
+            }
             // 🔴 修复：使用动态传入的画面比例，如果为空则兜底使用 "auto"
             if (aspectRatio != null && !aspectRatio.trim().isEmpty()) {
                 inputNode.put("aspect_ratio", aspectRatio.trim());

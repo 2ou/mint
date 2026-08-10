@@ -2,7 +2,9 @@ package com.ai.service;
 
 import com.ai.dto.ModelCreateTaskRequest;
 import com.ai.dto.ModelGenerateRequest;
+import com.ai.dto.ModelIdentityContext;
 import com.ai.entity.ModelLibrary;
+import com.ai.entity.ModelIdentity;
 import org.springframework.data.domain.Page;
 
 import java.util.List;
@@ -116,4 +118,22 @@ public interface ModelLibraryService {
      * @return 创建的任务列表
      */
     List<ModelLibrary> generateModels(ModelGenerateRequest request);
+
+    List<ModelIdentity> getActiveIdentities();
+
+    ModelIdentity getIdentityById(Long id);
+
+    List<ModelLibrary> getIdentityAssets(Long identityId);
+
+    ModelIdentity activateIdentity(Long identityId);
+
+    ModelIdentityContext getIdentityContext(Long identityId);
+
+    ModelLibrary retryTask(Long id);
+
+    ModelLibrary cancelTask(Long id);
+
+    void retryPendingStorage();
+
+    String getTaskCompletionMode();
 }

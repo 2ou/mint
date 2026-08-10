@@ -2,6 +2,8 @@ package com.ai.dto;
 
 import lombok.Data;
 
+import java.util.List;
+
 /**
  * 模特生成请求 DTO
  */
@@ -100,4 +102,10 @@ public class ModelGenerateRequest {
      * 名称前缀（选填，不填则自动生成）
      */
     private String namePrefix;
+
+    private List<String> identityViews;
+
+    private String negativePrompt;
+
+    private Long seed;
 }

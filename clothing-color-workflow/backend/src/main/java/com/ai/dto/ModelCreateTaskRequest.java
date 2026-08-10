@@ -61,4 +61,24 @@ public class ModelCreateTaskRequest {
      * 风格标签（新建时可选）
      */
     private String styleTags;
+
+    private Long identityId;
+
+    private String identityView;
+
+    private String hairstyle;
+
+    private String skinTone;
+
+    private String cameraAngle;
+
+    private String background;
+
+    private String clothingDescription;
+
+    private String clothingImageUrl;
+
+    private String negativePrompt;
+
+    private Long seed;
 }

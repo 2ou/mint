@@ -9,6 +9,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.time.LocalDateTime;
 
 @Repository
 public interface ModelLibraryRepository extends JpaRepository<ModelLibrary, Long> {
@@ -53,4 +54,12 @@ public interface ModelLibraryRepository extends JpaRepository<ModelLibrary, Long
      */
     @Query("SELECT m.modelType, COUNT(m) FROM ModelLibrary m WHERE m.status = 'ACTIVE' GROUP BY m.modelType")
     List<Object[]> countByModelType();
+
+    List<ModelLibrary> findByIdentityIdOrderByCreatedAtAsc(Long identityId);
+
+    long countByTaskStatusIn(List<String> statuses);
+
+    @Query("SELECT m FROM ModelLibrary m WHERE m.storageStatus = 'RETRY_PENDING' " +
+           "AND (m.nextStorageRetryAt IS NULL OR m.nextStorageRetryAt <= :now)")
+    List<ModelLibrary> findStorageRetryCandidates(@Param("now") LocalDateTime now);
 }

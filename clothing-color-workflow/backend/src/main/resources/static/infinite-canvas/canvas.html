@@ -82,12 +82,8 @@
                 <button class="menu-btn" onclick="menuAdd('prompt')"><i data-lucide="text-cursor-input" class="w-4 h-4"></i><span data-i18n="canvas.prompt">提示词</span></button>
                 <button class="menu-btn" onclick="menuAdd('loop')"><i data-lucide="repeat-2" class="w-4 h-4"></i><span data-i18n="canvas.loopNode">循环节点</span></button>
                 <button class="menu-btn" onclick="menuAdd('llm')"><i data-lucide="message-square-text" class="w-4 h-4"></i><span data-i18n="canvas.llmNode">LLM 节点</span></button>
-                <button class="menu-btn" onclick="menuAdd('generator')"><i data-lucide="wand-sparkles" class="w-4 h-4"></i><span data-i18n="canvas.apiGenerate">API生成</span></button>
-                <button class="menu-btn" onclick="menuAdd('msgen')"><i data-lucide="cloud-lightning" class="w-4 h-4"></i><span data-i18n="canvas.modelscopeGenerate">Modelscope生成</span></button>
+                <button class="menu-btn" onclick="menuAdd('generator')"><i data-lucide="wand-sparkles" class="w-4 h-4"></i><span>KIE 图片生成</span></button>
                 <button class="menu-btn" onclick="menuAdd('video')"><i data-lucide="clapperboard" class="w-4 h-4"></i><span data-i18n="canvas.videoGenerateNode">视频生成</span></button>
-                <button class="menu-btn" onclick="menuAdd('rh')"><i data-lucide="workflow" class="w-4 h-4"></i><span data-i18n="canvas.rhGenerate">RH生成</span></button>
-                <button class="menu-btn" onclick="menuAdd('comfy')"><i data-lucide="workflow" class="w-4 h-4"></i><span data-i18n="canvas.comfyGenerate">ComfyUI 生成</span></button>
-                <button class="menu-btn" onclick="menuAdd('ltxDirector')"><i data-lucide="film" class="w-4 h-4"></i><span data-i18n="canvas.ltxDirector">LTX Director</span></button>
                 <button class="menu-btn" onclick="menuAdd('output')"><i data-lucide="circle-dot" class="w-4 h-4"></i>Output</button>
             </div>
             <div id="linkCreateMenu" class="create-menu"></div>
@@ -99,7 +95,7 @@
                 <div id="linkControls" class="link-controls"></div>
                 <div id="nodes"></div>
             </div>
-            <button id="canvasArrangeBtn" class="minimap-arrange-btn" type="button" title="整理选中节点" aria-label="整理选中节点"><i data-lucide="layout-grid" class="w-3.5 h-3.5"></i><span>整理选中</span></button>
+            <button id="canvasArrangeBtn" class="minimap-arrange-btn" type="button" title="未选中节点时整理整张画布" aria-label="整理画布"><i data-lucide="layout-grid" class="w-3.5 h-3.5"></i><span>整理画布</span></button>
             <div id="minimap" class="minimap" title="导航地图">
                 <div id="minimapContent" class="minimap-content">
                     <div id="minimapViewport" class="minimap-viewport"></div>
@@ -114,6 +110,18 @@
                 <div class="canvas-asset-row">
                     <select id="canvasAssetCategorySelect" class="canvas-asset-select"></select>
                     <button id="canvasAssetAddCategoryBtn" class="canvas-asset-icon-btn" type="button" title="新建分组"><i data-lucide="folder-plus" class="w-4 h-4"></i></button>
+                </div>
+                <div class="canvas-asset-batch-row">
+                    <button id="canvasAssetSelectModeBtn" class="canvas-asset-icon-btn" type="button" title="批量选择" aria-label="批量选择"><i data-lucide="list-checks" class="w-4 h-4"></i></button>
+                    <select id="canvasAssetMoveTarget" class="canvas-asset-select canvas-asset-batch-target" title="移动到分组" hidden></select>
+                    <button id="canvasAssetMoveBtn" class="canvas-asset-icon-btn" type="button" title="移动所选" aria-label="移动所选" hidden><i data-lucide="folder-input" class="w-4 h-4"></i></button>
+                    <button id="canvasAssetTagBtn" class="canvas-asset-icon-btn" type="button" title="设置所选标签" aria-label="设置所选标签" hidden><i data-lucide="tags" class="w-4 h-4"></i></button>
+                    <button id="canvasAssetDeleteSelectedBtn" class="canvas-asset-icon-btn danger" type="button" title="删除所选" aria-label="删除所选" hidden><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                    <button id="canvasAssetDuplicatesBtn" class="canvas-asset-icon-btn" type="button" title="检查重复素材" aria-label="检查重复素材"><i data-lucide="copy-check" class="w-4 h-4"></i></button>
+                </div>
+                <div class="canvas-asset-search">
+                    <i data-lucide="search" class="w-3.5 h-3.5"></i>
+                    <input id="canvasAssetSearch" type="search" placeholder="搜索当前素材库">
                 </div>
                 <div id="canvasAssetDropZone" class="canvas-asset-drop">拖入图片或输出保存到当前分组</div>
                 <div id="canvasAssetGrid" class="canvas-asset-grid"></div>
@@ -135,6 +143,7 @@
                             <button class="workflow-transfer-btn secondary" type="button" onclick="exportSelectedWorkflow(false)"><i data-lucide="file-json" class="w-4 h-4"></i><span>导出 JSON</span></button>
                             <button class="workflow-transfer-btn primary" type="button" onclick="exportSelectedWorkflow(true)"><i data-lucide="package" class="w-4 h-4"></i><span>导出并包含资源</span></button>
                             <button id="workflowExportLibraryBtn" class="workflow-transfer-btn secondary" type="button" onclick="exportSelectedWorkflowToLibrary()"><i data-lucide="library-big" class="w-4 h-4"></i><span>导出到资产库</span></button>
+                            <button class="workflow-transfer-btn secondary" type="button" onclick="exportSelectedWorkflowToLibrary(true)"><i data-lucide="layers-3" class="w-4 h-4"></i><span>保存整张画布</span></button>
                         </div>
                     </section>
                     <section class="workflow-transfer-card">
@@ -361,6 +370,7 @@
             </div>
         </div>
     </div>
+    <input id="canvasMediaPicker" type="file" accept="image/*,video/*,audio/*" multiple tabindex="-1" aria-hidden="true" style="position:fixed;left:-10000px;top:auto;width:1px;height:1px;opacity:0;pointer-events:none;">
 
     <script src="/infinite-canvas/js/ltx-director-timeline.js?v=2026.07.15.1782696715"></script>
     <script src="/infinite-canvas/js/canvas.js?v=2026.07.15.1784105557"></script>

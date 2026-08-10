@@ -54,7 +54,20 @@ import java.util.concurrent.TimeUnit;
 public class AiCanvasController {
 
     private static final String PROJECT_IMAGE_MODEL = "nano-banana-pro";
-    private static final String PROJECT_VIDEO_MODEL = "sora-2";
+    private static final List<String> PROJECT_IMAGE_MODELS = List.of(PROJECT_IMAGE_MODEL, "gpt-image-2-image-to-image");
+    private static final String SEEDANCE_2_5_MODEL = "bytedance/seedance-2-5";
+    private static final String SEEDANCE_2_MODEL = "bytedance/seedance-2";
+    private static final String MINIMAX_H3_TEXT_MODEL = "minimax-h3/text-to-video";
+    private static final String MINIMAX_H3_IMAGE_MODEL = "minimax-h3/image-to-video";
+    private static final String MINIMAX_H3_REFERENCE_MODEL = "minimax-h3/reference-to-video";
+    private static final List<String> PROJECT_VIDEO_MODELS = List.of(
+            SEEDANCE_2_5_MODEL,
+            SEEDANCE_2_MODEL,
+            MINIMAX_H3_TEXT_MODEL,
+            MINIMAX_H3_IMAGE_MODEL,
+            MINIMAX_H3_REFERENCE_MODEL
+    );
+    private static final String PROJECT_VIDEO_MODEL = SEEDANCE_2_5_MODEL;
 
     private final CanvasProjectRepository canvasProjectRepository;
     private final CanvasTemplateRepository canvasTemplateRepository;
@@ -166,8 +179,8 @@ public class AiCanvasController {
         models.add(Map.of("id", KieGptModels.GPT_5_6_SOL, "object", "model", "owned_by", "ai-project"));
         models.add(Map.of("id", KieGptModels.GPT_5_6_TERRA, "object", "model", "owned_by", "ai-project"));
         models.add(Map.of("id", KieGptModels.GPT_5_6_LUNA, "object", "model", "owned_by", "ai-project"));
-        models.add(Map.of("id", "project-image", "object", "model", "owned_by", "ai-project"));
-        models.add(Map.of("id", "project-video", "object", "model", "owned_by", "ai-project"));
+        PROJECT_IMAGE_MODELS.forEach(model -> models.add(Map.of("id", model, "object", "model", "owned_by", "ai-project")));
+        PROJECT_VIDEO_MODELS.forEach(model -> models.add(Map.of("id", model, "object", "model", "owned_by", "ai-project")));
         return Map.of("object", "list", "data", models);
     }
 
@@ -236,15 +249,10 @@ public class AiCanvasController {
     @PostMapping("/kie/v1/videos/generations")
     public Map<String, Object> createVideo(@RequestBody Map<String, Object> payload,
                                            HttpServletRequest request) {
-        String model = normalizeModel(textValue(payload.get("model")), PROJECT_VIDEO_MODEL);
-        Map<String, Object> input = new LinkedHashMap<>(payload);
-        input.remove("model");
+        String model = normalizeVideoModel(textValue(payload.get("model")));
+        Map<String, Object> input = videoInput(payload, model);
         if (!input.containsKey("prompt") || textValue(input.get("prompt")).isBlank()) {
             throw new IllegalArgumentException("prompt 不能为空");
-        }
-        List<String> images = normalizeImageInputs(payload);
-        if (!images.isEmpty()) {
-            input.put("image_input", images);
         }
         KieTaskResult result = kieClientService.createVideoTask(model, input);
         String taskId = result.getTaskId();
@@ -452,9 +460,11 @@ public class AiCanvasController {
     private boolean isInfiniteCanvasInternalProject(CanvasProject project) {
         if (project == null) return false;
         String projectName = project.getProjectName();
-        if ("__infinite_canvas_workspace__".equals(projectName)) return true;
+        if ("__infinite_canvas_workspace__".equals(projectName) || "__infinite_canvas_library__".equals(projectName)) return true;
         String metaJson = project.getMetaJson();
-        return metaJson != null && (metaJson.contains("\"kind\":\"infinite-canvas\"") || metaJson.contains("\"kind\":\"infinite-canvas-workspace\""));
+        return metaJson != null && (metaJson.contains("\"kind\":\"infinite-canvas\"")
+                || metaJson.contains("\"kind\":\"infinite-canvas-workspace\"")
+                || metaJson.contains("\"kind\":\"infinite-canvas-library\""));
     }
 
     private void applyProjectPayload(CanvasProject project, CanvasProjectSaveRequest saveRequest, HttpServletRequest request) {
@@ -527,6 +537,7 @@ public class AiCanvasController {
 
     private List<String> normalizeImageInputs(Map<String, Object> payload) {
         List<String> raw = new ArrayList<>();
+        collectImageCandidate(raw, payload.get("images"));
         collectImageCandidate(raw, payload.get("imageUrls"));
         collectImageCandidate(raw, payload.get("imagesUrl"));
         collectImageCandidate(raw, payload.get("imagesUrls"));
@@ -545,6 +556,148 @@ public class AiCanvasController {
             }
         }
         return urls;
+    }
+
+    private Map<String, Object> videoInput(Map<String, Object> payload, String model) {
+        if (isMiniMaxH3VideoModel(model)) return miniMaxH3VideoInput(payload, model);
+        return seedanceVideoInput(payload, model);
+    }
+
+    private Map<String, Object> seedanceVideoInput(Map<String, Object> payload, String model) {
+        Map<String, Object> input = new LinkedHashMap<>();
+        input.put("prompt", textValue(payload.get("prompt")));
+        input.put("duration", seedanceDuration(payload.get("duration"), model));
+        input.put("aspect_ratio", seedanceAspectRatio(textValue(payload.get("aspect_ratio"))));
+        input.put("resolution", seedanceResolution(textValue(payload.get("resolution"))));
+        input.put("generate_audio", boolValue(payload.get("generate_audio")));
+        input.put("return_last_frame", boolValue(payload.get("return_last_frame")));
+        input.put("web_search", boolValue(payload.get("web_search")));
+        if (SEEDANCE_2_5_MODEL.equals(model)) {
+            input.put("output_format", "mov".equalsIgnoreCase(textValue(payload.get("output_format"))) ? "mov" : "mp4");
+            input.put("nsfw_checker", !payload.containsKey("nsfw_checker") || boolValue(payload.get("nsfw_checker")));
+        }
+
+        List<String> firstFrames = mergeUrlInputs(payload.get("first_frame_url"), payload.get("firstFrameUrl"));
+        List<String> lastFrames = mergeUrlInputs(payload.get("last_frame_url"), payload.get("lastFrameUrl"));
+        List<String> referenceImages = normalizeUrlInputs(payload.get("reference_image_urls"));
+        List<String> referenceVideos = mergeUrlInputs(payload.get("reference_video_urls"), payload.get("videos"));
+        List<String> referenceAudios = mergeUrlInputs(payload.get("reference_audio_urls"), payload.get("audios"));
+        List<String> images = normalizeImageInputs(payload);
+        boolean useMultimodal = !referenceImages.isEmpty() || !referenceVideos.isEmpty() || !referenceAudios.isEmpty()
+                || boolValue(payload.get("multimodal"));
+
+        if (useMultimodal || (images.size() > 1 && firstFrames.isEmpty() && lastFrames.isEmpty())) {
+            List<String> refs = !referenceImages.isEmpty() ? referenceImages : images;
+            if (!refs.isEmpty()) input.put("reference_image_urls", refs);
+            if (!referenceVideos.isEmpty()) input.put("reference_video_urls", referenceVideos);
+            if (!referenceAudios.isEmpty()) input.put("reference_audio_urls", referenceAudios);
+        } else if (!firstFrames.isEmpty() && !lastFrames.isEmpty()) {
+            input.put("first_frame_url", firstFrames.get(0));
+            input.put("last_frame_url", lastFrames.get(0));
+        } else if (!firstFrames.isEmpty()) {
+            input.put("first_frame_url", firstFrames.get(0));
+        } else if (!images.isEmpty()) {
+            input.put("first_frame_url", images.get(0));
+        }
+        return input;
+    }
+
+    private Map<String, Object> miniMaxH3VideoInput(Map<String, Object> payload, String model) {
+        Map<String, Object> input = new LinkedHashMap<>();
+        input.put("prompt", textValue(payload.get("prompt")));
+        input.put("duration", miniMaxH3Duration(payload.get("duration")));
+
+        List<String> firstFrames = mergeUrlInputs(payload.get("first_frame_url"), payload.get("firstFrameUrl"));
+        List<String> lastFrames = mergeUrlInputs(payload.get("last_frame_url"), payload.get("lastFrameUrl"));
+        List<String> referenceImages = normalizeUrlInputs(payload.get("reference_image_urls"));
+        List<String> referenceVideos = mergeUrlInputs(payload.get("reference_video_urls"), payload.get("videos"));
+        List<String> referenceAudios = mergeUrlInputs(payload.get("reference_audio_urls"), payload.get("audios"));
+        List<String> images = normalizeImageInputs(payload);
+
+        if (MINIMAX_H3_TEXT_MODEL.equals(model)) {
+            input.put("aspect_ratio", miniMaxH3AspectRatio(textValue(payload.get("aspect_ratio")), false));
+            return input;
+        }
+
+        if (MINIMAX_H3_IMAGE_MODEL.equals(model)) {
+            String firstFrame = !firstFrames.isEmpty() ? firstFrames.get(0) : (images.isEmpty() ? "" : images.get(0));
+            if (firstFrame.isBlank()) throw new IllegalArgumentException("MiniMax H3 图生视频需要至少一张参考图片");
+            input.put("first_frame_url", firstFrame);
+            String lastFrame = !lastFrames.isEmpty() ? lastFrames.get(0) : (images.size() > 1 ? images.get(1) : "");
+            if (!lastFrame.isBlank() && !lastFrame.equals(firstFrame)) input.put("last_frame_url", lastFrame);
+            return input;
+        }
+
+        List<String> references = !referenceImages.isEmpty() ? referenceImages : images;
+        if (references.isEmpty() && referenceVideos.isEmpty() && referenceAudios.isEmpty()) {
+            throw new IllegalArgumentException("MiniMax H3 多模态参考需要至少一项图片、视频或音频素材");
+        }
+        input.put("aspect_ratio", miniMaxH3AspectRatio(textValue(payload.get("aspect_ratio")), true));
+        if (!references.isEmpty()) input.put("reference_image_urls", references);
+        if (!referenceVideos.isEmpty()) input.put("reference_video_urls", referenceVideos);
+        if (!referenceAudios.isEmpty()) input.put("reference_audio_urls", referenceAudios);
+        return input;
+    }
+
+    private boolean isMiniMaxH3VideoModel(String model) {
+        return MINIMAX_H3_TEXT_MODEL.equals(model)
+                || MINIMAX_H3_IMAGE_MODEL.equals(model)
+                || MINIMAX_H3_REFERENCE_MODEL.equals(model);
+    }
+
+    private List<String> mergeUrlInputs(Object... values) {
+        List<String> urls = new ArrayList<>();
+        for (Object value : values) {
+            for (String item : normalizeUrlInputs(value)) {
+                if (!urls.contains(item)) urls.add(item);
+            }
+        }
+        return urls;
+    }
+
+    private List<String> normalizeUrlInputs(Object value) {
+        List<String> raw = new ArrayList<>();
+        collectImageCandidate(raw, value);
+        List<String> urls = new ArrayList<>();
+        for (String item : raw) {
+            String normalized = normalizeImageUrl(item);
+            if (!normalized.isBlank() && !urls.contains(normalized)) urls.add(normalized);
+        }
+        return urls;
+    }
+
+    private int seedanceDuration(Object value, String model) {
+        int max = SEEDANCE_2_5_MODEL.equals(model) ? 30 : 15;
+        try {
+            return Math.max(1, Math.min(max, Integer.parseInt(textValue(value))));
+        } catch (Exception ignored) {
+            return 5;
+        }
+    }
+
+    private int miniMaxH3Duration(Object value) {
+        try {
+            return Math.max(5, Math.min(15, Integer.parseInt(textValue(value))));
+        } catch (Exception ignored) {
+            return 6;
+        }
+    }
+
+    private String miniMaxH3AspectRatio(String value, boolean referenceMode) {
+        List<String> allowed = referenceMode
+                ? List.of("16:9", "9:16", "1:1", "adaptive")
+                : List.of("16:9", "9:16", "1:1");
+        return allowed.contains(value) ? value : "16:9";
+    }
+
+    private String seedanceResolution(String value) {
+        return "480p".equalsIgnoreCase(value) ? "480p" : "720p";
+    }
+
+    private String seedanceAspectRatio(String value) {
+        return List.of("16:9", "4:3", "1:1", "3:4", "9:16", "21:9", "adaptive").contains(value)
+                ? value
+                : "16:9";
     }
 
     private void collectImageCandidate(List<String> target, Object value) {
@@ -612,7 +765,12 @@ public class AiCanvasController {
         if (model == null || model.isBlank() || model.startsWith("project-")) {
             return fallback;
         }
-        return model;
+        return PROJECT_IMAGE_MODELS.contains(model.trim()) ? model.trim() : fallback;
+    }
+
+    private String normalizeVideoModel(String model) {
+        if (model == null || model.isBlank() || model.startsWith("project-")) return PROJECT_VIDEO_MODEL;
+        return PROJECT_VIDEO_MODELS.contains(model.trim()) ? model.trim() : PROJECT_VIDEO_MODEL;
     }
 
     private String resolutionFromSize(String size) {
@@ -645,5 +803,11 @@ public class AiCanvasController {
         if (value == null) return "";
         if (value instanceof String str) return str;
         return String.valueOf(value);
+    }
+
+    private boolean boolValue(Object value) {
+        if (value instanceof Boolean bool) return bool;
+        String text = textValue(value);
+        return "true".equalsIgnoreCase(text) || "1".equals(text);
     }
 }

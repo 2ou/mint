@@ -13,12 +13,20 @@ import com.aliyun.oss.model.ObjectMetadata;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.Response;
+import okhttp3.ResponseBody;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -28,7 +36,14 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.URI;
 import java.net.URLDecoder;
+import java.net.URLEncoder;
+import java.net.URLConnection;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -36,12 +51,19 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
+import java.util.zip.ZipOutputStream;
 
 @RestController
 @RequestMapping("/api")
@@ -51,10 +73,33 @@ public class InfiniteCanvasController {
 
     private static final String WORKSPACE_KIND = "infinite-canvas-workspace";
     private static final String CANVAS_KIND = "infinite-canvas";
+    private static final String LIBRARY_KIND = "infinite-canvas-library";
     private static final String WORKSPACE_PROJECT_NAME = "__infinite_canvas_workspace__";
+    private static final String LIBRARY_PROJECT_NAME = "__infinite_canvas_library__";
     private static final String DEFAULT_PROJECT_ID = "default";
     private static final String PROJECT_IMAGE_MODEL = "nano-banana-pro";
-    private static final String PROJECT_VIDEO_MODEL = "sora-2";
+    private static final List<String> PROJECT_IMAGE_MODELS = List.of(PROJECT_IMAGE_MODEL, "gpt-image-2-image-to-image");
+    private static final String SEEDANCE_2_5_MODEL = "bytedance/seedance-2-5";
+    private static final String SEEDANCE_2_MODEL = "bytedance/seedance-2";
+    private static final String MINIMAX_H3_TEXT_MODEL = "minimax-h3/text-to-video";
+    private static final String MINIMAX_H3_IMAGE_MODEL = "minimax-h3/image-to-video";
+    private static final String MINIMAX_H3_REFERENCE_MODEL = "minimax-h3/reference-to-video";
+    private static final List<String> PROJECT_VIDEO_MODELS = List.of(
+            SEEDANCE_2_5_MODEL,
+            SEEDANCE_2_MODEL,
+            MINIMAX_H3_TEXT_MODEL,
+            MINIMAX_H3_IMAGE_MODEL,
+            MINIMAX_H3_REFERENCE_MODEL
+    );
+    private static final String PROJECT_VIDEO_MODEL = SEEDANCE_2_5_MODEL;
+    private static final long KIE_IMAGE_UPLOAD_MAX_BYTES = 10L * 1024 * 1024;
+    private static final long KIE_MEDIA_UPLOAD_MAX_BYTES = 100L * 1024 * 1024;
+    private static final long WORKFLOW_ARCHIVE_MAX_BYTES = 220L * 1024 * 1024;
+    private static final long MEDIA_PROXY_MAX_BYTES = 110L * 1024 * 1024;
+    private static final int MEDIA_PROXY_MAX_REDIRECTS = 3;
+    private static final Set<String> KIE_MEDIA_HOST_SUFFIXES = Set.of(
+            ".kie.ai", ".aiquickdraw.com", ".redpandaai.co"
+    );
 
     private final CanvasProjectRepository canvasProjectRepository;
     private final CanvasTaskService canvasTaskService;
@@ -63,6 +108,27 @@ public class InfiniteCanvasController {
     private final OssService ossService;
     private final AppProperties appProperties;
     private final ObjectMapper objectMapper;
+    private final OkHttpClient mediaProxyClient = new OkHttpClient.Builder()
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(180, TimeUnit.SECONDS)
+            .followRedirects(false)
+            .followSslRedirects(false)
+            .build();
+
+    @GetMapping("/download-output")
+    public void downloadOutput(@RequestParam("url") String url,
+                               @RequestParam(value = "name", required = false) String name,
+                               @RequestParam(value = "inline", defaultValue = "false") boolean inline,
+                               HttpServletResponse response) throws IOException {
+        proxyTrustedMedia(url, name, inline, response);
+    }
+
+    @GetMapping("/media-preview")
+    public void mediaPreview(@RequestParam("url") String url,
+                             @RequestParam(value = "w", required = false) Integer ignoredWidth,
+                             HttpServletResponse response) throws IOException {
+        proxyTrustedMedia(url, "canvas-preview", true, response);
+    }
 
     @GetMapping("/projects")
     public Map<String, Object> listWorkspaceProjects(HttpServletRequest request) {
@@ -262,11 +328,11 @@ public class InfiniteCanvasController {
     @GetMapping("/config")
     public Map<String, Object> config() {
         return Map.of(
-                "image_model", "project-image",
-                "image_models", List.of("project-image"),
+                "image_model", PROJECT_IMAGE_MODEL,
+                "image_models", PROJECT_IMAGE_MODELS,
                 "chat_models", textModels(),
                 "ms_chat_models", textModels(),
-                "video_models", List.of("project-video"),
+                "video_models", PROJECT_VIDEO_MODELS,
                 "comfy_instances", List.of(),
                 "api_providers", List.of(projectProvider())
         );
@@ -274,7 +340,7 @@ public class InfiniteCanvasController {
 
     @GetMapping("/models")
     public Map<String, Object> models() {
-        return Map.of("models", textModels(), "image_models", List.of("project-image"), "video_models", List.of("project-video"));
+        return Map.of("models", textModels(), "image_models", PROJECT_IMAGE_MODELS, "video_models", PROJECT_VIDEO_MODELS);
     }
 
     @GetMapping("/providers")
@@ -315,6 +381,9 @@ public class InfiniteCanvasController {
     @PostMapping("/canvas-image-tasks")
     public Map<String, Object> createCanvasImageTask(@RequestBody Map<String, Object> payload,
                                                      HttpServletRequest request) {
+        String operator = currentOperator(request);
+        String shopName = currentShopName(request);
+        canvasTaskService.requireSubmissionCapacity(operator, shopName);
         String prompt = firstNonBlank(textValue(payload.get("prompt")), "Edit the reference images.");
         List<String> refs = mediaUrls(payload.get("reference_images"));
         String inputUrl = refs.isEmpty() ? "" : normalizeInputUrl(refs.get(0));
@@ -333,13 +402,64 @@ public class InfiniteCanvasController {
                 colorUrl,
                 appProperties.getKie().getCallbackUrl()
         );
-        canvasTaskService.recordCreated(taskId, "image", currentOperator(request), currentShopName(request));
-        return Map.of("task_id", taskId, "status", "queued");
+        canvasTaskService.recordCreated(taskId, "image", operator, shopName, payload);
+        return Map.of(
+                "task_id", taskId,
+                "status", "queued",
+                "completion_mode", useCallbackTaskCompletion() ? "callback" : "polling"
+        );
     }
 
     @GetMapping("/canvas-image-tasks/{taskId}")
     public Map<String, Object> getCanvasImageTask(@PathVariable("taskId") String taskId) {
         return taskResponse(taskId, "image");
+    }
+
+    @GetMapping("/canvas-tasks")
+    public Map<String, Object> getCanvasTasks(HttpServletRequest request) {
+        List<Map<String, Object>> tasks = canvasTaskService.recentTasks(currentOperator(request), currentShopName(request));
+        Map<String, Long> summary = new LinkedHashMap<>();
+        for (Map<String, Object> task : tasks) {
+            String status = textValue(task.get("status"));
+            summary.put(status, summary.getOrDefault(status, 0L) + 1L);
+        }
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("tasks", tasks);
+        response.put("summary", summary);
+        response.put("completion_mode", useCallbackTaskCompletion() ? "callback" : "polling");
+        response.put("capacity", canvasTaskService.taskCapacity(currentOperator(request), currentShopName(request)));
+        return response;
+    }
+
+    @PostMapping("/canvas-tasks/{taskId}/retry")
+    public Map<String, Object> retryCanvasTask(@PathVariable("taskId") String taskId,
+                                               HttpServletRequest request) {
+        Map<String, Object> retry = canvasTaskService.retryPayload(taskId, currentOperator(request), currentShopName(request))
+                .orElseThrow(() -> new IllegalArgumentException("该任务没有可恢复的请求参数，无法重试"));
+        String mediaType = textValue(retry.get("media_type"));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> payload = retry.get("payload") instanceof Map<?, ?> value
+                ? toStringObjectMap(value)
+                : Map.of();
+        if (payload.isEmpty()) throw new IllegalArgumentException("该任务没有可恢复的请求参数，无法重试");
+
+        Map<String, Object> created = "video".equalsIgnoreCase(mediaType)
+                ? createCanvasVideoTask(payload, request)
+                : createCanvasImageTask(payload, request);
+        Map<String, Object> response = new LinkedHashMap<>(created);
+        response.put("retry_of", taskId);
+        response.put("media_type", "video".equalsIgnoreCase(mediaType) ? "video" : "image");
+        return response;
+    }
+
+    @PostMapping("/canvas-image-tasks/{taskId}/cancel")
+    public Map<String, Object> cancelCanvasImageTask(@PathVariable("taskId") String taskId) {
+        boolean cancelled = canvasTaskService.cancelTracking(taskId);
+        Map<String, Object> response = new LinkedHashMap<>(taskResponse(taskId, "image"));
+        response.put("cancelled", cancelled);
+        response.put("cancel_scope", "canvas_waiting");
+        response.put("message", "已停止在画布中等待；KIE 服务端任务可能仍会继续完成。");
+        return response;
     }
 
     @PostMapping("/image-task-query")
@@ -367,25 +487,46 @@ public class InfiniteCanvasController {
     @PostMapping("/canvas-video")
     public Map<String, Object> canvasVideo(@RequestBody Map<String, Object> payload,
                                            HttpServletRequest request) throws InterruptedException {
-        String prompt = firstNonBlank(textValue(payload.get("prompt")), "Generate a video.");
-        Map<String, Object> input = new LinkedHashMap<>();
-        input.put("prompt", prompt);
-        copyIfPresent(payload, input, "duration");
-        copyIfPresent(payload, input, "aspect_ratio");
-        copyIfPresent(payload, input, "resolution");
-        copyIfPresent(payload, input, "enhance_prompt");
-        copyIfPresent(payload, input, "generate_audio");
-        List<String> images = mediaUrls(payload.get("images")).stream().map(this::normalizeInputUrl).toList();
-        if (!images.isEmpty()) input.put("image_input", images);
-        String model = normalizeVideoModel(textValue(payload.get("model")));
-        KieTaskResult created = kieClientService.createVideoTask(model, input);
-        String taskId = created.getTaskId();
-        canvasTaskService.recordCreated(taskId, "video", currentOperator(request), currentShopName(request));
+        String taskId = textValue(createCanvasVideoTask(payload, request).get("task_id"));
         KieTaskResult result = waitForTask(taskId, "video", 600_000L, 8_000L);
         if (!result.isSuccess()) {
             throw new RuntimeException(firstNonBlank(result.getErrorMessage(), "视频生成失败或超时，taskId=" + taskId));
         }
         return Map.of("videos", List.of(result.getResultUrl()), "task_id", taskId);
+    }
+
+    @PostMapping("/canvas-video-tasks")
+    public Map<String, Object> createCanvasVideoTask(@RequestBody Map<String, Object> payload,
+                                                      HttpServletRequest request) {
+        String operator = currentOperator(request);
+        String shopName = currentShopName(request);
+        canvasTaskService.requireSubmissionCapacity(operator, shopName);
+        String prompt = firstNonBlank(textValue(payload.get("prompt")), "Generate a video.");
+        String model = normalizeVideoModel(textValue(payload.get("model")));
+        Map<String, Object> input = videoInput(payload, prompt, model);
+        KieTaskResult created = kieClientService.createVideoTask(model, input);
+        String taskId = created.getTaskId();
+        canvasTaskService.recordCreated(taskId, "video", operator, shopName, payload);
+        return Map.of(
+                "task_id", taskId,
+                "status", "queued",
+                "completion_mode", useCallbackTaskCompletion() ? "callback" : "polling"
+        );
+    }
+
+    @GetMapping("/canvas-video-tasks/{taskId}")
+    public Map<String, Object> getCanvasVideoTask(@PathVariable("taskId") String taskId) {
+        return taskResponse(taskId, "video");
+    }
+
+    @PostMapping("/canvas-video-tasks/{taskId}/cancel")
+    public Map<String, Object> cancelCanvasVideoTask(@PathVariable("taskId") String taskId) {
+        boolean cancelled = canvasTaskService.cancelTracking(taskId);
+        Map<String, Object> response = new LinkedHashMap<>(taskResponse(taskId, "video"));
+        response.put("cancelled", cancelled);
+        response.put("cancel_scope", "canvas_waiting");
+        response.put("message", "已停止在画布中等待；KIE 服务端任务可能仍会继续完成。");
+        return response;
     }
 
     @PostMapping("/canvas-llm")
@@ -442,26 +583,545 @@ public class InfiniteCanvasController {
     }
 
     @GetMapping("/asset-library")
+    public Map<String, Object> getAssetLibrary(HttpServletRequest request) {
+        return Map.of("library", assetLibraryState(request));
+    }
+
+    @PostMapping("/asset-library/libraries")
+    public Map<String, Object> createAssetLibrary(@RequestBody Map<String, Object> payload,
+                                                   HttpServletRequest request) {
+        CanvasProject row = libraryRow(request);
+        Map<String, Object> state = libraryState(row);
+        Map<String, Object> library = assetLibraryFromState(state);
+        Map<String, Object> created = newAssetLibraryEntry(firstNonBlank(textValue(payload.get("name")), "我的素材库"));
+        mapList(library, "libraries").add(created);
+        library.put("active_library_id", created.get("id"));
+        saveLibraryState(row, state);
+        return Map.of("library", assetLibraryFromState(state), "library_item", created);
+    }
+
+    @PostMapping("/asset-library/categories")
+    public Map<String, Object> createAssetCategory(@RequestBody Map<String, Object> payload,
+                                                    HttpServletRequest request) {
+        CanvasProject row = libraryRow(request);
+        Map<String, Object> state = libraryState(row);
+        Map<String, Object> library = assetLibraryFromState(state);
+        Map<String, Object> target = requireAssetLibrary(library, textValue(payload.get("library_id")));
+        String type = "workflow".equalsIgnoreCase(textValue(payload.get("type"))) ? "workflow" : "image";
+        Map<String, Object> category = newAssetCategory(
+                firstNonBlank(textValue(payload.get("name")), type.equals("workflow") ? "工作流" : "图片素材"), type);
+        mapList(target, "categories").add(category);
+        saveLibraryState(row, state);
+        return Map.of("library", assetLibraryFromState(state), "category", category);
+    }
+
+    @PostMapping("/asset-library/items")
+    public Map<String, Object> createAssetItem(@RequestBody Map<String, Object> payload,
+                                                HttpServletRequest request) {
+        CanvasProject row = libraryRow(request);
+        Map<String, Object> state = libraryState(row);
+        Map<String, Object> item = appendAssetItem(assetLibraryFromState(state), payload);
+        saveLibraryState(row, state);
+        return Map.of("library", assetLibraryFromState(state), "item", item);
+    }
+
+    @PostMapping("/asset-library/items/batch")
+    public Map<String, Object> createAssetItems(@RequestBody Map<String, Object> payload,
+                                                 HttpServletRequest request) {
+        CanvasProject row = libraryRow(request);
+        Map<String, Object> state = libraryState(row);
+        Map<String, Object> library = assetLibraryFromState(state);
+        List<Map<String, Object>> created = new ArrayList<>();
+        for (Object rawItem : objectList(payload.get("items"))) {
+            if (rawItem instanceof Map<?, ?> item) {
+                Map<String, Object> merged = new LinkedHashMap<>(payload);
+                merged.putAll(toStringObjectMap(item));
+                created.add(appendAssetItem(library, merged));
+            }
+        }
+        saveLibraryState(row, state);
+        return Map.of("library", assetLibraryFromState(state), "items", created);
+    }
+
+    @PatchMapping("/asset-library/items/{id}")
+    public Map<String, Object> updateAssetItem(@PathVariable String id,
+                                                @RequestBody Map<String, Object> payload,
+                                                HttpServletRequest request) {
+        CanvasProject row = libraryRow(request);
+        Map<String, Object> state = libraryState(row);
+        Map<String, Object> item = requireAssetItem(assetLibraryFromState(state), id);
+        String name = textValue(payload.get("name"));
+        if (!name.isBlank()) item.put("name", limitText(name, 200));
+        if (payload.containsKey("tags")) item.put("tags", normalizedTags(payload.get("tags")));
+        if (payload.containsKey("description")) item.put("description", limitText(textValue(payload.get("description")), 2000));
+        if (payload.containsKey("cover_url")) item.put("cover_url", optionalAssetUrl(payload.get("cover_url")));
+        if (payload.containsKey("template_scope")) item.put("template_scope", normalizeTemplateScope(payload.get("template_scope")));
+        if (payload.containsKey("template_type")) item.put("template_scope", normalizeTemplateScope(payload.get("template_type")));
+        item.put("updated_at", System.currentTimeMillis());
+        saveLibraryState(row, state);
+        return Map.of("library", assetLibraryFromState(state), "item", item);
+    }
+
+    @PostMapping("/asset-library/items/organize")
+    public Map<String, Object> organizeAssetItems(@RequestBody Map<String, Object> payload,
+                                                   HttpServletRequest request) {
+        Set<String> ids = objectList(payload.get("ids")).stream()
+                .map(this::textValue)
+                .filter(value -> !value.isBlank())
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        if (ids.isEmpty()) throw new IllegalArgumentException("请选择至少一个素材");
+
+        CanvasProject row = libraryRow(request);
+        Map<String, Object> state = libraryState(row);
+        Map<String, Object> library = assetLibraryFromState(state);
+        Map<String, Object> targetLibrary = requireAssetLibrary(library, textValue(payload.get("library_id")));
+        String targetCategoryId = textValue(payload.get("category_id"));
+        Map<String, Object> targetCategory = mapList(targetLibrary, "categories").stream()
+                .filter(category -> targetCategoryId.equals(textValue(category.get("id"))))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("目标素材分组不存在"));
+
+        List<Map<String, Object>> moved = new ArrayList<>();
+        for (String id : ids) {
+            Map<String, Object> item = detachAssetItem(library, id);
+            if (item == null) continue;
+            item.put("type", targetCategory.get("type"));
+            if (payload.containsKey("tags")) {
+                item.put("tags", boolValue(payload.get("merge_tags"))
+                        ? mergeAssetTags(item.get("tags"), payload.get("tags"))
+                        : normalizedTags(payload.get("tags")));
+            }
+            item.put("updated_at", System.currentTimeMillis());
+            mapList(targetCategory, "items").add(item);
+            moved.add(item);
+        }
+        saveLibraryState(row, state);
+        return Map.of("library", assetLibraryFromState(state), "items", moved, "count", moved.size());
+    }
+
+    @PostMapping("/asset-library/items/delete")
+    public Map<String, Object> deleteAssetItems(@RequestBody Map<String, Object> payload,
+                                                 HttpServletRequest request) {
+        Set<String> ids = objectList(payload.get("ids")).stream()
+                .map(this::textValue)
+                .filter(value -> !value.isBlank())
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        CanvasProject row = libraryRow(request);
+        Map<String, Object> state = libraryState(row);
+        Map<String, Object> library = assetLibraryFromState(state);
+        boolean deleteSource = boolValue(payload.get("delete_source"));
+        List<String> removedIds = new ArrayList<>();
+        List<String> sourceDeletedIds = new ArrayList<>();
+        for (String id : ids) {
+            Map<String, Object> item = detachAssetItem(library, id);
+            if (item == null) continue;
+            removedIds.add(id);
+            if (deleteSource && deleteOwnedCanvasAsset(textValue(item.get("url")))) sourceDeletedIds.add(id);
+        }
+        saveLibraryState(row, state);
+        return Map.of(
+                "library", assetLibraryFromState(state),
+                "removed_ids", removedIds,
+                "source_deleted_ids", sourceDeletedIds,
+                "source_delete_requested", deleteSource
+        );
+    }
+
+    @GetMapping("/asset-library/duplicates")
+    public Map<String, Object> getDuplicateAssetItems(HttpServletRequest request) {
+        Map<String, Object> library = assetLibraryState(request);
+        Map<String, List<Map<String, Object>>> candidates = new LinkedHashMap<>();
+        for (Map<String, Object> assetLibrary : mapList(library, "libraries")) {
+            for (Map<String, Object> category : mapList(assetLibrary, "categories")) {
+                for (Map<String, Object> item : mapList(category, "items")) {
+                    String fingerprint = assetFingerprint(item);
+                    if (fingerprint.isBlank()) continue;
+                    Map<String, Object> copy = new LinkedHashMap<>(item);
+                    copy.put("library_id", assetLibrary.get("id"));
+                    copy.put("category_id", category.get("id"));
+                    candidates.computeIfAbsent(fingerprint, ignored -> new ArrayList<>()).add(copy);
+                }
+            }
+        }
+        List<Map<String, Object>> groups = new ArrayList<>();
+        candidates.forEach((fingerprint, items) -> {
+            if (items.size() > 1) groups.add(Map.of("fingerprint", fingerprint, "items", items, "count", items.size()));
+        });
+        return Map.of("groups", groups, "strategy", "checksum_or_exact_url", "count", groups.size());
+    }
+
+    @PatchMapping("/asset-library/categories/{id}")
+    public Map<String, Object> updateAssetCategory(@PathVariable String id,
+                                                    @RequestBody Map<String, Object> payload,
+                                                    HttpServletRequest request) {
+        CanvasProject row = libraryRow(request);
+        Map<String, Object> state = libraryState(row);
+        Map<String, Object> category = requireAssetCategory(assetLibraryFromState(state), id);
+        String name = textValue(payload.get("name"));
+        if (!name.isBlank()) category.put("name", limitText(name, 100));
+        saveLibraryState(row, state);
+        return Map.of("library", assetLibraryFromState(state), "category", category);
+    }
+
+    @DeleteMapping("/asset-library/items/{id}")
+    public Map<String, Object> deleteAssetItem(@PathVariable String id,
+                                               @RequestParam(value = "delete_source", defaultValue = "false") boolean deleteSource,
+                                               HttpServletRequest request) {
+        CanvasProject row = libraryRow(request);
+        Map<String, Object> state = libraryState(row);
+        Map<String, Object> item = requireAssetItem(assetLibraryFromState(state), id);
+        if (!removeAssetItem(assetLibraryFromState(state), id)) throw new RuntimeException("素材不存在");
+        boolean sourceDeleted = deleteSource && deleteOwnedCanvasAsset(textValue(item.get("url")));
+        saveLibraryState(row, state);
+        return Map.of(
+                "library", assetLibraryFromState(state),
+                "source_delete_requested", deleteSource,
+                "source_deleted", sourceDeleted
+        );
+    }
+
+    @DeleteMapping("/asset-library/categories/{id}")
+    public Map<String, Object> deleteAssetCategory(@PathVariable String id, HttpServletRequest request) {
+        CanvasProject row = libraryRow(request);
+        Map<String, Object> state = libraryState(row);
+        Map<String, Object> library = assetLibraryFromState(state);
+        boolean removed = false;
+        for (Map<String, Object> target : mapList(library, "libraries")) {
+            List<Map<String, Object>> categories = mapList(target, "categories");
+            if (categories.size() > 1 && categories.removeIf(category -> id.equals(textValue(category.get("id"))))) {
+                removed = true;
+                break;
+            }
+        }
+        if (!removed) throw new RuntimeException("不能删除最后一个素材分组或分组不存在");
+        saveLibraryState(row, state);
+        return Map.of("library", assetLibraryFromState(state));
+    }
+
+    @DeleteMapping("/asset-library/libraries/{id}")
+    public Map<String, Object> deleteAssetLibrary(@PathVariable String id, HttpServletRequest request) {
+        CanvasProject row = libraryRow(request);
+        Map<String, Object> state = libraryState(row);
+        Map<String, Object> library = assetLibraryFromState(state);
+        List<Map<String, Object>> libraries = mapList(library, "libraries");
+        if (libraries.size() <= 1 || !libraries.removeIf(item -> id.equals(textValue(item.get("id"))))) {
+            throw new RuntimeException("至少保留一个素材库");
+        }
+        if (id.equals(textValue(library.get("active_library_id")))) library.put("active_library_id", libraries.get(0).get("id"));
+        saveLibraryState(row, state);
+        return Map.of("library", assetLibraryFromState(state));
+    }
+
+    @PostMapping("/asset-library/workflows/upload")
+    public Map<String, Object> uploadWorkflowAssets(@RequestParam("files") List<MultipartFile> files,
+                                                     @RequestParam(value = "library_id", required = false) String libraryId,
+                                                     @RequestParam(value = "category_id", required = false) String categoryId,
+                                                     HttpServletRequest request) {
+        CanvasProject row = libraryRow(request);
+        Map<String, Object> state = libraryState(row);
+        Map<String, Object> library = assetLibraryFromState(state);
+        List<Map<String, Object>> created = new ArrayList<>();
+        for (MultipartFile file : files) {
+            Map<String, Object> uploaded = uploadFile(file);
+            Map<String, Object> itemPayload = new LinkedHashMap<>();
+            itemPayload.put("library_id", libraryId);
+            itemPayload.put("category_id", categoryId);
+            itemPayload.put("url", uploaded.get("url"));
+            itemPayload.put("name", uploaded.get("name"));
+            itemPayload.put("kind", "workflow");
+            created.add(appendAssetItem(library, itemPayload));
+        }
+        saveLibraryState(row, state);
+        return Map.of("library", assetLibraryFromState(state), "items", created);
+    }
+
+    @GetMapping("/legacy/asset-library-placeholder")
     public Map<String, Object> assetLibrary() {
         return Map.of("library", emptyAssetLibrary());
     }
 
-    @PostMapping({"/asset-library/items", "/asset-library/items/batch", "/asset-library/categories", "/asset-library/libraries"})
+    @PostMapping({"/legacy/asset-library/items", "/legacy/asset-library/items/batch", "/legacy/asset-library/categories", "/legacy/asset-library/libraries"})
     public Map<String, Object> mutateAssetLibrary() {
         return assetLibrary();
     }
 
-    @DeleteMapping({"/asset-library/items/{id}", "/asset-library/categories/{id}", "/asset-library/libraries/{id}"})
+    @DeleteMapping({"/legacy/asset-library/items/{id}", "/legacy/asset-library/categories/{id}", "/legacy/asset-library/libraries/{id}"})
     public Map<String, Object> deleteAssetLibraryItem() {
         return assetLibrary();
     }
 
     @GetMapping("/local-assets")
+    public Map<String, Object> getLocalAssets(HttpServletRequest request) {
+        return localAssetsResponse(libraryState(request));
+    }
+
+    @PostMapping("/local-assets/upload")
+    public Map<String, Object> uploadLocalAssets(@RequestParam("files") List<MultipartFile> files,
+                                                  @RequestParam(value = "folder", required = false) String folder,
+                                                  HttpServletRequest request) {
+        CanvasProject row = libraryRow(request);
+        Map<String, Object> state = libraryState(row);
+        List<Map<String, Object>> created = new ArrayList<>();
+        for (MultipartFile file : files) {
+            created.add(appendLocalAsset(state, folder, uploadFile(file)));
+        }
+        saveLibraryState(row, state);
+        Map<String, Object> response = new LinkedHashMap<>(localAssetsResponse(state));
+        response.put("files", created);
+        return response;
+    }
+
+    @PostMapping("/local-assets/import-urls")
+    public Map<String, Object> importLocalAssetUrls(@RequestBody Map<String, Object> payload,
+                                                     HttpServletRequest request) {
+        CanvasProject row = libraryRow(request);
+        Map<String, Object> state = libraryState(row);
+        List<Map<String, Object>> created = new ArrayList<>();
+        for (Object rawItem : objectList(payload.get("items"))) {
+            if (!(rawItem instanceof Map<?, ?> item)) continue;
+            Map<String, Object> value = toStringObjectMap(item);
+            String url = textValue(value.get("url"));
+            if (url.isBlank()) continue;
+            Map<String, Object> normalized = new LinkedHashMap<>();
+            normalized.put("url", normalizeInputUrl(url));
+            normalized.put("name", firstNonBlank(textValue(value.get("name")), "素材"));
+            normalized.put("kind", firstNonBlank(textValue(value.get("kind")), mediaKind(textValue(value.get("name")), url)));
+            created.add(appendLocalAsset(state, textValue(payload.get("folder")), normalized));
+        }
+        saveLibraryState(row, state);
+        Map<String, Object> response = new LinkedHashMap<>(localAssetsResponse(state));
+        response.put("files", created);
+        response.put("count", created.size());
+        return response;
+    }
+
+    @PostMapping("/local-assets/folders")
+    public Map<String, Object> createLocalAssetFolder(@RequestBody Map<String, Object> payload,
+                                                       HttpServletRequest request) {
+        CanvasProject row = libraryRow(request);
+        Map<String, Object> state = libraryState(row);
+        Map<String, Object> folder = appendLocalFolder(state, textValue(payload.get("parent")), textValue(payload.get("name")));
+        saveLibraryState(row, state);
+        Map<String, Object> response = new LinkedHashMap<>(localAssetsResponse(state));
+        response.put("folder", folder);
+        return response;
+    }
+
+    @PatchMapping("/local-assets/folders")
+    public Map<String, Object> renameLocalAssetFolder(@RequestBody Map<String, Object> payload,
+                                                       HttpServletRequest request) {
+        CanvasProject row = libraryRow(request);
+        Map<String, Object> state = libraryState(row);
+        Map<String, Object> folder = requireLocalFolder(state, textValue(payload.get("path")));
+        String name = textValue(payload.get("name"));
+        if (name.isBlank()) throw new IllegalArgumentException("文件夹名称不能为空");
+        folder.put("name", limitText(name, 100));
+        saveLibraryState(row, state);
+        Map<String, Object> response = new LinkedHashMap<>(localAssetsResponse(state));
+        response.put("folder", folder);
+        return response;
+    }
+
+    @PatchMapping("/local-assets/items")
+    public Map<String, Object> renameLocalAsset(@RequestBody Map<String, Object> payload,
+                                                HttpServletRequest request) {
+        CanvasProject row = libraryRow(request);
+        Map<String, Object> state = libraryState(row);
+        Map<String, Object> item = requireLocalAsset(state, textValue(payload.get("path")));
+        String name = textValue(payload.get("name"));
+        if (name.isBlank()) throw new IllegalArgumentException("素材名称不能为空");
+        String oldPath = textValue(item.get("file"));
+        item.put("name", limitText(name, 200));
+        if (payload.containsKey("tags")) item.put("tags", normalizedTags(payload.get("tags")));
+        if (payload.containsKey("description")) item.put("description", limitText(textValue(payload.get("description")), 2000));
+        saveLibraryState(row, state);
+        Map<String, Object> response = new LinkedHashMap<>(localAssetsResponse(state));
+        response.put("item", item);
+        response.put("old_path", oldPath);
+        return response;
+    }
+
+    @PostMapping("/local-assets/items/organize")
+    public Map<String, Object> organizeLocalAssets(@RequestBody Map<String, Object> payload,
+                                                    HttpServletRequest request) {
+        CanvasProject row = libraryRow(request);
+        Map<String, Object> state = libraryState(row);
+        Set<String> ids = objectList(payload.get("ids")).stream()
+                .map(this::textValue)
+                .filter(value -> !value.isBlank())
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        if (ids.isEmpty()) throw new IllegalArgumentException("请选择至少一个素材");
+        String folder = textValue(payload.get("folder"));
+        if (!folder.isBlank()) requireLocalFolder(state, folder);
+        List<Map<String, Object>> updated = new ArrayList<>();
+        for (Map<String, Object> item : localAssetItems(state)) {
+            if (!ids.contains(textValue(item.get("id"))) && !ids.contains(textValue(item.get("file")))) continue;
+            item.put("folder", folder);
+            if (payload.containsKey("tags")) {
+                item.put("tags", boolValue(payload.get("merge_tags"))
+                        ? mergeAssetTags(item.get("tags"), payload.get("tags"))
+                        : normalizedTags(payload.get("tags")));
+            }
+            if (payload.containsKey("description")) item.put("description", limitText(textValue(payload.get("description")), 2000));
+            item.put("updated_at", System.currentTimeMillis());
+            updated.add(item);
+        }
+        saveLibraryState(row, state);
+        Map<String, Object> response = new LinkedHashMap<>(localAssetsResponse(state));
+        response.put("items", updated);
+        response.put("count", updated.size());
+        return response;
+    }
+
+    @GetMapping("/local-assets/duplicates")
+    public Map<String, Object> getDuplicateLocalAssets(HttpServletRequest request) {
+        Map<String, List<Map<String, Object>>> candidates = new LinkedHashMap<>();
+        for (Map<String, Object> item : localAssetItems(libraryState(request))) {
+            String fingerprint = assetFingerprint(item);
+            if (!fingerprint.isBlank()) candidates.computeIfAbsent(fingerprint, ignored -> new ArrayList<>()).add(item);
+        }
+        List<Map<String, Object>> groups = new ArrayList<>();
+        candidates.forEach((fingerprint, items) -> {
+            if (items.size() > 1) groups.add(Map.of("fingerprint", fingerprint, "items", items, "count", items.size()));
+        });
+        return Map.of("groups", groups, "strategy", "checksum_or_exact_url", "count", groups.size());
+    }
+
+    @PostMapping("/local-assets/delete")
+    public Map<String, Object> deleteLocalAssets(@RequestBody Map<String, Object> payload,
+                                                  HttpServletRequest request) {
+        CanvasProject row = libraryRow(request);
+        Map<String, Object> state = libraryState(row);
+        Set<String> names = objectList(payload.get("names")).stream().map(this::textValue).collect(Collectors.toSet());
+        List<Map<String, Object>> items = localAssetItems(state);
+        boolean deleteSource = boolValue(payload.get("delete_source"));
+        List<Map<String, Object>> removed = items.stream()
+                .filter(item -> names.contains(textValue(item.get("id"))) || names.contains(textValue(item.get("file"))))
+                .toList();
+        List<String> deleted = removed.stream().map(item -> textValue(item.get("file"))).toList();
+        List<String> sourceDeleted = removed.stream()
+                .filter(item -> deleteSource && deleteOwnedCanvasAsset(textValue(item.get("url"))))
+                .map(item -> textValue(item.get("file")))
+                .toList();
+        items.removeIf(item -> names.contains(textValue(item.get("id"))) || names.contains(textValue(item.get("file"))));
+        saveLibraryState(row, state);
+        Map<String, Object> response = new LinkedHashMap<>(localAssetsResponse(state));
+        response.put("deleted", deleted);
+        response.put("source_deleted", sourceDeleted);
+        response.put("source_delete_requested", deleteSource);
+        return response;
+    }
+
+    @GetMapping("/legacy/local-assets-placeholder")
     public Map<String, Object> localAssets() {
         return Map.of("items", List.of(), "tree", Map.of("id", "__root__", "name", "全部上传", "items", List.of(), "children", List.of()));
     }
 
     @GetMapping("/prompt-libraries")
+    public Map<String, Object> getPromptLibraries(HttpServletRequest request) {
+        return Map.of("library", promptLibraryState(request));
+    }
+
+    @PostMapping("/prompt-libraries")
+    public Map<String, Object> createPromptLibrary(@RequestBody Map<String, Object> payload,
+                                                    HttpServletRequest request) {
+        CanvasProject row = libraryRow(request);
+        Map<String, Object> state = libraryState(row);
+        Map<String, Object> library = promptLibraryFromState(state);
+        Map<String, Object> created = newPromptLibrary(firstNonBlank(textValue(payload.get("name")), "我的提示词库"));
+        mapList(library, "libraries").add(created);
+        library.put("active_library_id", created.get("id"));
+        saveLibraryState(row, state);
+        return Map.of("library", promptLibraryFromState(state), "library_item", created);
+    }
+
+    @PostMapping("/prompt-libraries/items")
+    public Map<String, Object> createPromptLibraryItem(@RequestBody Map<String, Object> payload,
+                                                        HttpServletRequest request) {
+        CanvasProject row = libraryRow(request);
+        Map<String, Object> state = libraryState(row);
+        Map<String, Object> item = appendPromptItem(promptLibraryFromState(state), payload);
+        saveLibraryState(row, state);
+        return Map.of("library", promptLibraryFromState(state), "item", item);
+    }
+
+    @PatchMapping("/prompt-libraries/items/{id}")
+    public Map<String, Object> updatePromptLibraryItem(@PathVariable String id,
+                                                        @RequestBody Map<String, Object> payload,
+                                                        HttpServletRequest request) {
+        CanvasProject row = libraryRow(request);
+        Map<String, Object> state = libraryState(row);
+        Map<String, Object> item = requirePromptItem(promptLibraryFromState(state), id);
+        for (String key : List.of("name", "category", "scene", "positive", "negative")) {
+            if (payload.containsKey(key)) item.put(key, limitText(textValue(payload.get(key)), key.equals("positive") || key.equals("negative") ? 8000 : 300));
+        }
+        saveLibraryState(row, state);
+        return Map.of("library", promptLibraryFromState(state), "item", item);
+    }
+
+    @DeleteMapping("/prompt-libraries/items/{id}")
+    public Map<String, Object> deletePromptLibraryItem(@PathVariable String id, HttpServletRequest request) {
+        CanvasProject row = libraryRow(request);
+        Map<String, Object> state = libraryState(row);
+        if (!removePromptItem(promptLibraryFromState(state), id)) throw new RuntimeException("提示词不存在");
+        saveLibraryState(row, state);
+        return Map.of("library", promptLibraryFromState(state));
+    }
+
+    @PostMapping("/prompt-libraries/categories")
+    public Map<String, Object> createPromptCategory(@RequestBody Map<String, Object> payload,
+                                                     HttpServletRequest request) {
+        CanvasProject row = libraryRow(request);
+        Map<String, Object> state = libraryState(row);
+        Map<String, Object> library = promptLibraryFromState(state);
+        Map<String, Object> target = requirePromptLibrary(library, textValue(payload.get("library_id")));
+        requireEditablePromptLibrary(target);
+        Map<String, Object> category = newPromptCategory(firstNonBlank(textValue(payload.get("name")), "未分类"));
+        mapList(target, "categories").add(category);
+        saveLibraryState(row, state);
+        return Map.of("library", promptLibraryFromState(state), "category", category);
+    }
+
+    @PatchMapping("/prompt-libraries/categories/{id}")
+    public Map<String, Object> updatePromptCategory(@PathVariable String id,
+                                                     @RequestBody Map<String, Object> payload,
+                                                     HttpServletRequest request) {
+        CanvasProject row = libraryRow(request);
+        Map<String, Object> state = libraryState(row);
+        Map<String, Object> category = requirePromptCategory(promptLibraryFromState(state), id);
+        String name = textValue(payload.get("name"));
+        if (name.isBlank()) throw new IllegalArgumentException("分类名称不能为空");
+        category.put("name", limitText(name, 100));
+        saveLibraryState(row, state);
+        return Map.of("library", promptLibraryFromState(state), "category", category);
+    }
+
+    @DeleteMapping("/prompt-libraries/categories/{id}")
+    public Map<String, Object> deletePromptCategory(@PathVariable String id, HttpServletRequest request) {
+        CanvasProject row = libraryRow(request);
+        Map<String, Object> state = libraryState(row);
+        Map<String, Object> library = promptLibraryFromState(state);
+        if (!removePromptCategory(library, id)) throw new RuntimeException("提示词分类不存在");
+        saveLibraryState(row, state);
+        return Map.of("library", promptLibraryFromState(state));
+    }
+
+    @DeleteMapping("/prompt-libraries/{id}")
+    public Map<String, Object> deletePromptLibrary(@PathVariable String id, HttpServletRequest request) {
+        CanvasProject row = libraryRow(request);
+        Map<String, Object> state = libraryState(row);
+        Map<String, Object> library = promptLibraryFromState(state);
+        List<Map<String, Object>> libraries = mapList(library, "libraries");
+        if ("system".equals(id) || libraries.stream().filter(item -> !boolValue(item.get("readonly"))).count() <= 1
+                || !libraries.removeIf(item -> id.equals(textValue(item.get("id"))))) {
+            throw new RuntimeException("至少保留一个我的提示词库");
+        }
+        if (id.equals(textValue(library.get("active_library_id")))) library.put("active_library_id", "mine");
+        saveLibraryState(row, state);
+        return Map.of("library", promptLibraryFromState(state));
+    }
+
+    @GetMapping("/legacy/prompt-libraries-placeholder")
     public Map<String, Object> promptLibraries() {
         return Map.of("library", Map.of(
                 "active_library_id", "system",
@@ -469,17 +1129,89 @@ public class InfiniteCanvasController {
         ));
     }
 
-    @PostMapping({"/prompt-libraries", "/prompt-libraries/items", "/prompt-libraries/items/delete", "/prompt-libraries/categories"})
+    @PostMapping({"/legacy/prompt-libraries", "/legacy/prompt-libraries/items", "/legacy/prompt-libraries/items/delete", "/legacy/prompt-libraries/categories"})
     public Map<String, Object> mutatePromptLibraries() {
         return promptLibraries();
     }
 
-    @DeleteMapping({"/prompt-libraries/{id}", "/prompt-libraries/items/{id}", "/prompt-libraries/categories/{id}"})
+    @DeleteMapping({"/legacy/prompt-libraries/{id}", "/legacy/prompt-libraries/items/{id}", "/legacy/prompt-libraries/categories/{id}"})
     public Map<String, Object> deletePromptLibraryItem() {
         return promptLibraries();
     }
 
     @GetMapping("/smart-canvas/prompt-templates")
+    public Map<String, Object> getSmartCanvasPromptTemplates(HttpServletRequest request) {
+        List<Map<String, Object>> templates = new ArrayList<>();
+        for (Map<String, Object> library : mapList(promptLibraryState(request), "libraries")) {
+            for (Map<String, Object> item : mapList(library, "items")) {
+                Map<String, Object> template = new LinkedHashMap<>(item);
+                template.put("libraryId", library.get("id"));
+                templates.add(template);
+            }
+        }
+        return Map.of("templates", templates, "source", "ai-project");
+    }
+
+    @PostMapping(value = "/canvas-workflows/export", produces = "application/zip")
+    public ResponseEntity<byte[]> exportCanvasWorkflow(@RequestBody Map<String, Object> payload) {
+        WorkflowArchive archive = createWorkflowArchive(payload);
+        String filename = workflowFilename(textValue(payload.get("filename")));
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType("application/zip"))
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
+                .header("X-AI-Canvas-Resources-Found", String.valueOf(archive.sourceCount()))
+                .header("X-AI-Canvas-Resources-Packed", String.valueOf(archive.packedCount()))
+                .header("X-AI-Canvas-Resources-Skipped", String.valueOf(archive.skippedCount()))
+                .contentLength(archive.bytes().length)
+                .body(archive.bytes());
+    }
+
+    @PostMapping("/canvas-workflows/export-to-library")
+    public Map<String, Object> exportCanvasWorkflowToLibrary(@RequestBody Map<String, Object> payload,
+                                                              HttpServletRequest request) {
+        String filename = workflowFilename(textValue(payload.get("filename")));
+        WorkflowArchive archive = createWorkflowArchive(payload);
+        Map<String, Object> uploaded = uploadWorkflowBytes(archive.bytes(), filename, "application/zip");
+        CanvasProject row = libraryRow(request);
+        Map<String, Object> state = libraryState(row);
+        Map<String, Object> itemPayload = new LinkedHashMap<>();
+        itemPayload.put("library_id", payload.get("library_id"));
+        itemPayload.put("category_id", payload.get("category_id"));
+        itemPayload.put("url", uploaded.get("url"));
+        itemPayload.put("name", firstNonBlank(textValue(payload.get("name")), filename.replaceFirst("(?i)\\.zip$", "")));
+        itemPayload.put("kind", "workflow");
+        for (String key : List.of("tags", "description", "cover_url", "template_scope", "template_type", "scope")) {
+            if (payload.containsKey(key)) itemPayload.put(key, payload.get(key));
+        }
+        Map<String, Object> item = appendAssetItem(assetLibraryFromState(state), itemPayload);
+        saveLibraryState(row, state);
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("library", assetLibraryFromState(state));
+        response.put("item", item);
+        response.put("resource_summary", workflowResourceSummary(archive.sourceCount(), archive.packedCount(), archive.skippedCount()));
+        return response;
+    }
+
+    @PostMapping("/canvas-workflows/import")
+    public Map<String, Object> importCanvasWorkflow(@RequestParam("file") MultipartFile file) {
+        if (file == null || file.isEmpty()) throw new IllegalArgumentException("请选择工作流 JSON 或 ZIP 文件");
+        String name = firstNonBlank(file.getOriginalFilename(), "workflow.json");
+        try {
+            byte[] bytes = file.getBytes();
+            if (bytes.length > WORKFLOW_ARCHIVE_MAX_BYTES) throw new IllegalArgumentException("工作流文件不能超过 220MB");
+            WorkflowImport imported = name.toLowerCase(Locale.ROOT).endsWith(".zip")
+                    ? importWorkflowArchive(bytes)
+                    : new WorkflowImport(readWorkflowJson(bytes), 0, 0, 0);
+            Map<String, Object> response = new LinkedHashMap<>();
+            response.put("workflow", imported.workflow());
+            response.put("resource_summary", workflowResourceSummary(imported.sourceCount(), imported.restoredCount(), imported.skippedCount()));
+            return response;
+        } catch (IOException e) {
+            throw new RuntimeException("读取工作流失败: " + e.getMessage(), e);
+        }
+    }
+
+    @GetMapping("/legacy/smart-canvas/prompt-templates-placeholder")
     public Map<String, Object> smartCanvasPromptTemplates() {
         return Map.of("templates", List.of(), "source", "ai-project");
     }
@@ -493,6 +1225,744 @@ public class InfiniteCanvasController {
     @GetMapping("/canvas-comfy-tasks/{taskId}")
     public Map<String, Object> getCanvasComfyTask(@PathVariable("taskId") String taskId) {
         return Map.of("id", taskId, "status", "failed", "error", "当前项目未启用 ComfyUI");
+    }
+
+    private CanvasProject libraryRow(HttpServletRequest request) {
+        return libraryRow(request, ownedRows(request));
+    }
+
+    private CanvasProject libraryRow(HttpServletRequest request, List<CanvasProject> rows) {
+        Optional<CanvasProject> existing = rows.stream().filter(this::isLibraryRow).findFirst();
+        if (existing.isPresent()) return existing.get();
+        CanvasProject row = new CanvasProject();
+        row.setOperator(currentOperator(request));
+        row.setShopName(currentShopName(request));
+        row.setProjectName(LIBRARY_PROJECT_NAME);
+        row.setMetaJson(writeJson(Map.of("kind", LIBRARY_KIND)));
+        row.setSnapshotJson(writeJson(defaultLibraryState()));
+        return canvasProjectRepository.save(row);
+    }
+
+    private Map<String, Object> libraryState(HttpServletRequest request) {
+        CanvasProject row = libraryRow(request);
+        Map<String, Object> state = libraryState(row);
+        saveLibraryState(row, state);
+        return state;
+    }
+
+    private Map<String, Object> libraryState(CanvasProject row) {
+        Map<String, Object> state = readMap(row.getSnapshotJson());
+        if (!(state.get("asset_library") instanceof Map<?, ?>)) state.put("asset_library", newAssetLibrary("我的素材库"));
+        if (!(state.get("prompt_library") instanceof Map<?, ?>)) state.put("prompt_library", defaultPromptLibrary());
+        if (!(state.get("local_assets") instanceof Map<?, ?>)) state.put("local_assets", defaultLocalAssets());
+        assetLibraryFromState(state);
+        promptLibraryFromState(state);
+        localAssetsState(state);
+        return state;
+    }
+
+    private void saveLibraryState(CanvasProject row, Map<String, Object> state) {
+        row.setProjectName(LIBRARY_PROJECT_NAME);
+        row.setMetaJson(writeJson(Map.of("kind", LIBRARY_KIND)));
+        row.setSnapshotJson(writeJson(state));
+        canvasProjectRepository.save(row);
+    }
+
+    private Map<String, Object> defaultLibraryState() {
+        Map<String, Object> state = new LinkedHashMap<>();
+        state.put("asset_library", newAssetLibrary("我的素材库"));
+        state.put("prompt_library", defaultPromptLibrary());
+        state.put("local_assets", defaultLocalAssets());
+        return state;
+    }
+
+    private boolean isLibraryRow(CanvasProject row) {
+        return LIBRARY_PROJECT_NAME.equals(row.getProjectName()) || LIBRARY_KIND.equals(textValue(readMeta(row).get("kind")));
+    }
+
+    private Map<String, Object> assetLibraryState(HttpServletRequest request) {
+        return assetLibraryFromState(libraryState(request));
+    }
+
+    private Map<String, Object> assetLibraryFromState(Map<String, Object> state) {
+        Map<String, Object> library = objectMap(state.get("asset_library"));
+        if (library.isEmpty()) library = newAssetLibrary("我的素材库");
+        state.put("asset_library", library);
+        List<Map<String, Object>> libraries = mapList(library, "libraries");
+        if (libraries.isEmpty()) libraries.add(newAssetLibraryEntry("我的素材库"));
+        for (Map<String, Object> item : libraries) ensureAssetLibraryShape(item);
+        String activeId = textValue(library.get("active_library_id"));
+        if (libraries.stream().noneMatch(item -> activeId.equals(textValue(item.get("id"))))) {
+            library.put("active_library_id", libraries.get(0).get("id"));
+        }
+        Map<String, Object> active = requireAssetLibrary(library, textValue(library.get("active_library_id")));
+        library.put("categories", mapList(active, "categories"));
+        library.put("updated_at", System.currentTimeMillis());
+        return library;
+    }
+
+    private Map<String, Object> newAssetLibrary(String name) {
+        Map<String, Object> library = newAssetLibraryEntry(name);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("active_library_id", library.get("id"));
+        result.put("libraries", new ArrayList<>(List.of(library)));
+        result.put("categories", library.get("categories"));
+        return result;
+    }
+
+    private Map<String, Object> newAssetLibraryEntry(String name) {
+        Map<String, Object> library = new LinkedHashMap<>();
+        library.put("id", "lib_" + UUID.randomUUID());
+        library.put("name", limitText(name, 100));
+        library.put("categories", new ArrayList<>(List.of(
+                newAssetCategory("图片素材", "image"),
+                newAssetCategory("工作流", "workflow")
+        )));
+        return library;
+    }
+
+    private void ensureAssetLibraryShape(Map<String, Object> library) {
+        if (textValue(library.get("id")).isBlank()) library.put("id", "lib_" + UUID.randomUUID());
+        if (textValue(library.get("name")).isBlank()) library.put("name", "我的素材库");
+        List<Map<String, Object>> categories = mapList(library, "categories");
+        if (categories.stream().noneMatch(item -> "image".equals(textValue(item.get("type"))))) {
+            categories.add(newAssetCategory("图片素材", "image"));
+        }
+        if (categories.stream().noneMatch(item -> "workflow".equals(textValue(item.get("type"))))) {
+            categories.add(newAssetCategory("工作流", "workflow"));
+        }
+        categories.forEach(category -> {
+            if (textValue(category.get("id")).isBlank()) category.put("id", "cat_" + UUID.randomUUID());
+            if (textValue(category.get("name")).isBlank()) category.put("name", "素材分组");
+            if (!"workflow".equals(textValue(category.get("type")))) category.put("type", "image");
+            mapList(category, "items");
+        });
+    }
+
+    private Map<String, Object> newAssetCategory(String name, String type) {
+        Map<String, Object> category = new LinkedHashMap<>();
+        category.put("id", "cat_" + UUID.randomUUID());
+        category.put("name", limitText(name, 100));
+        category.put("type", type);
+        category.put("items", new ArrayList<>());
+        return category;
+    }
+
+    private Map<String, Object> requireAssetLibrary(Map<String, Object> library, String requestedId) {
+        List<Map<String, Object>> libraries = mapList(library, "libraries");
+        String id = firstNonBlank(requestedId, textValue(library.get("active_library_id")), textValue(libraries.isEmpty() ? null : libraries.get(0).get("id")));
+        return libraries.stream().filter(item -> id.equals(textValue(item.get("id")))).findFirst()
+                .orElseThrow(() -> new RuntimeException("素材库不存在"));
+    }
+
+    private Map<String, Object> requireAssetCategory(Map<String, Object> library, String categoryId) {
+        return mapList(library, "libraries").stream()
+                .flatMap(item -> mapList(item, "categories").stream())
+                .filter(item -> categoryId.equals(textValue(item.get("id"))))
+                .findFirst().orElseThrow(() -> new RuntimeException("素材分组不存在"));
+    }
+
+    private Map<String, Object> appendAssetItem(Map<String, Object> library, Map<String, Object> payload) {
+        Map<String, Object> target = requireAssetLibrary(library, textValue(payload.get("library_id")));
+        List<Map<String, Object>> categories = mapList(target, "categories");
+        String kind = firstNonBlank(textValue(payload.get("kind")), textValue(payload.get("type")));
+        String requestedCategory = textValue(payload.get("category_id"));
+        Map<String, Object> category = categories.stream().filter(item -> requestedCategory.equals(textValue(item.get("id")))).findFirst().orElse(null);
+        if (category == null) {
+            String preferredType = "workflow".equalsIgnoreCase(kind) ? "workflow" : "image";
+            category = categories.stream().filter(item -> preferredType.equals(textValue(item.get("type")))).findFirst()
+                    .orElseThrow(() -> new RuntimeException("素材分组不存在"));
+        }
+        String rawUrl = textValue(payload.get("url"));
+        if (rawUrl.isBlank()) throw new IllegalArgumentException("素材地址不能为空");
+        String url = normalizeInputUrl(rawUrl);
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("id", "asset_" + UUID.randomUUID());
+        item.put("url", url);
+        item.put("name", limitText(firstNonBlank(textValue(payload.get("name")), nameFromUrl(url), "素材"), 200));
+        item.put("kind", firstNonBlank(kind, "workflow".equals(textValue(category.get("type"))) ? "workflow" : mediaKind(textValue(item.get("name")), url)));
+        item.put("type", category.get("type"));
+        item.put("created_at", System.currentTimeMillis());
+        for (String key : List.of("thumbnail", "classification", "asset_uris", "width", "height", "duration", "checksum", "size")) {
+            if (payload.containsKey(key)) item.put(key, payload.get(key));
+        }
+        item.put("tags", normalizedTags(payload.get("tags")));
+        item.put("description", limitText(textValue(payload.get("description")), 2000));
+        item.put("cover_url", optionalAssetUrl(payload.get("cover_url")));
+        if ("workflow".equals(item.get("kind"))) {
+            item.put("template_scope", normalizeTemplateScope(firstNonBlank(
+                    textValue(payload.get("template_scope")),
+                    textValue(payload.get("template_type")),
+                    textValue(payload.get("scope"))
+            )));
+        }
+        mapList(category, "items").add(item);
+        return item;
+    }
+
+    private Map<String, Object> requireAssetItem(Map<String, Object> library, String itemId) {
+        return mapList(library, "libraries").stream()
+                .flatMap(item -> mapList(item, "categories").stream())
+                .flatMap(item -> mapList(item, "items").stream())
+                .filter(item -> itemId.equals(textValue(item.get("id"))))
+                .findFirst().orElseThrow(() -> new RuntimeException("素材不存在"));
+    }
+
+    private boolean removeAssetItem(Map<String, Object> library, String itemId) {
+        for (Map<String, Object> target : mapList(library, "libraries")) {
+            for (Map<String, Object> category : mapList(target, "categories")) {
+                if (mapList(category, "items").removeIf(item -> itemId.equals(textValue(item.get("id"))))) return true;
+            }
+        }
+        return false;
+    }
+
+    private Map<String, Object> detachAssetItem(Map<String, Object> library, String itemId) {
+        for (Map<String, Object> target : mapList(library, "libraries")) {
+            for (Map<String, Object> category : mapList(target, "categories")) {
+                List<Map<String, Object>> items = mapList(category, "items");
+                for (int index = 0; index < items.size(); index++) {
+                    if (itemId.equals(textValue(items.get(index).get("id")))) return items.remove(index);
+                }
+            }
+        }
+        return null;
+    }
+
+    private List<String> normalizedTags(Object rawTags) {
+        List<String> raw = new ArrayList<>();
+        if (rawTags instanceof String text) {
+            Collections.addAll(raw, text.split("[,，\\n]"));
+        } else {
+            objectList(rawTags).forEach(value -> raw.add(textValue(value)));
+        }
+        return raw.stream()
+                .map(value -> limitText(value, 48))
+                .filter(value -> !value.isBlank())
+                .distinct()
+                .limit(20)
+                .toList();
+    }
+
+    private List<String> mergeAssetTags(Object existing, Object incoming) {
+        List<String> merged = new ArrayList<>(normalizedTags(existing));
+        merged.addAll(normalizedTags(incoming));
+        return normalizedTags(merged);
+    }
+
+    private String optionalAssetUrl(Object value) {
+        String raw = textValue(value);
+        return raw.isBlank() ? "" : normalizeInputUrl(raw);
+    }
+
+    private String normalizeTemplateScope(Object value) {
+        String scope = textValue(value).trim().toLowerCase(Locale.ROOT);
+        return "full_canvas".equals(scope) || "canvas".equals(scope) ? "full_canvas" : "selected_workflow";
+    }
+
+    private String assetFingerprint(Map<String, Object> item) {
+        String checksum = textValue(item.get("checksum"));
+        if (!checksum.isBlank()) return "checksum:" + textValue(item.get("kind")) + ":" + checksum;
+        String url = textValue(item.get("url"));
+        return url.isBlank() ? "" : "url:" + textValue(item.get("kind")) + ":" + url;
+    }
+
+    private boolean deleteOwnedCanvasAsset(String sourceUrl) {
+        String publicHost = appProperties.getOss() == null ? "" : textValue(appProperties.getOss().getInputPublicHost()).replaceAll("/+$", "");
+        String prefix = publicHost + "/AI_CANVAS/";
+        if (publicHost.isBlank() || !sourceUrl.startsWith(prefix)) return false;
+        String objectName = sourceUrl.substring(publicHost.length() + 1);
+        if (!objectName.startsWith("AI_CANVAS/")) return false;
+        try {
+            ossService.getOssClient().deleteObject(appProperties.getOss().getInputBucket(), objectName);
+            return true;
+        } catch (Exception error) {
+            log.warn("Cannot delete AI canvas source object {}: {}", objectName, error.getMessage());
+            return false;
+        }
+    }
+
+    private Map<String, Object> localAssetsState(Map<String, Object> state) {
+        Map<String, Object> local = objectMap(state.get("local_assets"));
+        if (local.isEmpty()) local = defaultLocalAssets();
+        state.put("local_assets", local);
+        mapList(local, "folders");
+        mapList(local, "items");
+        return local;
+    }
+
+    private Map<String, Object> defaultLocalAssets() {
+        Map<String, Object> local = new LinkedHashMap<>();
+        local.put("folders", new ArrayList<>());
+        local.put("items", new ArrayList<>());
+        return local;
+    }
+
+    private List<Map<String, Object>> localAssetItems(Map<String, Object> state) {
+        return mapList(localAssetsState(state), "items");
+    }
+
+    private Map<String, Object> localAssetsResponse(Map<String, Object> state) {
+        Map<String, Object> local = localAssetsState(state);
+        List<Map<String, Object>> items = mapList(local, "items");
+        Map<String, Object> root = new LinkedHashMap<>();
+        root.put("id", "__root__");
+        root.put("path", "__root__");
+        root.put("name", "全部素材");
+        root.put("items", items);
+        root.put("children", localAssetFolderChildren(local, "__root__"));
+        return Map.of("items", items, "tree", root);
+    }
+
+    private List<Map<String, Object>> localAssetFolderChildren(Map<String, Object> local, String parent) {
+        List<Map<String, Object>> children = new ArrayList<>();
+        for (Map<String, Object> folder : mapList(local, "folders")) {
+            if (!parent.equals(firstNonBlank(textValue(folder.get("parent")), "__root__"))) continue;
+            String id = textValue(folder.get("id"));
+            Map<String, Object> node = new LinkedHashMap<>();
+            node.put("id", id);
+            node.put("path", id);
+            node.put("name", textValue(folder.get("name")));
+            node.put("items", mapList(local, "items").stream()
+                    .filter(item -> id.equals(textValue(item.get("folder")))).toList());
+            node.put("children", localAssetFolderChildren(local, id));
+            children.add(node);
+        }
+        children.sort(Comparator.comparing(item -> textValue(item.get("name")), String.CASE_INSENSITIVE_ORDER));
+        return children;
+    }
+
+    private Map<String, Object> appendLocalFolder(Map<String, Object> state, String parent, String name) {
+        Map<String, Object> local = localAssetsState(state);
+        String safeName = limitText(name, 100);
+        if (safeName.isBlank()) throw new IllegalArgumentException("文件夹名称不能为空");
+        String parentId = firstNonBlank(parent, "__root__");
+        if (!"__root__".equals(parentId)) requireLocalFolder(state, parentId);
+        Map<String, Object> folder = new LinkedHashMap<>();
+        folder.put("id", "local_folder_" + UUID.randomUUID());
+        folder.put("path", folder.get("id"));
+        folder.put("parent", parentId);
+        folder.put("name", safeName);
+        mapList(local, "folders").add(folder);
+        return folder;
+    }
+
+    private Map<String, Object> requireLocalFolder(Map<String, Object> state, String folderId) {
+        return mapList(localAssetsState(state), "folders").stream()
+                .filter(item -> folderId.equals(textValue(item.get("id"))) || folderId.equals(textValue(item.get("path"))))
+                .findFirst().orElseThrow(() -> new RuntimeException("本地素材文件夹不存在"));
+    }
+
+    private Map<String, Object> appendLocalAsset(Map<String, Object> state, String folder, Map<String, Object> uploaded) {
+        String folderId = firstNonBlank(folder, "__root__");
+        if (!"__root__".equals(folderId)) requireLocalFolder(state, folderId);
+        String url = textValue(uploaded.get("url"));
+        if (url.isBlank()) throw new IllegalArgumentException("素材地址不能为空");
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("id", "local_asset_" + UUID.randomUUID());
+        item.put("file", item.get("id"));
+        item.put("folder", folderId);
+        item.put("url", normalizeInputUrl(url));
+        item.put("name", limitText(firstNonBlank(textValue(uploaded.get("name")), nameFromUrl(url), "素材"), 200));
+        item.put("kind", firstNonBlank(textValue(uploaded.get("kind")), mediaKind(textValue(item.get("name")), url)));
+        item.put("created_at", System.currentTimeMillis());
+        for (String key : List.of("thumbnail", "width", "height", "duration", "checksum", "size")) {
+            if (uploaded.containsKey(key)) item.put(key, uploaded.get(key));
+        }
+        localAssetItems(state).add(item);
+        return item;
+    }
+
+    private Map<String, Object> requireLocalAsset(Map<String, Object> state, String path) {
+        return localAssetItems(state).stream()
+                .filter(item -> path.equals(textValue(item.get("id"))) || path.equals(textValue(item.get("file"))))
+                .findFirst().orElseThrow(() -> new RuntimeException("本地素材不存在"));
+    }
+
+    private Map<String, Object> promptLibraryState(HttpServletRequest request) {
+        return promptLibraryFromState(libraryState(request));
+    }
+
+    private Map<String, Object> promptLibraryFromState(Map<String, Object> state) {
+        Map<String, Object> library = objectMap(state.get("prompt_library"));
+        if (library.isEmpty()) library = defaultPromptLibrary();
+        state.put("prompt_library", library);
+        List<Map<String, Object>> libraries = mapList(library, "libraries");
+        if (libraries.stream().noneMatch(item -> "system".equals(textValue(item.get("id"))))) libraries.add(systemPromptLibrary());
+        if (libraries.stream().noneMatch(item -> !boolValue(item.get("readonly")))) libraries.add(newPromptLibrary("我的提示词库"));
+        libraries.forEach(this::ensurePromptLibraryShape);
+        String activeId = textValue(library.get("active_library_id"));
+        if (libraries.stream().noneMatch(item -> activeId.equals(textValue(item.get("id"))))) {
+            library.put("active_library_id", libraries.stream().filter(item -> !boolValue(item.get("readonly"))).findFirst()
+                    .map(item -> item.get("id")).orElse("system"));
+        }
+        library.put("updated_at", System.currentTimeMillis());
+        return library;
+    }
+
+    private Map<String, Object> defaultPromptLibrary() {
+        Map<String, Object> library = new LinkedHashMap<>();
+        library.put("active_library_id", "mine");
+        library.put("libraries", new ArrayList<>(List.of(systemPromptLibrary(), newPromptLibrary("我的提示词库", "mine"))));
+        return library;
+    }
+
+    private Map<String, Object> systemPromptLibrary() {
+        Map<String, Object> library = new LinkedHashMap<>();
+        library.put("id", "system");
+        library.put("name", "系统提示词库");
+        library.put("readonly", true);
+        library.put("categories", new ArrayList<>(List.of(newPromptCategory("通用", "general"))));
+        library.put("items", new ArrayList<>());
+        return library;
+    }
+
+    private Map<String, Object> newPromptLibrary(String name) {
+        return newPromptLibrary(name, "prompt_lib_" + UUID.randomUUID());
+    }
+
+    private Map<String, Object> newPromptLibrary(String name, String id) {
+        Map<String, Object> library = new LinkedHashMap<>();
+        library.put("id", id);
+        library.put("name", limitText(name, 100));
+        library.put("readonly", false);
+        library.put("categories", new ArrayList<>(List.of(newPromptCategory("默认分类", "custom"))));
+        library.put("items", new ArrayList<>());
+        return library;
+    }
+
+    private Map<String, Object> newPromptCategory(String name) {
+        return newPromptCategory(name, "prompt_cat_" + UUID.randomUUID());
+    }
+
+    private Map<String, Object> newPromptCategory(String name, String id) {
+        Map<String, Object> category = new LinkedHashMap<>();
+        category.put("id", id);
+        category.put("name", limitText(name, 100));
+        return category;
+    }
+
+    private void ensurePromptLibraryShape(Map<String, Object> library) {
+        if (textValue(library.get("id")).isBlank()) library.put("id", "prompt_lib_" + UUID.randomUUID());
+        if (textValue(library.get("name")).isBlank()) library.put("name", "我的提示词库");
+        library.putIfAbsent("readonly", false);
+        List<Map<String, Object>> categories = mapList(library, "categories");
+        if (categories.isEmpty()) categories.add(newPromptCategory("默认分类", "custom"));
+        categories.forEach(category -> {
+            if (textValue(category.get("id")).isBlank()) category.put("id", "prompt_cat_" + UUID.randomUUID());
+            if (textValue(category.get("name")).isBlank()) category.put("name", "默认分类");
+        });
+        mapList(library, "items").forEach(item -> {
+            item.putIfAbsent("id", "prompt_" + UUID.randomUUID());
+            item.putIfAbsent("category", categories.get(0).get("id"));
+            item.putIfAbsent("name", "未命名提示词");
+            item.putIfAbsent("positive", "");
+            item.putIfAbsent("negative", "");
+        });
+    }
+
+    private Map<String, Object> requirePromptLibrary(Map<String, Object> library, String requestedId) {
+        List<Map<String, Object>> libraries = mapList(library, "libraries");
+        String id = firstNonBlank(requestedId, textValue(library.get("active_library_id")), "mine");
+        return libraries.stream().filter(item -> id.equals(textValue(item.get("id")))).findFirst()
+                .orElseThrow(() -> new RuntimeException("提示词库不存在"));
+    }
+
+    private void requireEditablePromptLibrary(Map<String, Object> library) {
+        if (boolValue(library.get("readonly"))) throw new RuntimeException("系统提示词库不可修改");
+    }
+
+    private Map<String, Object> appendPromptItem(Map<String, Object> library, Map<String, Object> payload) {
+        Map<String, Object> target = requirePromptLibrary(library, textValue(payload.get("library_id")));
+        requireEditablePromptLibrary(target);
+        List<Map<String, Object>> categories = mapList(target, "categories");
+        String requestedCategoryId = firstNonBlank(textValue(payload.get("category")), textValue(categories.get(0).get("id")));
+        Map<String, Object> category = categories.stream()
+                .filter(value -> requestedCategoryId.equals(textValue(value.get("id")))).findFirst().orElse(null);
+        if (category == null) {
+            category = newPromptCategory(requestedCategoryId);
+            categories.add(category);
+        }
+        String categoryId = textValue(category.get("id"));
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("id", "prompt_" + UUID.randomUUID());
+        item.put("libraryId", target.get("id"));
+        item.put("name", limitText(firstNonBlank(textValue(payload.get("name")), "未命名提示词"), 300));
+        item.put("category", categoryId);
+        item.put("scene", limitText(textValue(payload.get("scene")), 300));
+        item.put("positive", limitText(textValue(payload.get("positive")), 8000));
+        item.put("negative", limitText(textValue(payload.get("negative")), 8000));
+        item.put("created_at", System.currentTimeMillis());
+        mapList(target, "items").add(item);
+        return item;
+    }
+
+    private Map<String, Object> requirePromptItem(Map<String, Object> library, String id) {
+        for (Map<String, Object> target : mapList(library, "libraries")) {
+            for (Map<String, Object> item : mapList(target, "items")) {
+                if (id.equals(textValue(item.get("id")))) {
+                    requireEditablePromptLibrary(target);
+                    return item;
+                }
+            }
+        }
+        throw new RuntimeException("提示词不存在");
+    }
+
+    private boolean removePromptItem(Map<String, Object> library, String id) {
+        for (Map<String, Object> target : mapList(library, "libraries")) {
+            if (mapList(target, "items").stream().anyMatch(item -> id.equals(textValue(item.get("id"))))) {
+                requireEditablePromptLibrary(target);
+                return mapList(target, "items").removeIf(item -> id.equals(textValue(item.get("id"))));
+            }
+        }
+        return false;
+    }
+
+    private Map<String, Object> requirePromptCategory(Map<String, Object> library, String id) {
+        for (Map<String, Object> target : mapList(library, "libraries")) {
+            for (Map<String, Object> category : mapList(target, "categories")) {
+                if (id.equals(textValue(category.get("id")))) {
+                    requireEditablePromptLibrary(target);
+                    return category;
+                }
+            }
+        }
+        throw new RuntimeException("提示词分类不存在");
+    }
+
+    private boolean removePromptCategory(Map<String, Object> library, String id) {
+        for (Map<String, Object> target : mapList(library, "libraries")) {
+            List<Map<String, Object>> categories = mapList(target, "categories");
+            if (categories.stream().noneMatch(item -> id.equals(textValue(item.get("id"))))) continue;
+            requireEditablePromptLibrary(target);
+            if (categories.size() <= 1) throw new RuntimeException("至少保留一个提示词分类");
+            String fallback = textValue(categories.stream().filter(item -> !id.equals(textValue(item.get("id")))).findFirst().orElseThrow().get("id"));
+            mapList(target, "items").forEach(item -> {
+                if (id.equals(textValue(item.get("category")))) item.put("category", fallback);
+            });
+            return categories.removeIf(item -> id.equals(textValue(item.get("id"))));
+        }
+        return false;
+    }
+
+    private WorkflowArchive createWorkflowArchive(Map<String, Object> payload) {
+        Map<String, Object> workflow = objectMapper.convertValue(payload == null ? Map.of() : payload,
+                new TypeReference<LinkedHashMap<String, Object>>() {});
+        Set<String> sourceUrls = new LinkedHashSet<>();
+        collectWorkflowUrls(workflow, sourceUrls);
+        Map<String, String> urlToArchivePath = new LinkedHashMap<>();
+        Map<String, byte[]> resources = new LinkedHashMap<>();
+        List<String> skippedSources = new ArrayList<>();
+        int index = 1;
+        for (String url : sourceUrls) {
+            try {
+                byte[] bytes = downloadWorkflowResource(url);
+                if (bytes.length == 0) {
+                    skippedSources.add(url);
+                    continue;
+                }
+                String path = uniqueWorkflowResourcePath(nameFromUrl(url), index++, resources.keySet());
+                resources.put(path, bytes);
+                urlToArchivePath.put(url, path);
+            } catch (Exception e) {
+                skippedSources.add(url);
+                log.debug("Skip non-exportable workflow resource: {}", url, e);
+            }
+        }
+        Object rewritten = replaceWorkflowUrls(workflow, urlToArchivePath);
+        List<Map<String, Object>> manifest = new ArrayList<>();
+        urlToArchivePath.forEach((url, path) -> manifest.add(Map.of("path", path, "source_url", url)));
+        Map<String, Object> bundle = new LinkedHashMap<>();
+        bundle.put("workflow", rewritten);
+        bundle.put("resources", manifest);
+        bundle.put("resource_summary", workflowResourceSummary(sourceUrls.size(), resources.size(), skippedSources.size()));
+        bundle.put("format", "ai-canvas-workflow-bundle");
+        bundle.put("version", 1);
+        try (ByteArrayOutputStream output = new ByteArrayOutputStream(); ZipOutputStream zip = new ZipOutputStream(output)) {
+            writeZipEntry(zip, "workflow.json", objectMapper.writeValueAsBytes(bundle));
+            for (Map.Entry<String, byte[]> entry : resources.entrySet()) writeZipEntry(zip, entry.getKey(), entry.getValue());
+            zip.finish();
+            return new WorkflowArchive(output.toByteArray(), sourceUrls.size(), resources.size(), skippedSources.size());
+        } catch (IOException e) {
+            throw new RuntimeException("打包工作流失败: " + e.getMessage(), e);
+        }
+    }
+
+    private WorkflowImport importWorkflowArchive(byte[] archive) throws IOException {
+        Map<String, byte[]> files = new LinkedHashMap<>();
+        long total = 0L;
+        try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(archive))) {
+            ZipEntry entry;
+            while ((entry = zip.getNextEntry()) != null) {
+                if (entry.isDirectory()) continue;
+                String name = entry.getName().replace('\\', '/');
+                if (name.contains("../") || name.startsWith("/")) throw new IllegalArgumentException("工作流压缩包包含非法路径");
+                ByteArrayOutputStream output = new ByteArrayOutputStream();
+                byte[] buffer = new byte[8192];
+                int read;
+                while ((read = zip.read(buffer)) >= 0) {
+                    total += read;
+                    if (total > WORKFLOW_ARCHIVE_MAX_BYTES) throw new IllegalArgumentException("工作流压缩包解压后不能超过 220MB");
+                    output.write(buffer, 0, read);
+                }
+                files.put(name, output.toByteArray());
+            }
+        }
+        byte[] workflowBytes = files.remove("workflow.json");
+        if (workflowBytes == null) {
+            workflowBytes = files.entrySet().stream()
+                    .filter(item -> item.getKey().toLowerCase(Locale.ROOT).endsWith(".json"))
+                    .map(Map.Entry::getValue).findFirst()
+                    .orElseThrow(() -> new IllegalArgumentException("压缩包中没有工作流 JSON"));
+        }
+        Map<String, Object> root = readJsonObject(workflowBytes);
+        Map<String, Object> workflow = root.get("workflow") instanceof Map<?, ?> map ? toStringObjectMap(map) : root;
+        Map<String, String> archivePathToUrl = new LinkedHashMap<>();
+        Map<String, String> archivePathToSourceUrl = new LinkedHashMap<>();
+        List<Map<String, Object>> manifest = mapList(root, "resources");
+        for (Map<String, Object> item : manifest) {
+            String path = textValue(item.get("path"));
+            String sourceUrl = textValue(item.get("source_url"));
+            if (!path.isBlank() && !sourceUrl.isBlank()) archivePathToSourceUrl.put(path, sourceUrl);
+        }
+        Set<String> resourcePaths = new LinkedHashSet<>();
+        if (manifest.isEmpty()) {
+            files.keySet().stream()
+                    .filter(path -> !path.toLowerCase(Locale.ROOT).endsWith(".json"))
+                    .forEach(resourcePaths::add);
+        } else {
+            manifest.stream().map(item -> textValue(item.get("path")))
+                    .filter(path -> !path.isBlank() && files.containsKey(path))
+                    .forEach(resourcePaths::add);
+        }
+        int restoredCount = 0;
+        int skippedCount = 0;
+        for (String path : resourcePaths) {
+            try {
+                Map<String, Object> uploaded = uploadWorkflowBytes(files.get(path), path,
+                        firstNonBlank(URLConnection.guessContentTypeFromName(path), "application/octet-stream"));
+                archivePathToUrl.put(path, textValue(uploaded.get("url")));
+                restoredCount++;
+            } catch (Exception e) {
+                skippedCount++;
+                String sourceUrl = archivePathToSourceUrl.get(path);
+                if (sourceUrl != null && !sourceUrl.isBlank()) archivePathToUrl.put(path, sourceUrl);
+                log.warn("Skip non-importable workflow resource: {}", path, e);
+            }
+        }
+        Object restored = replaceWorkflowUrls(workflow, archivePathToUrl);
+        Map<String, Object> restoredWorkflow = restored instanceof Map<?, ?> map ? toStringObjectMap(map) : workflow;
+        return new WorkflowImport(restoredWorkflow, resourcePaths.size(), restoredCount, skippedCount);
+    }
+
+    private Map<String, Object> workflowResourceSummary(int sourceCount, int completedCount, int skippedCount) {
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("found", sourceCount);
+        summary.put("completed", completedCount);
+        summary.put("skipped", skippedCount);
+        return summary;
+    }
+
+    private Map<String, Object> readWorkflowJson(byte[] bytes) throws IOException {
+        Map<String, Object> root = readJsonObject(bytes);
+        return root.get("workflow") instanceof Map<?, ?> map ? toStringObjectMap(map) : root;
+    }
+
+    private Map<String, Object> readJsonObject(byte[] bytes) throws IOException {
+        return objectMapper.readValue(bytes, new TypeReference<LinkedHashMap<String, Object>>() {});
+    }
+
+    private void writeZipEntry(ZipOutputStream zip, String name, byte[] bytes) throws IOException {
+        ZipEntry entry = new ZipEntry(name);
+        zip.putNextEntry(entry);
+        zip.write(bytes);
+        zip.closeEntry();
+    }
+
+    private byte[] downloadWorkflowResource(String sourceUrl) throws IOException {
+        URI target = trustedMediaUri(sourceUrl);
+        for (int redirect = 0; redirect <= MEDIA_PROXY_MAX_REDIRECTS; redirect++) {
+            Request request = new Request.Builder().url(target.toString()).get().build();
+            try (Response response = mediaProxyClient.newCall(request).execute()) {
+                if (response.isRedirect()) {
+                    String location = response.header("Location");
+                    if (location == null || location.isBlank()) throw new IOException("媒体重定向地址为空");
+                    target = trustedMediaUri(target.resolve(location).toString());
+                    continue;
+                }
+                if (!response.isSuccessful()) throw new IOException("媒体下载失败，HTTP " + response.code());
+                ResponseBody body = response.body();
+                if (body == null) throw new IOException("媒体内容为空");
+                long length = body.contentLength();
+                if (length > KIE_MEDIA_UPLOAD_MAX_BYTES) throw new IOException("媒体超过 100MB");
+                byte[] bytes = body.bytes();
+                if (bytes.length > KIE_MEDIA_UPLOAD_MAX_BYTES) throw new IOException("媒体超过 100MB");
+                return bytes;
+            }
+        }
+        throw new IOException("媒体重定向次数过多");
+    }
+
+    private void collectWorkflowUrls(Object value, Set<String> urls) {
+        if (value instanceof Map<?, ?> map) {
+            map.forEach((key, child) -> {
+                if ("url".equalsIgnoreCase(String.valueOf(key)) && child instanceof String url
+                        && (url.startsWith("http://") || url.startsWith("https://"))) {
+                    urls.add(url);
+                }
+                collectWorkflowUrls(child, urls);
+            });
+        } else if (value instanceof List<?> list) {
+            list.forEach(item -> collectWorkflowUrls(item, urls));
+        }
+    }
+
+    private Object replaceWorkflowUrls(Object value, Map<String, String> replacements) {
+        if (value instanceof String text) return replacements.getOrDefault(text, text);
+        if (value instanceof Map<?, ?> map) {
+            Map<String, Object> result = new LinkedHashMap<>();
+            map.forEach((key, child) -> result.put(String.valueOf(key), replaceWorkflowUrls(child, replacements)));
+            return result;
+        }
+        if (value instanceof List<?> list) return list.stream().map(item -> replaceWorkflowUrls(item, replacements)).toList();
+        return value;
+    }
+
+    private String uniqueWorkflowResourcePath(String sourceName, int index, Set<String> existing) {
+        String extension = fileExtension(sourceName, "");
+        String base = limitText(sourceName.replaceFirst("\\.[^.]+$", "").replaceAll("[^A-Za-z0-9._-]", "_"), 80);
+        if (base.isBlank() || "_".equals(base)) base = "resource";
+        String path = "resources/" + base + "_" + index + extension;
+        int duplicate = 2;
+        while (existing.contains(path)) path = "resources/" + base + "_" + index + "_" + duplicate++ + extension;
+        return path;
+    }
+
+    private String workflowFilename(String requestedName) {
+        String candidate = limitText(requestedName.replaceAll("[\\\\/:*?\"<>|]", "_"), 120);
+        if (candidate.isBlank()) candidate = "ai-canvas-workflow";
+        return candidate.toLowerCase(Locale.ROOT).endsWith(".zip") ? candidate : candidate + ".zip";
+    }
+
+    private Map<String, Object> uploadWorkflowBytes(byte[] bytes, String originalName, String contentType) {
+        if (bytes.length == 0) throw new IllegalArgumentException("工作流资源为空");
+        if (bytes.length > KIE_MEDIA_UPLOAD_MAX_BYTES) throw new IllegalArgumentException("单个工作流资源不能超过 100MB");
+        try {
+            String name = firstNonBlank(originalName, "workflow-resource.bin");
+            String type = firstNonBlank(contentType, "application/octet-stream");
+            String objectName = "AI_CANVAS/workflow/" + System.currentTimeMillis() + "_" + UUID.randomUUID() + fileExtension(name, type);
+            ObjectMetadata metadata = new ObjectMetadata();
+            metadata.setContentLength(bytes.length);
+            metadata.setContentType(type);
+            ossService.getOssClient().putObject(appProperties.getOss().getInputBucket(), objectName,
+                    new ByteArrayInputStream(bytes), metadata);
+            String url = appProperties.getOss().getInputPublicHost() + "/" + objectName;
+            return Map.of("url", url, "name", name, "kind", mediaKind(name, url));
+        } catch (Exception e) {
+            throw new RuntimeException("保存工作流资源失败: " + e.getMessage(), e);
+        }
     }
 
     private List<Map<String, Object>> workspaceProjects(HttpServletRequest request, List<CanvasProject> rows) {
@@ -690,9 +2160,9 @@ public class InfiniteCanvasController {
                 "enabled", true,
                 "has_key", false,
                 "key_preview", "后端托管",
-                "image_models", List.of("project-image"),
+                "image_models", PROJECT_IMAGE_MODELS,
                 "chat_models", textModels(),
-                "video_models", List.of("project-video")
+                "video_models", PROJECT_VIDEO_MODELS
         );
     }
 
@@ -727,7 +2197,9 @@ public class InfiniteCanvasController {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("id", taskId);
         body.put("task_id", taskId);
+        body.put("media_type", mediaType);
         body.put("status", status);
+        body.put("completion_mode", useCallbackTaskCompletion() ? "callback" : "polling");
         body.put("error", firstNonBlank(result.getErrorMessage(), ""));
         if ("succeeded".equals(status) && result.getResultUrl() != null && !result.getResultUrl().isBlank()) {
             String url = result.getResultUrl();
@@ -740,13 +2212,23 @@ public class InfiniteCanvasController {
 
     private KieTaskResult readTaskResult(String taskId) {
         Optional<KieTaskResult> stored = canvasTaskService.findResult(taskId);
-        if (stored.isPresent() && stored.get().isFinished()) {
+        if (stored.isPresent() && (stored.get().isFinished() || useCallbackTaskCompletion())) {
             return stored.get();
         }
         KieTaskResult result = kieClientService.getFullResult(taskId);
         canvasTaskService.recordPolledResult(result);
         return result;
     }
+
+    private boolean useCallbackTaskCompletion() {
+        return appProperties.getKie() != null
+                && appProperties.getKie().getCallbackUrl() != null
+                && !appProperties.getKie().getCallbackUrl().isBlank();
+    }
+
+    private record WorkflowArchive(byte[] bytes, int sourceCount, int packedCount, int skippedCount) {}
+
+    private record WorkflowImport(Map<String, Object> workflow, int sourceCount, int restoredCount, int skippedCount) {}
 
     private KieTaskResult waitForTask(String taskId, String mediaType, long maxWaitMs, long intervalMs) throws InterruptedException {
         long deadline = System.currentTimeMillis() + maxWaitMs;
@@ -765,12 +2247,14 @@ public class InfiniteCanvasController {
 
     private String normalizeTaskStatus(KieTaskResult result) {
         if (result == null) return "running";
+        if ("CANCELED".equalsIgnoreCase(result.getStatus())) return "cancelled";
         if (result.isSuccess() || "SUCCESS".equalsIgnoreCase(result.getStatus())) return "succeeded";
         if (result.isFinished() || "FAILED".equalsIgnoreCase(result.getStatus())) return "failed";
         return "running";
     }
 
     private Map<String, Object> uploadFile(MultipartFile file) {
+        validateKieUploadFile(file);
         try {
             byte[] bytes = file.getBytes();
             String name = firstNonBlank(file.getOriginalFilename(), "canvas-upload.bin");
@@ -787,10 +2271,201 @@ public class InfiniteCanvasController {
                     metadata
             );
             String url = appProperties.getOss().getInputPublicHost() + "/" + objectName;
-            return Map.of("url", url, "name", name, "kind", mediaKind(name, url), "comfy_name", name);
+            return Map.of(
+                    "url", url,
+                    "name", name,
+                    "kind", mediaKind(name, url),
+                    "comfy_name", name,
+                    "checksum", sha256(bytes),
+                    "size", bytes.length
+            );
         } catch (Exception e) {
             throw new RuntimeException("上传文件失败: " + e.getMessage(), e);
         }
+    }
+
+    private void validateKieUploadFile(MultipartFile file) {
+        String name = firstNonBlank(file.getOriginalFilename(), "canvas-upload.bin");
+        String kind = mediaKind(name, "");
+        long maxBytes = "image".equals(kind) ? KIE_IMAGE_UPLOAD_MAX_BYTES : KIE_MEDIA_UPLOAD_MAX_BYTES;
+        if (file.getSize() <= maxBytes) {
+            return;
+        }
+        String label = "image".equals(kind) ? "图片" : "video".equals(kind) ? "视频" : "音频";
+        long maxMegabytes = maxBytes / 1024 / 1024;
+        throw new IllegalArgumentException(label + "超过 KIE.ai 支持的上传大小上限（" + maxMegabytes + "MB）");
+    }
+
+    private void proxyTrustedMedia(String sourceUrl,
+                                   String requestedName,
+                                   boolean inline,
+                                   HttpServletResponse servletResponse) throws IOException {
+        URI target;
+        try {
+            target = trustedMediaUri(sourceUrl);
+        } catch (IllegalArgumentException e) {
+            servletResponse.sendError(HttpServletResponse.SC_BAD_REQUEST, e.getMessage());
+            return;
+        }
+
+        for (int redirectCount = 0; redirectCount <= MEDIA_PROXY_MAX_REDIRECTS; redirectCount += 1) {
+            Request request = new Request.Builder()
+                    .url(target.toString())
+                    .header("User-Agent", "Mozilla/5.0 (compatible; AgentAPlusCanvas/1.0)")
+                    .header("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,video/*,audio/*;q=0.8,*/*;q=0.5")
+                    .header("Referer", "https://kie.ai/")
+                    .build();
+
+            try (Response remoteResponse = mediaProxyClient.newCall(request).execute()) {
+                if (isRedirect(remoteResponse.code())) {
+                    String location = remoteResponse.header("Location");
+                    if (location == null || location.isBlank()) {
+                        servletResponse.sendError(HttpServletResponse.SC_BAD_GATEWAY, "媒体服务返回了无效的重定向地址");
+                        return;
+                    }
+                    try {
+                        target = trustedMediaUri(target.resolve(location).toString());
+                    } catch (IllegalArgumentException e) {
+                        servletResponse.sendError(HttpServletResponse.SC_BAD_GATEWAY, "媒体服务重定向到了不受信任的地址");
+                        return;
+                    }
+                    continue;
+                }
+
+                ResponseBody body = remoteResponse.body();
+                if (!remoteResponse.isSuccessful() || body == null) {
+                    log.warn("Canvas media proxy failed with status {} from host {}", remoteResponse.code(), target.getHost());
+                    servletResponse.sendError(HttpServletResponse.SC_BAD_GATEWAY, "媒体文件暂时无法读取");
+                    return;
+                }
+
+                long length = body.contentLength();
+                if (length > MEDIA_PROXY_MAX_BYTES) {
+                    servletResponse.sendError(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE, "媒体文件超过画布预览上限");
+                    return;
+                }
+
+                String filename = safeMediaFilename(requestedName, target);
+                servletResponse.setStatus(HttpServletResponse.SC_OK);
+                servletResponse.setContentType(mediaContentType(remoteResponse.header("Content-Type"), filename));
+                servletResponse.setHeader("Cache-Control", "private, max-age=300");
+                servletResponse.setHeader("Content-Disposition", contentDisposition(filename, inline));
+                if (length >= 0) {
+                    servletResponse.setContentLengthLong(length);
+                }
+
+                try (InputStream input = body.byteStream(); OutputStream output = servletResponse.getOutputStream()) {
+                    byte[] buffer = new byte[8192];
+                    long copied = 0;
+                    int read;
+                    while ((read = input.read(buffer)) != -1) {
+                        copied += read;
+                        if (copied > MEDIA_PROXY_MAX_BYTES) {
+                            log.warn("Canvas media proxy stopped oversized stream from host {}", target.getHost());
+                            return;
+                        }
+                        output.write(buffer, 0, read);
+                    }
+                }
+                return;
+            } catch (IOException e) {
+                log.warn("Canvas media proxy request failed for host {}", target.getHost(), e);
+                if (!servletResponse.isCommitted()) {
+                    servletResponse.sendError(HttpServletResponse.SC_BAD_GATEWAY, "媒体文件暂时无法读取");
+                }
+                return;
+            }
+        }
+
+        servletResponse.sendError(HttpServletResponse.SC_BAD_GATEWAY, "媒体服务重定向次数过多");
+    }
+
+    private URI trustedMediaUri(String rawUrl) {
+        try {
+            URI uri = URI.create(textValue(rawUrl).trim());
+            String scheme = textValue(uri.getScheme()).toLowerCase(Locale.ROOT);
+            String host = textValue(uri.getHost()).toLowerCase(Locale.ROOT);
+            if (!"http".equals(scheme) && !"https".equals(scheme)) {
+                throw new IllegalArgumentException("仅支持 HTTP 或 HTTPS 媒体地址");
+            }
+            if (host.isBlank() || !isTrustedMediaHost(host)) {
+                throw new IllegalArgumentException("媒体地址不在画布可信来源内");
+            }
+            return uri;
+        } catch (IllegalArgumentException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            throw new IllegalArgumentException("媒体地址格式无效");
+        }
+    }
+
+    private boolean isTrustedMediaHost(String host) {
+        if (trustedConfiguredMediaHosts().contains(host)) {
+            return true;
+        }
+        return KIE_MEDIA_HOST_SUFFIXES.stream().anyMatch(host::endsWith);
+    }
+
+    private Set<String> trustedConfiguredMediaHosts() {
+        Set<String> hosts = new LinkedHashSet<>();
+        addConfiguredMediaHost(hosts, appProperties.getOss().getInputPublicHost());
+        addConfiguredMediaHost(hosts, appProperties.getOss().getResultPublicHost());
+        addConfiguredMediaHost(hosts, appProperties.getKie().getBaseUrl());
+        return hosts;
+    }
+
+    private void addConfiguredMediaHost(Set<String> hosts, String configuredUrl) {
+        String value = textValue(configuredUrl).trim();
+        if (value.isBlank()) {
+            return;
+        }
+        try {
+            URI uri = URI.create(value.contains("://") ? value : "https://" + value);
+            if (uri.getHost() != null && !uri.getHost().isBlank()) {
+                hosts.add(uri.getHost().toLowerCase(Locale.ROOT));
+            }
+        } catch (IllegalArgumentException ignored) {
+            log.warn("Skipping invalid configured media host");
+        }
+    }
+
+    private boolean isRedirect(int status) {
+        return status == 301 || status == 302 || status == 303 || status == 307 || status == 308;
+    }
+
+    private String mediaContentType(String responseContentType, String filename) {
+        String value = firstNonBlank(responseContentType, "").toLowerCase(Locale.ROOT);
+        if (value.startsWith("image/") || value.startsWith("video/") || value.startsWith("audio/")) {
+            return responseContentType;
+        }
+        String lowerName = filename.toLowerCase(Locale.ROOT);
+        if (lowerName.endsWith(".png")) return "image/png";
+        if (lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg")) return "image/jpeg";
+        if (lowerName.endsWith(".webp")) return "image/webp";
+        if (lowerName.endsWith(".gif")) return "image/gif";
+        if (lowerName.endsWith(".svg")) return "image/svg+xml";
+        if (lowerName.endsWith(".mp4")) return "video/mp4";
+        if (lowerName.endsWith(".webm")) return "video/webm";
+        if (lowerName.endsWith(".mp3")) return "audio/mpeg";
+        if (lowerName.endsWith(".wav")) return "audio/wav";
+        return "application/octet-stream";
+    }
+
+    private String safeMediaFilename(String requestedName, URI source) {
+        String fallback = "canvas-media" + fileExtension(source.getPath(), "");
+        String candidate = firstNonBlank(requestedName, fallback);
+        String cleaned = candidate.replaceAll("[\\r\\n\\\\\";]", "_").trim();
+        return cleaned.isBlank() ? fallback : cleaned;
+    }
+
+    private String contentDisposition(String filename, boolean inline) {
+        String asciiFilename = filename.replaceAll("[^A-Za-z0-9._-]", "_");
+        if (asciiFilename.isBlank()) {
+            asciiFilename = "canvas-media";
+        }
+        String encodedFilename = URLEncoder.encode(filename, StandardCharsets.UTF_8).replace("+", "%20");
+        return (inline ? "inline" : "attachment") + "; filename=\"" + asciiFilename
+                + "\"; filename*=UTF-8''" + encodedFilename;
     }
 
     private String normalizeInputUrl(String value) {
@@ -848,6 +2523,154 @@ public class InfiniteCanvasController {
         }
     }
 
+    private Map<String, Object> videoInput(Map<String, Object> payload, String prompt, String model) {
+        if (isMiniMaxH3VideoModel(model)) return miniMaxH3VideoInput(payload, prompt, model);
+        Map<String, Object> input = new LinkedHashMap<>();
+        input.put("prompt", prompt);
+        input.put("duration", seedanceDuration(payload.get("duration"), model));
+        input.put("aspect_ratio", seedanceAspectRatio(textValue(payload.get("aspect_ratio"))));
+        input.put("resolution", seedanceResolution(textValue(payload.get("resolution"))));
+        input.put("generate_audio", boolValue(payload.get("generate_audio")));
+        input.put("return_last_frame", false);
+        input.put("web_search", false);
+        if (SEEDANCE_2_5_MODEL.equals(model)) {
+            input.put("output_format", "mp4");
+            input.put("nsfw_checker", true);
+        }
+
+        List<VideoImageReference> images = videoImageReferences(payload.get("images"));
+        List<String> videos = mediaUrls(payload.get("videos")).stream().map(this::normalizeInputUrl).toList();
+        List<String> audios = mediaUrls(payload.get("audios")).stream().map(this::normalizeInputUrl).toList();
+        VideoImageReference firstFrame = images.stream().filter(item -> "first_frame".equals(item.role())).findFirst().orElse(null);
+        VideoImageReference lastFrame = images.stream().filter(item -> "last_frame".equals(item.role())).findFirst().orElse(null);
+        boolean useMultimodal = boolValue(payload.get("multimodal")) || !videos.isEmpty() || !audios.isEmpty();
+
+        if (useMultimodal || (images.size() > 1 && (firstFrame == null || lastFrame == null))) {
+            List<String> referenceImages = images.stream().map(VideoImageReference::url).toList();
+            if (!referenceImages.isEmpty()) input.put("reference_image_urls", referenceImages);
+            if (!videos.isEmpty()) input.put("reference_video_urls", videos);
+            if (!audios.isEmpty()) input.put("reference_audio_urls", audios);
+        } else if (firstFrame != null && lastFrame != null) {
+            input.put("first_frame_url", firstFrame.url());
+            input.put("last_frame_url", lastFrame.url());
+        } else if (!images.isEmpty()) {
+            input.put("first_frame_url", images.get(0).url());
+        }
+        return input;
+    }
+
+    private Map<String, Object> miniMaxH3VideoInput(Map<String, Object> payload, String prompt, String model) {
+        Map<String, Object> input = new LinkedHashMap<>();
+        input.put("prompt", prompt);
+        input.put("duration", miniMaxH3Duration(payload.get("duration")));
+
+        List<VideoImageReference> images = videoImageReferences(payload.get("images"));
+        List<String> videos = mediaUrls(payload.get("videos")).stream().map(this::normalizeInputUrl).toList();
+        List<String> audios = mediaUrls(payload.get("audios")).stream().map(this::normalizeInputUrl).toList();
+        VideoImageReference firstFrame = images.stream().filter(item -> "first_frame".equals(item.role())).findFirst().orElse(null);
+        VideoImageReference lastFrame = images.stream().filter(item -> "last_frame".equals(item.role())).findFirst().orElse(null);
+
+        if (MINIMAX_H3_TEXT_MODEL.equals(model)) {
+            input.put("aspect_ratio", miniMaxH3AspectRatio(textValue(payload.get("aspect_ratio")), false));
+            return input;
+        }
+
+        if (MINIMAX_H3_IMAGE_MODEL.equals(model)) {
+            VideoImageReference resolvedFirst = firstFrame != null ? firstFrame : images.stream().findFirst().orElse(null);
+            if (resolvedFirst == null) throw new IllegalArgumentException("MiniMax H3 图生视频需要至少一张参考图片");
+            input.put("first_frame_url", resolvedFirst.url());
+            VideoImageReference resolvedLast = lastFrame != null
+                    ? lastFrame
+                    : images.stream().filter(item -> !item.url().equals(resolvedFirst.url())).findFirst().orElse(null);
+            if (resolvedLast != null) input.put("last_frame_url", resolvedLast.url());
+            return input;
+        }
+
+        if (images.isEmpty() && videos.isEmpty() && audios.isEmpty()) {
+            throw new IllegalArgumentException("MiniMax H3 多模态参考需要至少一项图片、视频或音频素材");
+        }
+        input.put("aspect_ratio", miniMaxH3AspectRatio(textValue(payload.get("aspect_ratio")), true));
+        if (!images.isEmpty()) input.put("reference_image_urls", images.stream().map(VideoImageReference::url).toList());
+        if (!videos.isEmpty()) input.put("reference_video_urls", videos);
+        if (!audios.isEmpty()) input.put("reference_audio_urls", audios);
+        return input;
+    }
+
+    private boolean isMiniMaxH3VideoModel(String model) {
+        return MINIMAX_H3_TEXT_MODEL.equals(model)
+                || MINIMAX_H3_IMAGE_MODEL.equals(model)
+                || MINIMAX_H3_REFERENCE_MODEL.equals(model);
+    }
+
+    private List<VideoImageReference> videoImageReferences(Object value) {
+        List<VideoImageReference> references = new ArrayList<>();
+        collectVideoImageReferences(value, references);
+        return references.stream()
+                .filter(item -> !item.url().isBlank())
+                .collect(Collectors.toMap(VideoImageReference::url, item -> item, (first, ignored) -> first, LinkedHashMap::new))
+                .values()
+                .stream()
+                .toList();
+    }
+
+    private void collectVideoImageReferences(Object value, List<VideoImageReference> references) {
+        if (value == null) return;
+        if (value instanceof String text) {
+            references.add(new VideoImageReference(normalizeInputUrl(text), ""));
+            return;
+        }
+        if (value instanceof List<?> list) {
+            list.forEach(item -> collectVideoImageReferences(item, references));
+            return;
+        }
+        if (value instanceof Map<?, ?> map) {
+            String url = "";
+            for (String key : List.of("url", "image_url", "imageUrl", "src")) {
+                if (map.containsKey(key)) {
+                    url = textValue(map.get(key));
+                    break;
+                }
+            }
+            if (!url.isBlank()) {
+                references.add(new VideoImageReference(normalizeInputUrl(url), textValue(map.get("role"))));
+            }
+        }
+    }
+
+    private int seedanceDuration(Object value, String model) {
+        int max = SEEDANCE_2_5_MODEL.equals(model) ? 30 : 15;
+        try {
+            return Math.max(1, Math.min(max, Integer.parseInt(textValue(value))));
+        } catch (Exception ignored) {
+            return 5;
+        }
+    }
+
+    private int miniMaxH3Duration(Object value) {
+        try {
+            return Math.max(5, Math.min(15, Integer.parseInt(textValue(value))));
+        } catch (Exception ignored) {
+            return 6;
+        }
+    }
+
+    private String miniMaxH3AspectRatio(String value, boolean referenceMode) {
+        Set<String> allowed = referenceMode
+                ? Set.of("16:9", "9:16", "1:1", "adaptive")
+                : Set.of("16:9", "9:16", "1:1");
+        return allowed.contains(value) ? value : "16:9";
+    }
+
+    private String seedanceResolution(String value) {
+        return "480p".equalsIgnoreCase(value) ? "480p" : "720p";
+    }
+
+    private String seedanceAspectRatio(String value) {
+        return Set.of("16:9", "4:3", "1:1", "3:4", "9:16", "21:9", "adaptive").contains(value)
+                ? value
+                : "16:9";
+    }
+
     private String resolutionFromSize(String size) {
         String raw = size == null ? "" : size.toLowerCase();
         if (raw.contains("4096") || raw.contains("3840") || raw.contains("4k")) return "4K";
@@ -881,12 +2704,15 @@ public class InfiniteCanvasController {
 
     private String normalizeImageModel(String model) {
         if (model == null || model.isBlank() || model.startsWith("project-")) return PROJECT_IMAGE_MODEL;
-        return model;
+        return PROJECT_IMAGE_MODELS.contains(model) ? model : PROJECT_IMAGE_MODEL;
     }
 
     private String normalizeVideoModel(String model) {
         if (model == null || model.isBlank() || model.startsWith("project-")) return PROJECT_VIDEO_MODEL;
-        return model;
+        return PROJECT_VIDEO_MODELS.contains(model.trim()) ? model.trim() : PROJECT_VIDEO_MODEL;
+    }
+
+    private record VideoImageReference(String url, String role) {
     }
 
     private String normalizeCanvasKind(String value) {
@@ -895,6 +2721,56 @@ public class InfiniteCanvasController {
 
     private void copyIfPresent(Map<String, Object> from, Map<String, Object> to, String key) {
         if (from.containsKey(key)) to.put(key, from.get(key));
+    }
+
+    private Map<String, Object> objectMap(Object value) {
+        if (value instanceof Map<?, ?> map) return toStringObjectMap(map);
+        return new LinkedHashMap<>();
+    }
+
+    private List<Object> objectList(Object value) {
+        if (value instanceof List<?> list) return new ArrayList<>(list);
+        return List.of();
+    }
+
+    private List<Map<String, Object>> mapList(Map<String, Object> container, String key) {
+        List<Map<String, Object>> normalized = new ArrayList<>();
+        for (Object value : objectList(container.get(key))) {
+            if (value instanceof Map<?, ?> map) normalized.add(toStringObjectMap(map));
+        }
+        container.put(key, normalized);
+        return normalized;
+    }
+
+    private String limitText(String value, int maxLength) {
+        String text = value == null ? "" : value.trim();
+        return text.length() <= maxLength ? text : text.substring(0, maxLength);
+    }
+
+    private String sha256(byte[] bytes) {
+        try {
+            byte[] digest = java.security.MessageDigest.getInstance("SHA-256").digest(bytes);
+            StringBuilder text = new StringBuilder(digest.length * 2);
+            for (byte value : digest) text.append(String.format("%02x", value));
+            return text.toString();
+        } catch (Exception error) {
+            log.warn("Unable to calculate canvas asset checksum: {}", error.getMessage());
+            return "";
+        }
+    }
+
+    private String nameFromUrl(String url) {
+        try {
+            String path = URI.create(url).getPath();
+            if (path != null && !path.isBlank()) {
+                int slash = path.lastIndexOf('/');
+                String name = path.substring(slash + 1);
+                if (!name.isBlank()) return URLDecoder.decode(name, StandardCharsets.UTF_8);
+            }
+        } catch (Exception ignored) {
+            // Use the generic name below for malformed or data URLs.
+        }
+        return "素材";
     }
 
     private Map<String, Object> readMeta(CanvasProject row) {
@@ -1008,6 +2884,8 @@ public class InfiniteCanvasController {
         String text = (firstNonBlank(name, url)).toLowerCase();
         if (text.endsWith(".mp4") || text.endsWith(".webm") || text.endsWith(".mov")) return "video";
         if (text.endsWith(".mp3") || text.endsWith(".wav") || text.endsWith(".m4a")) return "audio";
+        if (text.endsWith(".json") || text.endsWith(".zip")) return "workflow";
+        if (text.endsWith(".txt") || text.endsWith(".csv") || text.endsWith(".md") || text.endsWith(".srt") || text.endsWith(".vtt")) return "file";
         return "image";
     }
 }

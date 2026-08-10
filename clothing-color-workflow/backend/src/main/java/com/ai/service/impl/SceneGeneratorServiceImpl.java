@@ -1,6 +1,7 @@
 package com.ai.service.impl;
 
 import com.ai.exception.BusinessException;
+import com.ai.dto.ModelIdentityContext;
 import com.ai.service.SceneGeneratorService;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -146,17 +147,18 @@ public class SceneGeneratorServiceImpl implements SceneGeneratorService {
     }
 
     @Override
-    public String recommendScenes(String clothingDesc, int count, String textModel, String clothingImageUrl) {
+    public String recommendScenes(String clothingDesc, int count, String textModel, String clothingImageUrl,
+                                  ModelIdentityContext modelIdentity) {
         if (clothingDesc == null || clothingDesc.trim().isEmpty()) {
             clothingDesc = "fashion clothing";
         }
         if (count < 1) count = 3;
         if (count > 5) count = 5;
         String systemPrompt = buildRecommendSystemPrompt();
-        String userPrompt = buildRecommendUserPrompt(clothingDesc, count, clothingImageUrl);
+        String userPrompt = buildRecommendUserPrompt(clothingDesc, count, clothingImageUrl, modelIdentity);
 
         try {
-            return callGpt(systemPrompt, userPrompt, clothingImageUrl, textModel);
+            return callGpt(systemPrompt, userPrompt, clothingImageUrl, modelIdentity, textModel);
         } catch (BusinessException e) {
             throw e;
         } catch (Exception e) {
@@ -166,7 +168,8 @@ public class SceneGeneratorServiceImpl implements SceneGeneratorService {
     }
 
     @Override
-    public String generatePrompt(String sceneDesc, String clothingDesc, int count, String textModel, String clothingImageUrl) {
+    public String generatePrompt(String sceneDesc, String clothingDesc, int count, String textModel, String clothingImageUrl,
+                                 ModelIdentityContext modelIdentity) {
         if (count < 1) count = 1;
         if (count > 10) count = 10;
         if (clothingDesc == null || clothingDesc.trim().isEmpty()) {
@@ -176,10 +179,10 @@ public class SceneGeneratorServiceImpl implements SceneGeneratorService {
             throw new BusinessException("请提供场景描述");
         }
         String systemPrompt = buildGenerateSystemPrompt();
-        String userPrompt = buildGenerateUserPrompt(sceneDesc, clothingDesc, count, clothingImageUrl);
+        String userPrompt = buildGenerateUserPrompt(sceneDesc, clothingDesc, count, clothingImageUrl, modelIdentity);
 
         try {
-            return callGpt(systemPrompt, userPrompt, clothingImageUrl, textModel);
+            return callGpt(systemPrompt, userPrompt, clothingImageUrl, modelIdentity, textModel);
         } catch (BusinessException e) {
             throw e;
         } catch (Exception e) {
@@ -190,9 +193,11 @@ public class SceneGeneratorServiceImpl implements SceneGeneratorService {
 
     // ========== 私有方法 ==========
 
-    private String buildRecommendUserPrompt(String clothingDesc, int count, String clothingImageUrl) {
+    private String buildRecommendUserPrompt(String clothingDesc, int count, String clothingImageUrl,
+                                            ModelIdentityContext modelIdentity) {
         StringBuilder sb = new StringBuilder();
         appendClothingSource(sb, clothingDesc, clothingImageUrl);
+        appendModelIdentity(sb, modelIdentity);
         sb.append("""
 
                 ## Task
@@ -205,10 +210,12 @@ public class SceneGeneratorServiceImpl implements SceneGeneratorService {
         return sb.toString();
     }
 
-    private String buildGenerateUserPrompt(String sceneDesc, String clothingDesc, int count, String clothingImageUrl) {
+    private String buildGenerateUserPrompt(String sceneDesc, String clothingDesc, int count, String clothingImageUrl,
+                                           ModelIdentityContext modelIdentity) {
         StringBuilder sb = new StringBuilder();
         sb.append("## 场景描述\n").append(sceneDesc).append("\n\n");
         appendClothingSource(sb, clothingDesc, clothingImageUrl);
+        appendModelIdentity(sb, modelIdentity);
         sb.append("\n提示词必须明确保留上述服装细节；不得把服装改成同色套装、sage green、terracotta、长袖、长裤或其他未提供款式。\n\n");
 
         if (count > 1) {
@@ -235,6 +242,21 @@ public class SceneGeneratorServiceImpl implements SceneGeneratorService {
             sb.append("## LOCKED_CLOTHING_DESCRIPTION\n");
             sb.append(clothingDesc).append("\n");
         }
+    }
+
+    private void appendModelIdentity(StringBuilder sb, ModelIdentityContext modelIdentity) {
+        if (modelIdentity == null) {
+            return;
+        }
+        sb.append("\n## MODEL_IDENTITY_SOURCE_OF_TRUTH\n");
+        sb.append("Use the attached identity reference image as the same person in every scene prompt. ");
+        sb.append("Preserve facial structure, hairstyle, skin tone, body proportions, and identity.\n");
+        sb.append("Identity name: ").append(modelIdentity.getIdentityName()).append("\n");
+        sb.append("Identity prompt: ").append(modelIdentity.getIdentityPrompt()).append("\n");
+        if (hasText(modelIdentity.getNegativePrompt())) {
+            sb.append("Identity negative constraints: ").append(modelIdentity.getNegativePrompt()).append("\n");
+        }
+        sb.append("Do not replace the selected person with a generic or new model.\n");
     }
 
     /**
@@ -466,7 +488,8 @@ public class SceneGeneratorServiceImpl implements SceneGeneratorService {
     /**
      * 调用 GPT API
      */
-    private String callGpt(String systemPrompt, String userPrompt, String clothingImageUrl, String textModel) throws IOException {
+    private String callGpt(String systemPrompt, String userPrompt, String clothingImageUrl,
+                           ModelIdentityContext modelIdentity, String textModel) throws IOException {
         ObjectMapper om = objectMapper;
         String model = KieGptModels.normalizeTextModel(textModel);
         ObjectNode rootNode = om.createObjectNode();
@@ -500,6 +523,13 @@ public class SceneGeneratorServiceImpl implements SceneGeneratorService {
             ObjectNode image = om.createObjectNode();
             image.put("type", "input_image");
             image.put("image_url", clothingImageUrl.trim());
+            userContent.add(image);
+        }
+        if (modelIdentity != null && hasText(modelIdentity.getReferenceImageUrl())
+                && !modelIdentity.getReferenceImageUrl().trim().equals(clothingImageUrl == null ? "" : clothingImageUrl.trim())) {
+            ObjectNode image = om.createObjectNode();
+            image.put("type", "input_image");
+            image.put("image_url", modelIdentity.getReferenceImageUrl().trim());
             userContent.add(image);
         }
         userMsg.set("content", userContent);

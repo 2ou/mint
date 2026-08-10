@@ -31,11 +31,7 @@
                     <div class="composer-head">
                         <div class="composer-head-left">
                             <select id="engineSelect" class="engine-select">
-                                <option value="api" data-i18n="smart.engineApi">API生成</option>
-                                <option value="volcengine" data-i18n="smart.engineVolcengine">火山引擎</option>
-                                <option value="modelscope" data-i18n="smart.engineMs">MS生成</option>
-                                <option value="comfy" data-i18n="smart.engineComfy">ComfyUI生成</option>
-                                <option value="runninghub" data-i18n="smart.engineRh">RunningHub</option>
+                                <option value="api">KIE AI 生成</option>
                             </select>
                             <div id="apiKindToggle" class="kind-toggle" style="display:none">
                                 <button type="button" data-kind="image" class="active"><i data-lucide="image"></i><span data-i18n="smart.kindImage">图片</span></button>
@@ -133,7 +129,7 @@
             <div id="promptTemplateCats" class="prompt-template-cats"></div>
             <div id="promptTemplateBody" class="prompt-template-body"></div>
         </div>
-        <button id="smartArrangeBtn" class="minimap-arrange-btn" type="button" title="整理选中节点" aria-label="整理选中节点"><i data-lucide="layout-grid"></i><span>整理选中</span></button>
+        <button id="smartArrangeBtn" class="minimap-arrange-btn" type="button" title="未选中节点时整理整张画布" aria-label="整理画布"><i data-lucide="layout-grid"></i><span>整理画布</span></button>
         <div id="minimap" class="smart-minimap" aria-hidden="true">
             <div id="minimapContent" class="smart-minimap-content">
                 <div id="minimapViewport" class="smart-minimap-viewport"></div>
@@ -159,6 +155,8 @@
                     <div class="workflow-transfer-actions workflow-export-actions">
                         <button class="workflow-transfer-btn secondary" type="button" onclick="exportSelectedSmartWorkflow(false)"><i data-lucide="file-json"></i><span>导出 JSON</span></button>
                         <button class="workflow-transfer-btn primary" type="button" onclick="exportSelectedSmartWorkflow(true)"><i data-lucide="package"></i><span>导出并包含资源</span></button>
+                        <button class="workflow-transfer-btn secondary" type="button" onclick="saveSelectedSmartWorkflowToLibrary()"><i data-lucide="library-big"></i><span>保存为模板</span></button>
+                        <button class="workflow-transfer-btn secondary" type="button" onclick="saveSelectedSmartWorkflowToLibrary(true)"><i data-lucide="layers-3"></i><span>保存整张画布</span></button>
                     </div>
                 </section>
                 <section class="workflow-transfer-card">
@@ -188,9 +186,19 @@
                     <select id="assetCategorySelect" class="asset-category-select"></select>
                     <button id="assetAddCategoryBtn" class="asset-mini-btn" type="button" title="新建文件夹" data-i18n-title="smart.assetNewFolder"><i data-lucide="folder-plus"></i></button>
                     <button id="assetRenameCategoryBtn" class="asset-mini-btn" type="button" title="重命名文件夹" data-i18n-title="smart.assetRenameFolder"><i data-lucide="pencil"></i></button>
+                    <button id="assetSelectModeBtn" class="asset-mini-btn" type="button" title="批量选择"><i data-lucide="list-checks"></i></button>
+                    <select id="assetMoveTargetSelect" class="asset-category-select asset-batch-target" title="移动到分组" hidden></select>
+                    <button id="assetMoveSelectedBtn" class="asset-mini-btn" type="button" title="移动所选" hidden><i data-lucide="folder-input"></i></button>
+                    <button id="assetTagSelectedBtn" class="asset-mini-btn" type="button" title="设置所选标签" hidden><i data-lucide="tags"></i></button>
+                    <button id="assetDeleteSelectedBtn" class="asset-mini-btn" type="button" title="删除所选" disabled hidden><i data-lucide="trash-2"></i></button>
+                    <button id="assetDuplicatesBtn" class="asset-mini-btn" type="button" title="检查重复素材"><i data-lucide="copy-check"></i></button>
+                </div>
+                <div class="asset-library-search">
+                    <i data-lucide="search"></i>
+                    <input id="assetSearch" type="search" placeholder="搜索当前素材库">
                 </div>
             </div>
-            <div id="assetDropZone" class="asset-drop-zone" data-i18n="smart.assetDropHint">把画布图片拖到这里保存到当前文件夹</div>
+            <div id="assetDropZone" class="asset-drop-zone" data-i18n="smart.assetDropHint">把画布素材拖到这里保存到当前文件夹</div>
             <div id="assetGrid" class="asset-grid"></div>
             <div id="workflowEmpty" class="workflow-empty" style="display:none" data-i18n="smart.assetWorkflowEmpty">工作流资产先预留在这里，后续接入。</div>
         </aside>
@@ -250,14 +258,27 @@
                         <div id="imageEditTitle" class="image-edit-title" data-i18n="canvas.editImage">编辑图片</div>
                         <div id="imageEditSub" class="image-edit-sub" data-i18n="canvas.editImageSub">选择裁剪、遮罩或画笔模式</div>
                     </div>
-                    <div class="image-edit-mode">
-                        <button type="button" data-image-edit-mode="preview" class="active"><i data-lucide="eye" class="w-3.5 h-3.5"></i><span data-i18n="smart.modePreview">预览</span></button>
-                        <button type="button" data-image-edit-mode="crop"><i data-lucide="crop" class="w-3.5 h-3.5"></i><span data-i18n="canvas.modeCrop">裁剪</span></button>
-                        <button type="button" data-image-edit-mode="outpaint"><i data-lucide="expand" class="w-3.5 h-3.5"></i><span data-i18n="canvas.modeOutpaint">Expand</span></button>
-                        <button type="button" data-image-edit-mode="mask"><i data-lucide="brush" class="w-3.5 h-3.5"></i><span data-i18n="canvas.modeMask">遮罩</span></button>
-                        <button type="button" data-image-edit-mode="brush"><i data-lucide="paintbrush" class="w-3.5 h-3.5"></i><span data-i18n="canvas.modeBrush">画笔</span></button>
-                        <button type="button" data-image-edit-mode="resize"><i data-lucide="minimize-2" class="w-3.5 h-3.5"></i><span>缩放</span></button>
-                        <button type="button" data-image-edit-mode="grid"><i data-lucide="grid-3x3" class="w-3.5 h-3.5"></i><span data-i18n="canvas.modeGrid">宫格切分</span></button>
+                    <div class="image-edit-tool-groups" aria-label="图片处理工具">
+                        <div class="image-edit-tool-group image-edit-tool-group-local">
+                            <span class="image-edit-group-label" title="在浏览器本地处理，不会调用模型"><i data-lucide="monitor-cog"></i><span>本地处理</span></span>
+                            <div class="image-edit-mode">
+                                <button type="button" data-image-edit-mode="preview"><i data-lucide="eye" class="w-3.5 h-3.5"></i><span data-i18n="smart.modePreview">预览</span></button>
+                                <button type="button" data-image-edit-mode="crop"><i data-lucide="crop" class="w-3.5 h-3.5"></i><span data-i18n="canvas.modeCrop">裁剪</span></button>
+                                <button type="button" data-image-edit-mode="outpaint"><i data-lucide="expand" class="w-3.5 h-3.5"></i><span>扩展画布</span></button>
+                                <button type="button" data-image-edit-mode="mask"><i data-lucide="brush" class="w-3.5 h-3.5"></i><span data-i18n="canvas.modeMask">遮罩</span></button>
+                                <button type="button" data-image-edit-mode="brush"><i data-lucide="paintbrush" class="w-3.5 h-3.5"></i><span data-i18n="canvas.modeBrush">画笔</span></button>
+                                <button type="button" data-image-edit-mode="resize"><i data-lucide="minimize-2" class="w-3.5 h-3.5"></i><span>缩放</span></button>
+                                <button type="button" data-image-edit-mode="grid"><i data-lucide="grid-3x3" class="w-3.5 h-3.5"></i><span data-i18n="canvas.modeGrid">宫格切分</span></button>
+                            </div>
+                        </div>
+                        <div class="image-edit-mode-divider" aria-hidden="true"></div>
+                        <div class="image-edit-tool-group image-edit-tool-group-ai">
+                            <span class="image-edit-group-label image-edit-group-label-ai" title="将参考图带入项目托管的 KIE 任务"><i data-lucide="sparkles"></i><span>KIE 生成</span></span>
+                            <div class="image-edit-mode image-edit-mode-ai">
+                                <button type="button" class="image-edit-ai-action" onclick="startAiFromImageEditor('image')" title="带入当前参考图，提交 KIE 图片生成任务"><i data-lucide="wand-sparkles" class="w-3.5 h-3.5"></i><span>KIE 改图</span></button>
+                                <button type="button" class="image-edit-ai-action" onclick="startAiFromImageEditor('video')" title="带入当前参考图，提交 KIE 视频生成任务"><i data-lucide="clapperboard" class="w-3.5 h-3.5"></i><span>KIE 视频</span></button>
+                            </div>
+                        </div>
                     </div>
                     <button class="preview-icon-btn" type="button" onclick="closeImageEditor()" title="关闭" data-i18n-title="common.close"><i data-lucide="x" class="w-4 h-4"></i></button>
                 </div>

@@ -476,7 +476,7 @@
                                         <el-row :gutter="16">
                                             <el-col :span="8">
                                                 <el-form-item label="生成数量">
-                                                    <el-input-number v-model="form.batchCount" :min="1" :max="10" style="width:100%"></el-input-number>
+                                                        <el-input-number v-model="form.batchCount" :min="1" :max="2" style="width:100%"></el-input-number>
                                                 </el-form-item>
                                             </el-col>
                                             <el-col :span="16">
@@ -485,6 +485,36 @@
                                                 </el-form-item>
                                             </el-col>
                                         </el-row>
+                                    </el-form>
+                                </div>
+
+                                <div class="form-block">
+                                    <div class="form-block-title">身份包设置</div>
+                                    <el-form label-width="100px">
+                                        <el-form-item label="身份视角">
+                                            <el-checkbox-group v-model="form.identityViews">
+                                                <el-checkbox label="FRONT">正面</el-checkbox>
+                                                <el-checkbox label="SIDE">侧面</el-checkbox>
+                                                <el-checkbox label="BACK">背面</el-checkbox>
+                                                <el-checkbox label="EXPRESSION">表情特写</el-checkbox>
+                                            </el-checkbox-group>
+                                            <div style="font-size:11px;color:#909399;line-height:18px">每个视角是一张可复用的身份资产；每视角最多生成 2 个自然姿势变体，单次总任务不超过 10 个。</div>
+                                        </el-form-item>
+                                        <el-row :gutter="16">
+                                            <el-col :span="12">
+                                                <el-form-item label="固定种子">
+                                                    <el-input-number v-model="form.seed" :min="1" :precision="0" controls-position="right" placeholder="留空自动记录" style="width:100%"></el-input-number>
+                                                </el-form-item>
+                                            </el-col>
+                                            <el-col :span="12">
+                                                <el-form-item label="任务策略">
+                                                    <el-input model-value="一个身份包，多视角任务" disabled></el-input>
+                                                </el-form-item>
+                                            </el-col>
+                                        </el-row>
+                                        <el-form-item label="负面约束">
+                                            <el-input v-model="form.negativePrompt" type="textarea" :rows="2" placeholder="留空则使用身份一致性、肢体、文字和过度磨皮的默认约束"></el-input>
+                                        </el-form-item>
                                     </el-form>
                                 </div>
 
@@ -526,6 +556,9 @@
                                             <div class="info">
                                                 <div class="title">{{ t.modelName }}</div>
                                                 <div class="ops">
+                                                    <el-button v-if="t.taskStatus==='FAILED'||t.taskStatus==='CANCELED'" size="small" type="warning" @click="retryTask(t)">重试</el-button>
+                                                    <el-button v-if="t.taskStatus==='CREATED'||t.taskStatus==='PROCESSING'" size="small" plain @click="cancelTask(t)">取消</el-button>
+                                                    <el-button v-if="t.status==='ACTIVE'&&t.identityId" size="small" type="primary" plain @click="openScene(t)">创建场景</el-button>
                                                     <el-button v-if="t.taskStatus==='SUCCESS'" size="small" type="success" @click="approve(t)">入库</el-button>
                                                     <el-button size="small" @click="copy(t.generatedPrompt)">复制</el-button>
                                                 </div>
@@ -685,9 +718,13 @@
                 textModel:'gpt-5.6-terra', hairstyle:'', skinTone:'', cameraAngle:'composite_panel', background:'white_studio',
                 clothingDescription:'', clothingImageUrl:'',
                 imageModel:'nano-banana-pro', resolution:'4K', aspectRatio:'16:9',
-                batchCount:1, namePrefix:''
+                batchCount:1, namePrefix:'',
+                identityViews:['FRONT','SIDE','BACK','EXPRESSION'],
+                negativePrompt:'', seed:null
             });
             const batchTasks = ref([]);
+            const completionMode = ref('POLLING');
+            const TASK_SESSION_KEY = 'fashion-model-identity-tasks';
             const types = ref({});
 
             const models = ref([]);
@@ -702,6 +739,42 @@
             const processing = ref([]);
 
             let timer = null;
+
+            const persistTaskSession = () => {
+                try {
+                    localStorage.setItem(TASK_SESSION_KEY, JSON.stringify(batchTasks.value.map(t => t.id).filter(Boolean)));
+                } catch (e) { console.warn('无法保存任务恢复信息', e); }
+            };
+
+            const clearTaskSession = () => {
+                try { localStorage.removeItem(TASK_SESSION_KEY); } catch (e) { console.warn(e); }
+            };
+
+            const loadCompletionMode = async () => {
+                try {
+                    const r = await axios.get('/api/models/task-completion-mode');
+                    if (r.data?.success && r.data.data?.mode) completionMode.value = r.data.data.mode;
+                } catch (e) { console.warn('无法读取任务完成模式', e); }
+            };
+
+            const restoreTaskSession = async () => {
+                let ids = [];
+                try { ids = JSON.parse(localStorage.getItem(TASK_SESSION_KEY) || '[]'); } catch (e) { clearTaskSession(); }
+                if (!Array.isArray(ids) || !ids.length) return;
+                const restored = [];
+                for (const id of ids) {
+                    try {
+                        const r = await axios.get('/api/models/' + id);
+                        if (r.data?.success && r.data.data) restored.push(r.data.data);
+                    } catch (e) { console.warn('恢复任务失败', id, e); }
+                }
+                if (!restored.length) { clearTaskSession(); return; }
+                batchTasks.value = restored;
+                if (restored.some(t => t.taskStatus === 'CREATED' || t.taskStatus === 'PROCESSING')) {
+                    step.value = 2;
+                    startPoll();
+                }
+            };
 
             // 导航
             const go = (v) => {
@@ -814,11 +887,15 @@
                         resolution: form.resolution,
                         aspectRatio: '16:9',
                         batchCount: form.batchCount,
-                        namePrefix: form.namePrefix
+                        namePrefix: form.namePrefix,
+                        identityViews: form.identityViews,
+                        negativePrompt: form.negativePrompt,
+                        seed: form.seed
                     };
                     const r = await axios.post('/api/models/generate', requestData);
                     if (r.data.success) {
                         batchTasks.value = r.data.data;
+                        persistTaskSession();
                         step.value = 2;
                         ElementPlus.ElMessage.success('已创建 ' + batchTasks.value.length + ' 个任务');
                         startPoll();
@@ -843,13 +920,14 @@
                         return;
                     }
                     try {
-                        await axios.post('/api/models/refresh-tasks');
+                        if (completionMode.value === 'POLLING') await axios.post('/api/models/refresh-tasks');
                         for (let i = 0; i < batchTasks.value.length; i++) {
                             if (batchTasks.value[i].taskStatus === 'CREATED' || batchTasks.value[i].taskStatus === 'PROCESSING') {
                                 const r = await axios.get('/api/models/' + batchTasks.value[i].id);
                                 if (r.data.success) batchTasks.value[i] = r.data.data;
                             }
                         }
+                        persistTaskSession();
                     } catch (e) { console.error(e); }
                 }, 30000);
             };
@@ -878,7 +956,41 @@
                 try{await ElementPlus.ElMessageBox.confirm('确认删除?','警告',{type:'warning'});const r=await axios.delete('/api/models/'+m.id);if(r.data.success){ElementPlus.ElMessage.success('已删除');drawer.value=false;loadModels();loadStats();}}catch(e){if(e!=='cancel')ElementPlus.ElMessage.error('删除失败');}
             };
 
-            const retry = () => { batchTasks.value = []; step.value = 1; };
+            const retry = () => { batchTasks.value = []; clearTaskSession(); step.value = 1; };
+
+            const retryTask = async (task) => {
+                try {
+                    const r = await axios.post('/api/models/' + task.id + '/retry');
+                    if (r.data?.success) {
+                        Object.assign(task, r.data.data);
+                        persistTaskSession();
+                        startPoll();
+                    }
+                } catch (e) {
+                    ElementPlus.ElMessage.error('重试失败：' + (e.response?.data?.message || e.message));
+                }
+            };
+
+            const cancelTask = async (task) => {
+                try {
+                    const r = await axios.post('/api/models/' + task.id + '/cancel');
+                    if (r.data?.success) {
+                        Object.assign(task, r.data.data);
+                        persistTaskSession();
+                    }
+                } catch (e) {
+                    ElementPlus.ElMessage.error('取消失败：' + (e.response?.data?.message || e.message));
+                }
+            };
+
+            const openScene = async (task) => {
+                try {
+                    const r = await axios.post('/api/models/identities/' + task.identityId + '/activate');
+                    if (r.data?.success) window.location.href = 'scene-generator.html?identityId=' + encodeURIComponent(task.identityId);
+                } catch (e) {
+                    ElementPlus.ElMessage.warning(e.response?.data?.message || '身份包仍有未完成或待修复的视角任务');
+                }
+            };
 
             // 列表
             const loadModels = async () => {
@@ -922,8 +1034,10 @@
             const mstatusType=(s)=>({DRAFT:'info',ACTIVE:'success',DISABLED:'warning'}[s]||'info');
             const mstatusLabel=(s)=>({DRAFT:'草稿',ACTIVE:'已激活',DISABLED:'已停用'}[s]||s);
 
-            onMounted(()=>{
+            onMounted(async ()=>{
+                await loadCompletionMode();
                 loadTypes();loadStats();
+                await restoreTaskSession();
                 if(view.value==='library') loadModels();
                 if(view.value==='history') loadHistory();
                 // 确保模特库默认只显示已入库的
@@ -941,11 +1055,11 @@
 
             return {
                 view,step,drawer,detail,busy,form,
-                batchTasks,types,isPolling,uploadingClothing,
+                batchTasks,types,isPolling,uploadingClothing,completionMode,
                 models,search,pg,history,historyFilter,filteredHistory,hpg,stats,processing,
                 go,goToList,typeIcon,getTypeCn,
                 handleClothingFile,removeClothingImage,
-                submitGenerate,approve,approveAll,disableM,deleteM,retry,
+                submitGenerate,approve,approveAll,disableM,deleteM,retry,retryTask,cancelTask,openScene,
                 loadModels,loadHistory,refreshProc,copy,fmtDate,thumb,
                 taskType,taskLabel,mstatusType,mstatusLabel
             };

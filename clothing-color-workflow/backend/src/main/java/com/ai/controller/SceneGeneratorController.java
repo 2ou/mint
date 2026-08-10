@@ -2,6 +2,8 @@ package com.ai.controller;
 
 import com.ai.dto.ApiResponse;
 import com.ai.service.SceneGeneratorService;
+import com.ai.service.ModelLibraryService;
+import com.ai.dto.ModelIdentityContext;
 import com.ai.service.impl.KieGptModels;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
@@ -18,6 +20,7 @@ import java.util.Map;
 public class SceneGeneratorController {
 
     private final SceneGeneratorService sceneGeneratorService;
+    private final ModelLibraryService modelLibraryService;
 
     /**
      * AI 推荐场景
@@ -35,7 +38,8 @@ public class SceneGeneratorController {
         }
         String textModel = KieGptModels.normalizeTextModel((String) request.getOrDefault("textModel", KieGptModels.DEFAULT_TEXT_MODEL));
         String clothingImageUrl = (String) request.getOrDefault("clothingImageUrl", "");
-        String result = sceneGeneratorService.recommendScenes(clothingDesc, count, textModel, clothingImageUrl);
+        ModelIdentityContext modelIdentity = getModelIdentity(request);
+        String result = sceneGeneratorService.recommendScenes(clothingDesc, count, textModel, clothingImageUrl, modelIdentity);
         return ApiResponse.ok("推荐成功", result);
     }
 
@@ -60,7 +64,8 @@ public class SceneGeneratorController {
         String textModel = KieGptModels.normalizeTextModel((String) request.getOrDefault("textModel", KieGptModels.DEFAULT_TEXT_MODEL));
         String clothingImageUrl = (String) request.getOrDefault("clothingImageUrl", "");
 
-        String prompt = sceneGeneratorService.generatePrompt(sceneDesc, clothingDesc, count, textModel, clothingImageUrl);
+        ModelIdentityContext modelIdentity = getModelIdentity(request);
+        String prompt = sceneGeneratorService.generatePrompt(sceneDesc, clothingDesc, count, textModel, clothingImageUrl, modelIdentity);
         return ApiResponse.ok("提示词生成成功", prompt);
     }
 
@@ -71,5 +76,17 @@ public class SceneGeneratorController {
     public ApiResponse<String> reloadSkill() {
         sceneGeneratorService.reloadSkillKnowledge();
         return ApiResponse.ok("场景库 skill 重新加载成功", null);
+    }
+
+    private ModelIdentityContext getModelIdentity(Map<String, Object> request) {
+        Object rawIdentityId = request.get("modelIdentityId");
+        if (rawIdentityId == null || rawIdentityId.toString().isBlank()) {
+            return null;
+        }
+        try {
+            return modelLibraryService.getIdentityContext(Long.parseLong(rawIdentityId.toString()));
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("modelIdentityId must be a number");
+        }
     }
 }

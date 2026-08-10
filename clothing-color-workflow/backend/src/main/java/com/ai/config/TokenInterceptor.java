@@ -25,6 +25,11 @@ public class TokenInterceptor implements HandlerInterceptor {
         // 🔴 新增：放行流式透传下载接口，因为它没法带 Token
         if (request.getRequestURI().contains("/proxy-download")) return true;
 
+        String requestUri = request.getRequestURI();
+        if ("/api/download-output".equals(requestUri) || "/api/media-preview".equals(requestUri)) {
+            return true;
+        }
+
         String token = request.getHeader("X-User-Token");
         
         if (token == null || token.isEmpty()) {

@@ -4,6 +4,7 @@ import com.ai.dto.ApiResponse;
 import com.ai.dto.ModelCreateTaskRequest;
 import com.ai.dto.ModelGenerateRequest;
 import com.ai.entity.ModelLibrary;
+import com.ai.entity.ModelIdentity;
 import com.ai.service.ModelLibraryService;
 import com.ai.service.impl.ModelPromptGenerator;
 import lombok.RequiredArgsConstructor;
@@ -153,6 +154,41 @@ public class ModelLibraryController {
     @GetMapping("/processing")
     public ApiResponse<List<ModelLibrary>> getProcessingTasks() {
         return ApiResponse.ok("ok", modelLibraryService.getProcessingTasks());
+    }
+
+    @GetMapping("/task-completion-mode")
+    public ApiResponse<Map<String, String>> getTaskCompletionMode() {
+        return ApiResponse.ok("ok", Map.of("mode", modelLibraryService.getTaskCompletionMode()));
+    }
+
+    @GetMapping("/identities/active")
+    public ApiResponse<List<ModelIdentity>> getActiveIdentities() {
+        return ApiResponse.ok("ok", modelLibraryService.getActiveIdentities());
+    }
+
+    @GetMapping("/identities/{id}")
+    public ApiResponse<ModelIdentity> getIdentity(@PathVariable("id") Long id) {
+        return ApiResponse.ok("ok", modelLibraryService.getIdentityById(id));
+    }
+
+    @GetMapping("/identities/{id}/assets")
+    public ApiResponse<List<ModelLibrary>> getIdentityAssets(@PathVariable("id") Long id) {
+        return ApiResponse.ok("ok", modelLibraryService.getIdentityAssets(id));
+    }
+
+    @PostMapping("/identities/{id}/activate")
+    public ApiResponse<ModelIdentity> activateIdentity(@PathVariable("id") Long id) {
+        return ApiResponse.ok("Identity package activated", modelLibraryService.activateIdentity(id));
+    }
+
+    @PostMapping("/{id}/retry")
+    public ApiResponse<ModelLibrary> retryTask(@PathVariable("id") Long id) {
+        return ApiResponse.ok("Task retried", modelLibraryService.retryTask(id));
+    }
+
+    @PostMapping("/{id}/cancel")
+    public ApiResponse<ModelLibrary> cancelTask(@PathVariable("id") Long id) {
+        return ApiResponse.ok("Task canceled locally", modelLibraryService.cancelTask(id));
     }
 
     /**

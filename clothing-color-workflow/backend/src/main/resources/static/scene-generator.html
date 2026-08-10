@@ -306,6 +306,23 @@
                         </el-form>
                     </div>
 
+                    <div v-if="step <= 2" style="padding: 0 10px; margin-bottom: 16px;">
+                        <el-form label-width="90px" style="padding: 12px 10px; background: #fafbfc; border: 1px solid #ebeef5; border-radius: 8px;">
+                            <el-form-item label="AI 模特身份包">
+                                <el-select v-model="selectedModelIdentityId" clearable filterable placeholder="不选择则由场景提示词使用通用模特" style="width: 100%;">
+                                    <el-option v-for="identity in modelIdentities" :key="identity.id" :label="identity.identityName + ' · ' + (identity.modelType || 'Commercial')" :value="identity.id">
+                                        <span style="float:left">{{ identity.identityName }}</span>
+                                        <span style="float:right;color:#909399;font-size:12px">{{ identity.ethnicity || '未指定' }} · {{ identity.ageRange || '默认' }}</span>
+                                    </el-option>
+                                </el-select>
+                                <div v-if="selectedModelIdentity" style="display:flex;align-items:center;gap:10px;margin-top:10px;color:#606266;font-size:12px;line-height:18px;">
+                                    <el-image v-if="selectedModelIdentity.referenceImageUrl" :src="selectedModelIdentity.referenceImageUrl" fit="cover" style="width:42px;height:42px;border-radius:4px;flex-shrink:0"></el-image>
+                                    <span>场景提示词和出图都会锁定 {{ selectedModelIdentity.identityName }} 的脸型、发型、肤色、比例与身份参考图。</span>
+                                </div>
+                            </el-form-item>
+                        </el-form>
+                    </div>
+
                     <div v-if="step === 1">
                         <div class="app-section-title">场景创建</div>
 
@@ -493,6 +510,8 @@
                                         <span style="font-size: 11px;">{{ genModel === 'nano-banana-pro' ? 'nano' : 'gpt-img' }}</span>
                                     </div>
                                     <div v-if="task.status === 'SUCCESS' && (task.resultOssUrl || task.resultTempUrl)" class="ri-action-row">
+                                        <el-button size="small" type="primary" plain @click="openCanvas(task)">进入画布</el-button>
+                                        <el-button size="small" type="warning" plain @click="openVideo(task)">生成视频</el-button>
                                         <el-button
                                             size="small"
                                             type="success"
@@ -514,7 +533,7 @@
 </div>
 
 <script>
-    const {createApp, ref, reactive, computed, onUnmounted} = Vue;
+    const {createApp, ref, reactive, computed, onMounted, onUnmounted} = Vue;
     createApp({
         setup() {
             const step = ref(1);
@@ -523,6 +542,11 @@
             const genResolution = ref('4K');
             const genAspectRatio = ref('3:4');
             const spu = ref('');
+            const modelIdentities = ref([]);
+            const selectedModelIdentityId = ref('');
+            const initialIdentityId = new URLSearchParams(window.location.search).get('identityId');
+            if (initialIdentityId) selectedModelIdentityId.value = Number(initialIdentityId);
+            const selectedModelIdentity = computed(() => modelIdentities.value.find(item => item.id === selectedModelIdentityId.value) || null);
 
             const showGptWarning = computed(() => {
                 if (genModel.value !== 'gpt-image-2-image-to-image') return false;
@@ -551,6 +575,15 @@
                 uploadedImage.value = { file, url: URL.createObjectURL(file), ossUrl: null };
             };
             const clearImage = () => { if (uploadedImage.value?.url) URL.revokeObjectURL(uploadedImage.value.url); uploadedImage.value = null; };
+
+            const loadModelIdentities = async () => {
+                try {
+                    const r = await axios.get('/api/models/identities/active');
+                    if (r.data?.success) modelIdentities.value = r.data.data || [];
+                } catch (e) {
+                    console.warn('无法加载 AI 模特身份包', e);
+                }
+            };
 
             const uploadSceneImageIfNeeded = async () => {
                 if (!uploadedImage.value) throw new Error('请先上传图片');
@@ -613,13 +646,15 @@
                     let rawData;
                     if (sceneMode.value === 'ai') {
                         const res = await axios.post('/api/scene-generator/recommend', {
-                            clothingDesc: clothingDesc.value || '', count: aiRecommendCount.value, textModel: textModel.value, clothingImageUrl
+                            clothingDesc: clothingDesc.value || '', count: aiRecommendCount.value, textModel: textModel.value,
+                            clothingImageUrl, modelIdentityId: selectedModelIdentityId.value || null
                         });
                         if (!res.data.success) throw new Error('推荐失败');
                         rawData = res.data.data;
                     } else {
                         const res = await axios.post('/api/scene-generator/generate-prompt', {
-                            sceneDesc: customScene.value, clothingDesc: clothingDesc.value || '', count: promptCount.value, textModel: textModel.value, clothingImageUrl
+                            sceneDesc: customScene.value, clothingDesc: clothingDesc.value || '', count: promptCount.value, textModel: textModel.value,
+                            clothingImageUrl, modelIdentityId: selectedModelIdentityId.value || null
                         });
                         if (!res.data.success) throw new Error('生成提示词失败');
                         rawData = res.data.data;
@@ -665,6 +700,22 @@
             const estimatedCost = computed(() => (pricePerImage.value * totalGenCount.value).toFixed(2));
 
             const loadingSubmit = ref(false);
+            const runWithConcurrency = async (jobs, concurrency = 3) => {
+                const results = new Array(jobs.length);
+                let nextIndex = 0;
+                const worker = async () => {
+                    while (nextIndex < jobs.length) {
+                        const currentIndex = nextIndex++;
+                        try {
+                            results[currentIndex] = await jobs[currentIndex]();
+                        } catch (error) {
+                            results[currentIndex] = { data: { success: false, error } };
+                        }
+                    }
+                };
+                await Promise.all(Array.from({ length: Math.min(concurrency, jobs.length) }, worker));
+                return results;
+            };
             const submittedTasks = ref([]);
             let pollTimer = null;
 
@@ -673,9 +724,17 @@
                 if (showGptWarning.value) { ElementPlus.ElMessage.error(gptWarningText.value); return; }
                 if (selectedScenes.value.length === 0) { ElementPlus.ElMessage.warning('请至少勾选一个场景'); return; }
 
+                if (totalGenCount.value > 10) {
+                    ElementPlus.ElMessage.warning('一次最多提交 10 个场景任务，请减少场景或每场景数量');
+                    return;
+                }
                 loadingSubmit.value = true;
                 try {
                     const url = await uploadSceneImageIfNeeded();
+                    const inputUrls = [url, selectedModelIdentity.value?.referenceImageUrl]
+                        .filter(Boolean)
+                        .filter((value, index, all) => all.indexOf(value) === index)
+                        .join(',');
 
                     const reqs = [];
                     const promptMap = []; // 跟踪每个请求对应的 prompt
@@ -685,17 +744,17 @@
                         if (scene.prompts && scene.prompts.length > 0) {
                             for (const p of scene.prompts) {
                                 for (let i = 0; i < runCount; i++) {
-                                    reqs.push(axios.post('/api/tasks/create', {
+                                    reqs.push(() => axios.post('/api/tasks/create', {
                                         spu: spu.value, prompt: p, model: genModel.value,
                                         resolution: genResolution.value, aspect_ratio: genAspectRatio.value,
-                                        taskType: 2, pairs: [{ inputUrl: url, colorUrl: '' }], cost: pricePerImage.value
+                                        taskType: 2, pairs: [{ inputUrl: inputUrls, colorUrl: '' }], cost: pricePerImage.value
                                     }));
                                     promptMap.push(p);
                                 }
                             }
                         }
                     }
-                    const results = await Promise.all(reqs);
+                    const results = await runWithConcurrency(reqs, 3);
 
                     // 🔴 修复：保留 TaskCreateResponse 完整对象（含数据库 id 和 taskId）
                     const okTasks = results.filter(r => r.data?.success).flatMap(r => {
@@ -817,6 +876,41 @@
                     task._addingToLib = false;
                 }
             };
+            const openCanvas = async (task) => {
+                const productUrl = uploadedImage.value?.ossUrl || await uploadSceneImageIfNeeded();
+                const sceneUrl = task.resultOssUrl || task.resultTempUrl;
+                const modelUrl = selectedModelIdentity.value?.referenceImageUrl || '';
+                const nodes = [
+                    { id: 'product_' + Date.now(), type: 'image', x: -520, y: 0, url: productUrl, name: '商品图', mediaKind: 'image' },
+                    ...(modelUrl ? [{ id: 'model_' + Date.now(), type: 'image', x: -160, y: 0, url: modelUrl, name: 'AI 模特身份参考', mediaKind: 'image' }] : []),
+                    { id: 'scene_' + Date.now(), type: 'image', x: 200, y: 0, url: sceneUrl, name: 'AI 场景结果', mediaKind: 'image' },
+                    { id: 'prompt_' + Date.now(), type: 'prompt', x: 200, y: 340, text: task.prompt || '' }
+                ];
+                try {
+                    const r = await axios.post('/api/canvases', {
+                        title: (spu.value || '未命名') + ' · AI 场景工作流',
+                        icon: 'layers', kind: 'classic', project: 'default', nodes, connections: [],
+                        viewport: { x: 0, y: 0, scale: 1 }, logs: []
+                    });
+                    const canvasId = r.data?.canvas?.id;
+                    if (!canvasId) throw new Error('画布创建失败');
+                    window.location.href = '/infinite-canvas/canvas.html?id=' + encodeURIComponent(canvasId) + '&project=default';
+                } catch (e) {
+                    ElementPlus.ElMessage.error('无法创建画布：' + (e.response?.data?.message || e.message));
+                }
+            };
+
+            const openVideo = (task) => {
+                const imageUrl = task.resultOssUrl || task.resultTempUrl;
+                sessionStorage.setItem('fashion-scene-video-draft', JSON.stringify({
+                    spu: spu.value,
+                    prompt: task.prompt || '',
+                    imageUrl,
+                    identityName: selectedModelIdentity.value?.identityName || ''
+                }));
+                window.location.href = 'video.html';
+            };
+
             const resetAll = () => {
                 step.value = 1;
                 selectedScenes.value = [];
@@ -826,15 +920,17 @@
                 stopPolling();
             };
             const goToList = () => { window.location.href = 'list.html'; };
+            onMounted(() => loadModelIdentities());
             onUnmounted(() => stopPolling());
 
             return {
                 step, textModel, genModel, genResolution, genAspectRatio, spu,
+                modelIdentities, selectedModelIdentityId, selectedModelIdentity,
                 showGptWarning, gptWarningText,
                 uploadedImage, clothingDesc, handleFileSelect, handleDrop, clearImage,
                 sceneMode, aiRecommendCount, customScene, promptCount, loadingGenerate,
                 handleGenerate, aiScenes, selectedScenes, sceneCounts, isSelected, toggleSelection, totalGenCount, estimatedCost,
-                loadingSubmit, submittedTasks, submitTask,
+                loadingSubmit, submittedTasks, submitTask, openCanvas, openVideo,
                 taskStatusType, taskStatusLabel, copyText, addToPromptLib, resetAll, goToList
             };
         }
