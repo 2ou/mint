@@ -77,6 +77,10 @@ public class AplusImageTask {
     @Column(length = 500)
     private String resultOssUrl;
 
+    /** 本地落盘绝对路径（仅本地，不走 OSS）：轮询完成后把 KIE 结果图下载到 D:/AiResult */
+    @Column(length = 1024)
+    private String localPath;
+
     /** 错误信息 */
     @Column(columnDefinition = "text")
     private String errorMessage;

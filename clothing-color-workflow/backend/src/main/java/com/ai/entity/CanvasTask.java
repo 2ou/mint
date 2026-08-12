@@ -38,6 +38,9 @@ public class CanvasTask {
     private String resultUrl;
 
     @Column(length = 1024)
+    private String localPath; // AI 画布结果本地落盘绝对路径（仅本地，不上 OSS）
+
+    @Column(length = 1024)
     private String errorMessage;
 
     @Column(length = 50)

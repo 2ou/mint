@@ -332,7 +332,6 @@ let settings = {
     customSize:'',
     customWidth:'',
     customHeight:'',
-    quality:'auto',
     count:1,
     videoProvider:'',
     videoModel:'',
@@ -717,7 +716,7 @@ function forceKieSmartSettings(target){
         if(!['bytedance/seedance-2-5', 'bytedance/seedance-2'].includes(target.videoModel)) target.videoModel = 'bytedance/seedance-2-5';
     } else {
         target.provider_id = 'ai-project-kie';
-        if(!['nano-banana-pro', 'gpt-image-2-image-to-image'].includes(target.model)) target.model = 'nano-banana-pro';
+        if(!target.model) target.model = 'nano-banana-pro';
     }
     return target;
 }
@@ -3059,7 +3058,6 @@ function renderApiParams(){
         ${renderProviderControl(providers)}
         ${renderModelControl(models)}
         ${renderSizePickerControl('', true)}
-        ${renderQualityControl()}
         ${renderCountVisualControl()}
     `;
 }
@@ -3099,7 +3097,6 @@ function renderVolcengineParams(){
         ${renderProviderControl(providers)}
         ${renderModelControl(models)}
         ${renderSizePickerControl('', true)}
-        ${renderQualityControl()}
         ${renderCountVisualControl()}
     `;
 }
@@ -3142,8 +3139,7 @@ function renderRunningHubParams(){
         dynamicParams.innerHTML = `
             ${renderRhConfigControl(ref)}
             ${renderSizePickerControl('', true)}
-            ${renderQualityControl()}
-            ${renderCountVisualControl()}
+                ${renderCountVisualControl()}
         `;
         return;
     }
@@ -3565,19 +3561,6 @@ function renderInlineCustomSizeFields(prefix=''){
         <input type="number" data-param="${hKey}" value="${escapeHtml(settings[hKey] || '')}" placeholder="${escapeHtml(tr('smart.height'))}">
     </div>`;
 }
-function renderQualityControl(){
-    const value = settings.quality || 'auto';
-    const labels = {auto:tr('smart.qualityAuto'), low:tr('smart.qualityLow'), medium:tr('smart.qualityMid'), high:tr('smart.qualityHigh')};
-    return `<div class="smart-control quality-control">
-        <button class="smart-pill" type="button"><i data-lucide="sliders-horizontal"></i><span>${escapeHtml(labels[value] || value)}</span></button>
-        <div class="smart-popover compact-popover">
-            <div class="smart-popover-title">${escapeHtml(tr('smart.quality'))}</div>
-            <div class="seg-row">
-                ${Object.entries(labels).map(([k, l]) => `<button type="button" class="${k === value ? 'active' : ''}" data-smart-param="quality" data-smart-value="${escapeHtml(k)}">${escapeHtml(l)}</button>`).join('')}
-            </div>
-        </div>
-    </div>`;
-}
 function renderCountVisualControl(){
     const value = Number(settings.count || 1);
     return `<div class="smart-control count-control">
@@ -3653,7 +3636,6 @@ const RH_KNOWN_FIELD_OPTIONS = {
     ratio:['1:1','16:9','9:16','21:9','9:21','4:3','3:4','4:5','5:4','3:2','2:3'],
     resolution:['1k','2k','4k','8k'],
     size:['512','768','1024','1280','1536','2048'],
-    quality:['low','medium','high','best'],
     scheduler:['normal','karras','exponential','sgm_uniform','simple','ddim_uniform'],
     sampler:['euler','euler_ancestral','heun','dpm_2','dpm_2_ancestral','lms','dpmpp_2m','dpmpp_sde','ddim','uni_pc']
 };
@@ -4152,7 +4134,7 @@ function smartComfyRandomValue(field){
 }
 function setDynamicSetting(key, value){
     const numericKeys = new Set(['count','width','height','videoDuration','enhanceStrength','enhanceUpscaleRes','editUpscaleRes','customRatioWidth','customRatioHeight','customWidth','customHeight','msCustomRatioWidth','msCustomRatioHeight','msCustomWidth','msCustomHeight']);
-    const layoutKeys = new Set(['provider_id','model','resolution','ratio','msgenModel','msCustomModel','msResolution','msRatio','videoProvider','videoModel','videoAspect','videoResolution','comfyMode','comfyWorkflow','quality','count','enhanceUpscaleRes','editUpscaleRes','rhConfigKey','rhPayment','rhInstanceType']);
+    const layoutKeys = new Set(['provider_id','model','resolution','ratio','msgenModel','msCustomModel','msResolution','msRatio','videoProvider','videoModel','videoAspect','videoResolution','comfyMode','comfyWorkflow','count','enhanceUpscaleRes','editUpscaleRes','rhConfigKey','rhPayment','rhInstanceType']);
     settings[key] = numericKeys.has(key) && value !== '' ? Number(value) : value;
     if(key === 'provider_id') settings.model = '';
     if(key === 'videoProvider') settings.videoModel = '';
@@ -7262,7 +7244,7 @@ function smartRunRequestMeta(run){
     if(s.engine === 'comfy') return {workflow_json:s.comfyWorkflow || '', mode:s.comfyMode || 'text'};
     if(s.engine === 'modelscope') return {backend:'Modelscope', model:s.msgenModel || '', custom_model:s.msCustomModel || ''};
     if(run?.kind === 'video') return {provider_id:s.videoProvider || '', model:s.videoModel || '', duration:s.videoDuration || '', aspect_ratio:s.videoAspect || '', resolution:s.videoResolution || ''};
-    return {provider_id:s.provider_id || '', model:s.model || '', size:run?.size || '', quality:s.quality || '', n:s.count || 1};
+    return {provider_id:s.provider_id || '', model:s.model || '', size:run?.size || '', n:s.count || 1};
 }
 function smartRunSnapshot(node, prompt, refs=[], kind='image'){
     const settingsSnapshot = cloneSmartSettings(settings);
@@ -7970,6 +7952,33 @@ function runTimePillHtml(node){
     const cls = running ? '' : ' done';
     return `<span class="run-time-pill${cls}" data-run-timer="${escapeHtml(node.id)}">${formatRunDuration(nodeRunElapsedMs(node))}</span>`;
 }
+// 节点单次生成费用徽标：展示 KIE 真实计费（node.cost）
+function formatCost(value){
+    const n = Number(value);
+    if(!Number.isFinite(n) || n <= 0) return '';
+    return '¥' + n.toFixed(2);
+}
+function runCostPillHtml(node){
+    if(!node || node.runTimerHidden || node.type === 'smart-prompt') return '';
+    if(node.cost == null || node.cost === '') return '';
+    const txt = formatCost(node.cost);
+    if(!txt) return '';
+    return `<span class="run-cost-pill" title="本次生成费用（KIE 真实计费）">${txt}</span>`;
+}
+// 画布累计生成费用：汇总所有计费节点的 node.cost，写入顶栏
+function updateCanvasCostDisplay(){
+    const el = document.getElementById('currentCanvasCost');
+    if(!el) return;
+    let total = 0, counted = 0;
+    nodes.forEach(n => {
+        const c = Number(n.cost);
+        if(Number.isFinite(c) && c > 0){ total += c; counted += 1; }
+    });
+    if(counted === 0){ el.style.display = 'none'; el.textContent = ''; return; }
+    el.style.display = '';
+    el.textContent = '¥' + total.toFixed(2);
+    el.title = `本画布累计生成费用 ¥${total.toFixed(2)}（${counted} 个计费节点）`;
+}
 function hideRunTimerForNode(node){
     if(!node || node.runTimerHidden || node.pending || node.running || node.jimengPending || !node.runFinishedAt) return false;
     node.runTimerHidden = true;
@@ -8046,7 +8055,7 @@ function render(){
             <div class="node-head"><div class="node-title">${title}</div><div class="node-actions">${deleteBtn}</div></div>
             ${!isEmpty && !isGroup ? `<div class="floating-node-actions"><button class="mini-x node-delete" type="button" title="${escapeHtml(tr('smart.deleteNode'))}"><i data-lucide="trash-2"></i></button></div>` : ''}
             ${smartNodeToolbarHtml(node)}${smartGroupToolbarHtml(node)}
-            ${runTimePillHtml(node)}
+            ${runTimePillHtml(node)}${runCostPillHtml(node)}
             <div class="node-body">${body}</div>
             ${isCompactMember && (isPrompt || isLoop) ? '<div class="smart-group-member-grab" title="拖动移出分组"></div>' : ''}
             <div class="node-hint">${hint}</div>
@@ -8094,6 +8103,7 @@ function render(){
     syncSmartSelectedImageResolution(world);
     measureSmartNodeImages();
     refreshRunTimerPills();
+    updateCanvasCostDisplay();
     return;
     world.innerHTML = '';
     if(composerEl) world.appendChild(composerEl);
@@ -8116,7 +8126,7 @@ function render(){
             <div class="node-head"><div class="node-title">${title}</div><div class="node-actions">${deleteBtn}</div></div>
             ${!isEmpty && !isGroup ? `<div class="floating-node-actions"><button class="mini-x node-delete" type="button" title="${escapeHtml(tr('smart.deleteNode'))}"><i data-lucide="trash-2"></i></button></div>` : ''}
             ${smartNodeToolbarHtml(node)}
-            ${runTimePillHtml(node)}
+            ${runTimePillHtml(node)}${runCostPillHtml(node)}
             <div class="node-body">${body}</div>
             <div class="node-hint">${isPending ? escapeHtml(tr('smart.hintPending')) : (imgs.length > 1 ? escapeHtml(tr('smart.hintMulti')) : imgs.length ? escapeHtml(tr('smart.hintSingle')) : escapeHtml(tr('smart.hintEmpty')))}</div>
             ${imgs.length || node.pending || isQueued || isPrompt || isLoop ? '<div class="node-resize-handle" data-resize="1"></div>' : ''}
@@ -15435,7 +15445,7 @@ function drainSmartTaskSubmissionQueue(){
 async function runApiGeneration(prompt, refs, runSettings=settings){
     if(!runSettings.provider_id || !runSettings.model) throw new Error(tr('smart.errNoApiModel'));
     const count = Math.max(1, Math.min(8, Number(runSettings.count || 1)));
-    const payload = {prompt, provider_id:runSettings.provider_id, model:runSettings.model, size:sizeForRun(runSettings), quality:runSettings.quality || 'auto', n:1, reference_images:imageRefsOnly(refs).slice(0, SMART_REFERENCE_IMAGE_MAX)};
+    const payload = {prompt, provider_id:runSettings.provider_id, model:runSettings.model, size:sizeForRun(runSettings), n:1, reference_images:imageRefsOnly(refs).slice(0, SMART_REFERENCE_IMAGE_MAX)};
     const tasks = await Promise.all(Array.from({length:count}, () => enqueueSmartTaskSubmission(() => fetch('/api/canvas-image-tasks', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)}).then(async r => {
         if(!r.ok) throw new Error(await r.text());
         return r.json();
@@ -15788,7 +15798,7 @@ async function cancelSmartPendingTasks(nodeId){
             return;
         }
         if(data.status === 'succeeded'){
-            finalizeSmartPendingTask(node, task.taskId, smartTaskResultItems(data.result || data, current), current.kind || 'image');
+            finalizeSmartPendingTask(node, task.taskId, smartTaskResultItems(data.result || data, current), current.kind || 'image', data.cost);
             return;
         }
         if(data.status === 'cancelled' && markSmartPendingTaskCancelled(node, task.taskId, data.message || data.error)) stopped += 1;
@@ -15965,7 +15975,7 @@ async function querySmartImageTaskNow(nodeId, localTaskId){
         if(data.status === 'succeeded'){
             task.failed = false;
             task.querying = false;
-            finalizeSmartPendingTask(node, task.taskId, smartTaskResultItems(data.result || data, task), task.kind || 'image');
+            finalizeSmartPendingTask(node, task.taskId, smartTaskResultItems(data.result || data, task), task.kind || 'image', data.cost);
             render();
             scheduleSave();
             return;
@@ -16106,12 +16116,17 @@ async function pollSmartCanvasTask(taskId, kind='image'){
     if(activeSmartTaskPolls.has(pollKey)) return activeSmartTaskPolls.get(pollKey);
     const promise = (async () => {
         for(let i = 0; i < 900; i++){
-            await new Promise(resolve => setTimeout(resolve, 2000));
+            await new Promise(resolve => setTimeout(resolve, 10000));
             const task = await fetch(smartCanvasTaskEndpoint(taskId, {kind})).then(async r => {
                 if(!r.ok) throw new Error(await r.text());
                 return r.json();
             });
-            if(task.status === 'succeeded') return task.result || {};
+            if(task.status === 'succeeded'){
+                const result = (task.result && typeof task.result === 'object') ? task.result : {};
+                // 把 KIE 真实费用（后端 taskResponse 已返回 task.cost）带回到 result，供 finalize 写入节点
+                if(task.cost != null && task.cost !== '' && task.cost !== undefined) result.cost = task.cost;
+                return result;
+            }
             if(task.status === 'cancelled') throw new CanvasTaskCancelledSignal(task.error || task.message);
             if(task.status === 'jimeng_pending') throw new JimengPendingSignal({submitId:task.submit_id, kind:task.kind, queueInfo:task.queue_info, message:task.message});
             if(task.status === 'failed'){
@@ -16129,8 +16144,13 @@ async function pollSmartCanvasTask(taskId, kind='image'){
         activeSmartTaskPolls.delete(pollKey);
     }
 }
-function finalizeSmartPendingTask(node, taskId, images, kind='image'){
+function finalizeSmartPendingTask(node, taskId, images, kind='image', cost){
     if(!node || !taskId) return;
+    // 保存 KIE 真实费用（单次生成的计费），供节点计费徽标与画布累计计费使用
+    if(cost != null && cost !== '' && cost !== undefined){
+        const c = Number(cost);
+        if(Number.isFinite(c)) node.cost = c;
+    }
     node.pendingTasks = smartPendingTasks(node).filter(task => task.taskId !== taskId);
     node.pending = Math.max(0, Number(node.pending || 0) - 1);
     const ext = kind === 'video' ? 'mp4' : kind === 'audio' ? 'mp3' : kind === 'text' ? 'txt' : 'png';
@@ -16184,7 +16204,8 @@ async function resumeSmartPendingNode(node, logContext={}){
         if(task.failed) return;
         try {
             const result = await pollSmartCanvasTask(task.taskId, task.kind || 'image');
-            finalizeSmartPendingTask(node, task.taskId, smartTaskResultItems(result, task), task.kind || 'image');
+            const taskCost = (result && typeof result === 'object' && result.cost != null && result.cost !== '') ? result.cost : null;
+            finalizeSmartPendingTask(node, task.taskId, smartTaskResultItems(result, task), task.kind || 'image', taskCost);
             render();
             scheduleSave();
         } catch(e) {

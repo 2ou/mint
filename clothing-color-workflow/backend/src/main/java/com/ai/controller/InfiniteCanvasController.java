@@ -11,6 +11,7 @@ import com.ai.service.TextModelService;
 import com.ai.service.impl.KieGptModels;
 import com.aliyun.oss.model.ObjectMetadata;
 import com.fasterxml.jackson.core.type.TypeReference;
+import java.io.File;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -2199,15 +2200,41 @@ public class InfiniteCanvasController {
         body.put("task_id", taskId);
         body.put("media_type", mediaType);
         body.put("status", status);
+        body.put("cost", result.getCost());
         body.put("completion_mode", useCallbackTaskCompletion() ? "callback" : "polling");
         body.put("error", firstNonBlank(result.getErrorMessage(), ""));
         if ("succeeded".equals(status) && result.getResultUrl() != null && !result.getResultUrl().isBlank()) {
             String url = result.getResultUrl();
+            // 优先使用本地落盘结果（仅本地，不上 OSS），避免 KIE 远程链接过期导致裂图
+            String localUrl = localServingUrl(result.getLocalPath());
+            if (localUrl != null && result.getLocalPath() != null && new File(result.getLocalPath()).exists()) {
+                url = localUrl;
+            }
             body.put("result", Map.of(mediaType.equals("video") ? "videos" : "images", List.of(url), "url", url));
         } else {
             body.put("result", Map.of(mediaType.equals("video") ? "videos" : "images", List.of()));
         }
         return body;
+    }
+
+    /**
+     * 把本地落盘的绝对路径转成前端可访问的服务 URL（/ai-result/** 由 WebMvcConfig 静态映射）。
+     * 路径不在 localSaveRoot 之下时返回 null，调用方应回退到 KIE 远程链接。
+     */
+    private String localServingUrl(String absolutePath) {
+        if (absolutePath == null || absolutePath.isBlank()) return null;
+        String root = appProperties.getLocalSaveRoot();
+        if (root == null) {
+            String os = System.getProperty("os.name").toLowerCase();
+            root = os.contains("win") ? "D:/AiResult" : "/tmp/ai-result";
+        }
+        String normAbs = absolutePath.replace('\\', '/');
+        String normRoot = root.replace('\\', '/');
+        if (normAbs.startsWith(normRoot)) {
+            String rel = normAbs.substring(normRoot.length()).replaceAll("^/+", "");
+            return "/ai-result/" + rel;
+        }
+        return null;
     }
 
     private KieTaskResult readTaskResult(String taskId) {
@@ -2703,8 +2730,10 @@ public class InfiniteCanvasController {
     }
 
     private String normalizeImageModel(String model) {
+        // 信任前端传入的模型：前端模型列表来自 /api/config（即 PROJECT_IMAGE_MODELS），
+        // 仅当为空 / 非法前缀时回退默认模型，避免「选了 GPT 实际跑 nano」的静默降级。
         if (model == null || model.isBlank() || model.startsWith("project-")) return PROJECT_IMAGE_MODEL;
-        return PROJECT_IMAGE_MODELS.contains(model) ? model : PROJECT_IMAGE_MODEL;
+        return model;
     }
 
     private String normalizeVideoModel(String model) {

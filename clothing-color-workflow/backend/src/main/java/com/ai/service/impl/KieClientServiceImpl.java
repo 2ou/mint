@@ -18,6 +18,7 @@ import org.springframework.stereotype.Service;
 import java.io.IOException;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.math.BigDecimal;
 
 @Service
 @Slf4j
@@ -175,6 +176,11 @@ public class KieClientServiceImpl implements KieClientService {
                     // 解析图片 URL
                     resultBuilder.resultUrl(parseUrlFromData(dataNode));
 
+                    // 解析 KIE 真实费用（兼容多种字段名，取第一个非空数值；data 内取不到再查 root）
+                    BigDecimal cost = extractCost(dataNode);
+                    if (cost == null) cost = extractCost(root);
+                    resultBuilder.cost(cost);
+
                     // 解析毫秒级完成时间
                     if (dataNode.has("completeTime")) {
                         resultBuilder.completeTime(dataNode.get("completeTime").asLong());
@@ -196,6 +202,29 @@ public class KieClientServiceImpl implements KieClientService {
         }
     }
 
+
+    /**
+     * 解析 KIE 返回的费用字段（兼容多种命名，取第一个非空数值）
+     */
+    private BigDecimal extractCost(com.fasterxml.jackson.databind.JsonNode data) {
+        if (data == null || data.isNull()) return null;
+        String[] keys = {"cost", "fee", "amount", "price", "estimatedCost", "totalFee", "costAmount", "charge", "expenses", "totalCost", "costFee"};
+        for (String k : keys) {
+            JsonNode n = data.get(k);
+            if (n != null && !n.isNull()) {
+                if (n.isNumber()) return n.decimalValue();
+                String s = n.asText().trim();
+                if (!s.isEmpty()) {
+                    try {
+                        return new BigDecimal(s.replaceAll("[^0-9.\\-]", ""));
+                    } catch (Exception ignore) {
+                        // 忽略无法解析的值，继续尝试下一个字段
+                    }
+                }
+            }
+        }
+        return null;
+    }
 
     /**
      * 按照 KIE 官方最新文档规范提取结果链接

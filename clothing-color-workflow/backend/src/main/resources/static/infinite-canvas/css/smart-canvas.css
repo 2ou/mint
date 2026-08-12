@@ -495,6 +495,8 @@ video.node-img { object-fit:cover; background:#0f172a; }
 .run-time-pill { position:absolute; right:8px; top:8px; z-index:7; height:24px; padding:0 9px; border-radius:999px; display:inline-flex; align-items:center; justify-content:center; background:rgba(37,99,235,.92); color:#fff; font-size:10.5px; font-weight:800; font-variant-numeric:tabular-nums; box-shadow:0 8px 18px rgba(15,23,42,.18); pointer-events:none; }
 .run-time-pill.done { background:#10b981; color:#fff; }
 .theme-dark .run-time-pill { box-shadow:0 8px 18px rgba(0,0,0,.32); }
+.run-cost-pill { position:absolute; right:8px; top:38px; z-index:7; height:22px; padding:0 9px; border-radius:999px; display:inline-flex; align-items:center; justify-content:center; background:rgba(245,158,11,.95); color:#1f2937; font-size:10.5px; font-weight:800; font-variant-numeric:tabular-nums; box-shadow:0 8px 18px rgba(15,23,42,.18); pointer-events:none; }
+.theme-dark .run-cost-pill { background:rgba(245,158,11,.92); color:#1f2937; box-shadow:0 8px 18px rgba(0,0,0,.32); }
 .loading-skeleton { display:grid; gap:8px; }
 .loading-cell { border-radius:12px; background:linear-gradient(90deg, var(--soft) 0%, var(--card) 50%, var(--soft) 100%); background-size:200% 100%; animation:shimmer 1.5s infinite linear; border:1px solid var(--line); }
 .loading-cell.single { width:260px; height:180px; }

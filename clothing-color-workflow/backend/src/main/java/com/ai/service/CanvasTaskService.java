@@ -1,11 +1,14 @@
 package com.ai.service;
 
+import com.ai.config.AppProperties;
 import com.ai.dto.KieTaskResult;
 import com.ai.entity.CanvasTask;
 import com.ai.repository.CanvasTaskRepository;
+import com.ai.service.OssService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.core.type.TypeReference;
+import java.io.File;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -29,6 +32,8 @@ public class CanvasTaskService {
 
     private final CanvasTaskRepository canvasTaskRepository;
     private final ObjectMapper objectMapper;
+    private final OssService ossService;
+    private final AppProperties appProperties;
 
     @Transactional
     public void recordCreated(String taskId, String mediaType, String operator, String shopName) {
@@ -124,7 +129,12 @@ public class CanvasTaskService {
             item.put("task_id", task.getTaskId());
             item.put("status", status.toLowerCase());
             item.put("media_type", task.getMediaType());
-            item.put("result_url", task.getResultUrl() == null ? "" : task.getResultUrl());
+            String resultUrl = task.getResultUrl() == null ? "" : task.getResultUrl();
+            String localUrl = localServingUrl(task.getLocalPath());
+            if (localUrl != null && task.getLocalPath() != null && new File(task.getLocalPath()).exists()) {
+                resultUrl = localUrl;
+            }
+            item.put("result_url", resultUrl);
             item.put("error", task.getErrorMessage() == null ? "" : task.getErrorMessage());
             item.put("terminal", isTerminalStatus(status));
             item.put("retryable", "FAILED".equals(status) && task.getRequestPayloadJson() != null && !task.getRequestPayloadJson().isBlank());
@@ -191,6 +201,17 @@ public class CanvasTaskService {
         if (callbackPayloadJson != null) {
             task.setCallbackPayloadJson(callbackPayloadJson);
         }
+        // 🔴 AI 画布结果本地落盘（仅本地，不上 OSS）：成功后把 KIE 远程图下载到 D:/AiResult
+        if (task.getLocalPath() == null
+                && ("SUCCESS".equalsIgnoreCase(result.getStatus()) || result.isSuccess())
+                && result.getResultUrl() != null && !result.getResultUrl().isBlank()) {
+            try {
+                String localPath = ossService.downloadResultToLocal(task.getTaskId(), result.getResultUrl());
+                if (localPath != null) task.setLocalPath(localPath);
+            } catch (Exception dlEx) {
+                log.warn("[AI Canvas] 结果本地落盘失败，继续保留 KIE 远程链接: taskId={}, error={}", task.getTaskId(), dlEx.getMessage());
+            }
+        }
         canvasTaskRepository.save(task);
     }
 
@@ -204,7 +225,28 @@ public class CanvasTaskService {
                 .success("SUCCESS".equals(status))
                 .resultUrl(task.getResultUrl())
                 .errorMessage(task.getErrorMessage())
+                .localPath(task.getLocalPath())
                 .build();
+    }
+
+    /**
+     * 把本地落盘的绝对路径转成前端可访问的服务 URL（/ai-result/** 由 WebMvcConfig 静态映射）。
+     * 路径不在 localSaveRoot 之下时返回 null，调用方应回退到 KIE 远程链接。
+     */
+    private String localServingUrl(String absolutePath) {
+        if (absolutePath == null || absolutePath.isBlank()) return null;
+        String root = appProperties.getLocalSaveRoot();
+        if (root == null) {
+            String os = System.getProperty("os.name").toLowerCase();
+            root = os.contains("win") ? "D:/AiResult" : "/tmp/ai-result";
+        }
+        String normAbs = absolutePath.replace('\\', '/');
+        String normRoot = root.replace('\\', '/');
+        if (normAbs.startsWith(normRoot)) {
+            String rel = normAbs.substring(normRoot.length()).replaceAll("^/+", "");
+            return "/ai-result/" + rel;
+        }
+        return null;
     }
 
     private KieTaskResult parseCallback(Map<String, Object> payload, String taskId) {

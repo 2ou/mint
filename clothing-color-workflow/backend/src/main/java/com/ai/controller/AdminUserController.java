@@ -3,6 +3,7 @@ package com.ai.controller;
 import com.ai.dto.ApiResponse;
 import com.ai.entity.SysUser;
 import com.ai.repository.SysUserRepository;
+import com.ai.repository.UserSessionRepository;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -18,12 +19,13 @@ import java.util.List;
 public class AdminUserController {
 
     private final SysUserRepository sysUserRepository;
+    private final UserSessionRepository userSessionRepository;
 
     // 🔴 核心防御：严格校验当前 Token 对应的用户是不是 PINKSIR
     private boolean isNotAdmin(HttpServletRequest request) {
         String token = request.getHeader("X-User-Token");
         if (token == null || token.trim().isEmpty()) return true;
-        SysUser user = sysUserRepository.findByToken(token);
+        SysUser user = userSessionRepository.findUserByToken(token);
         return user == null || !"PINKSIR".equalsIgnoreCase(user.getUsername());
     }
 
@@ -81,6 +83,7 @@ public class AdminUserController {
             return ApiResponse.fail("⚠️ 警告：无法删除超级管理员账号自己！");
         }
 
+        userSessionRepository.deleteByUser_Id(id);
         sysUserRepository.deleteById(id);
         return ApiResponse.ok("删除成功", null);
     }

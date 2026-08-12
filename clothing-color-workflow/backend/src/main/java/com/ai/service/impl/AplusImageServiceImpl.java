@@ -188,27 +188,22 @@ public class AplusImageServiceImpl implements AplusImageService {
             if (result.isSuccess() || "SUCCESS".equalsIgnoreCase(result.getStatus())) {
                 task.setResultTempUrl(result.getResultUrl());
                 try {
-                    AplusProject project = projectRepository.findById(projectId)
-                            .orElseThrow(() -> new RuntimeException("A+ 项目不存在: " + projectId));
-                    String ossResult = ossService.uploadResultToOss(
-                            project.getSpu(),
-                            result.getResultUrl(),
-                            task.getId(),
-                            true
-                    );
-                    String ossUrl = extractOssUrl(ossResult);
-                    if (ossUrl == null || ossUrl.isBlank()) {
-                        throw new RuntimeException("OSS returned an empty result URL");
+                    // 🔴 本地轮询结果落本地 D:/AiResult，不再上 OSS
+                    String localPath = ossService.downloadResultToLocal("aplus", String.valueOf(task.getId()), result.getResultUrl());
+                    if (localPath != null) {
+                        task.setLocalPath(localPath);
+                        String localUrl = ossService.localServingUrl(localPath);
+                        if (localUrl != null) task.setResultOssUrl(localUrl);
                     }
-                    task.setResultOssUrl(ossUrl);
                     task.setStatus(AplusTaskStatus.SUCCESS.name());
                     task.setErrorMessage(null);
                     task.setCompletedAt(LocalDateTime.now());
                     imageTaskRepository.save(task);
                 } catch (Exception e) {
-                    log.error("[A+] OSS transfer failed: module={}, error={}", task.getModuleCode(), e.getMessage());
-                    task.setStatus(AplusTaskStatus.FAILED.name());
-                    task.setErrorMessage("Image generated but OSS transfer failed: " + e.getMessage());
+                    // 本地落盘失败：保留 KIE 临时链接，任务仍标记成功（图已生成，仅未缓存到本地）
+                    log.warn("[A+] 本地落盘失败，保留 KIE 临时链接: module={}, error={}", task.getModuleCode(), e.getMessage());
+                    task.setStatus(AplusTaskStatus.SUCCESS.name());
+                    task.setErrorMessage(null);
                     task.setCompletedAt(LocalDateTime.now());
                     imageTaskRepository.save(task);
                 }

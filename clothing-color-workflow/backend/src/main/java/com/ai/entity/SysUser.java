@@ -1,8 +1,14 @@
 package com.ai.entity;
 
-import jakarta.persistence.*;
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 import lombok.Data;
 import org.hibernate.annotations.CreationTimestamp;
+
 import java.time.LocalDateTime;
 
 @Data
@@ -17,7 +23,10 @@ public class SysUser {
     private String password;
     private String shopName;
     private String realName;
-    private String token; // 用于存储登录后派发的通行证
+
+    // 仅用于登录接口返回给前端，不持久化到 sys_user 表
+    @Transient
+    private String token;
 
     @CreationTimestamp
     private LocalDateTime createdAt;

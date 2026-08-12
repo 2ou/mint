@@ -48,6 +48,9 @@ gradlew.bat
 **/application-dev.properties
 **/application-local.properties
 **/application-*.properties
+# 所有 profile 的 yml（含 prod）一律不提交，避免生产密钥泄露
+**/application-*.yml
+**/application-prod.yml
 # 主配置文件（含本地数据库连接等敏感信息，不提交）
 **/application.yml
 # 数据库、密钥等敏感配置

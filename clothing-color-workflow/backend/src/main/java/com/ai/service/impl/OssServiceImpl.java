@@ -222,6 +222,94 @@ public class OssServiceImpl implements OssService {
         return this.ossClient;
     }
 
+    @Override
+    public String downloadResultToLocal(String taskId, String resultUrl) {
+        return downloadResultToLocal("canvas", taskId, resultUrl);
+    }
+
+    @Override
+    public String downloadResultToLocal(String subDir, String taskId, String resultUrl) {
+        if (resultUrl == null || resultUrl.isBlank()) return null;
+        try {
+            // 1. 确定本地根目录
+            String localRootPath = appProperties.getLocalSaveRoot();
+            if (localRootPath == null) {
+                String os = System.getProperty("os.name").toLowerCase();
+                localRootPath = os.contains("win") ? "D:/AiResult" : "/tmp/ai-result";
+            }
+
+            // 2. 智能判断后缀名
+            String ext = ".png";
+            String lowerUrl = resultUrl.toLowerCase();
+            if (lowerUrl.contains(".jpg") || lowerUrl.contains(".jpeg")) ext = ".jpg";
+            else if (lowerUrl.contains(".mp4")) ext = ".mp4";
+            else if (lowerUrl.contains(".mov")) ext = ".mov";
+
+            // 3. 构造文件名（子目录 + taskId + 时间戳，避免重名）
+            String safeSub = (subDir != null && !subDir.isBlank())
+                    ? subDir.replaceAll("[^a-zA-Z0-9_\\-]", "_") : "canvas";
+            String safeTask = (taskId != null && !taskId.isBlank())
+                    ? taskId.replaceAll("[^a-zA-Z0-9_\\-]", "_") : "task";
+            String fileName = safeTask + "_" + System.nanoTime() + ext;
+
+            // 4. 准备本地目录与文件
+            File targetDir = new File(localRootPath + "/" + safeSub);
+            if (!targetDir.exists()) targetDir.mkdirs();
+            File permanentFile = new File(targetDir, fileName);
+
+            // 5. 下载字节流落地（仅本地，不上 OSS）
+            okhttp3.Request request = new okhttp3.Request.Builder()
+                    .url(resultUrl)
+                    .addHeader("User-Agent", "Mozilla/5.0")
+                    .build();
+            try (okhttp3.Response response = httpClient.newCall(request).execute()) {
+                if (!response.isSuccessful() || response.body() == null) {
+                    log.warn("[AI Canvas 本地落盘] KIE 文件下载失败 HTTP {}", response.code());
+                    return null;
+                }
+                try (InputStream in = response.body().byteStream();
+                     FileOutputStream fos = new FileOutputStream(permanentFile)) {
+                    byte[] buffer = new byte[8192];
+                    int bytesRead;
+                    while ((bytesRead = in.read(buffer)) != -1) {
+                        fos.write(buffer, 0, bytesRead);
+                    }
+                } catch (Exception streamEx) {
+                    if (permanentFile.exists()) permanentFile.delete();
+                    log.warn("[AI Canvas 本地落盘] 网络流中断，已清理: {}", streamEx.getMessage());
+                    return null;
+                }
+            }
+            if (!permanentFile.exists() || permanentFile.length() == 0) {
+                if (permanentFile.exists()) permanentFile.delete();
+                log.warn("[AI Canvas 本地落盘] 文件为空，已清理");
+                return null;
+            }
+            log.info("[AI Canvas 本地落盘成功] {}", permanentFile.getAbsolutePath());
+            return permanentFile.getAbsolutePath();
+        } catch (Exception e) {
+            log.warn("[AI Canvas 本地落盘异常] {}", e.getMessage());
+            return null;
+        }
+    }
+
+    @Override
+    public String localServingUrl(String absolutePath) {
+        if (absolutePath == null || absolutePath.isBlank()) return null;
+        String root = appProperties.getLocalSaveRoot();
+        if (root == null) {
+            String os = System.getProperty("os.name").toLowerCase();
+            root = os.contains("win") ? "D:/AiResult" : "/tmp/ai-result";
+        }
+        String normAbs = absolutePath.replace('\\', '/');
+        String normRoot = root.replace('\\', '/');
+        if (normAbs.startsWith(normRoot)) {
+            String rel = normAbs.substring(normRoot.length()).replaceAll("^/+", "");
+            return "/ai-result/" + rel;
+        }
+        return null;
+    }
+
     @PreDestroy
     public void onDestroy() {
         log.info("【系统关闭】正在释放 OSS 客户端和线程池资源...");

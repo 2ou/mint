@@ -1,7 +1,7 @@
 package com.ai.config;
 
 import com.ai.entity.SysUser;
-import com.ai.repository.SysUserRepository;
+import com.ai.repository.UserSessionRepository;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
@@ -14,7 +14,7 @@ import org.springframework.web.servlet.HandlerInterceptor;
 @RequiredArgsConstructor
 public class TokenInterceptor implements HandlerInterceptor {
 
-    private final SysUserRepository sysUserRepository;
+    private final UserSessionRepository userSessionRepository;
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
@@ -37,7 +37,7 @@ public class TokenInterceptor implements HandlerInterceptor {
         }
 
         // 🔴 去数据库真实校验这个 Token 是否有效
-        SysUser user = sysUserRepository.findByToken(token);
+        SysUser user = userSessionRepository.findUserByToken(token);
         if (user == null) {
             return reject(response, "登录已失效，请重新登录");
         }

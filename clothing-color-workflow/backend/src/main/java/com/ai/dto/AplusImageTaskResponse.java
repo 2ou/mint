@@ -26,6 +26,7 @@ public class AplusImageTaskResponse {
     private String status;
     private String resultTempUrl;
     private String resultOssUrl;
+    private String localPath;
     private String errorMessage;
     private BigDecimal cost;
 
@@ -51,6 +52,7 @@ public class AplusImageTaskResponse {
         resp.setStatus(task.getStatus());
         resp.setResultTempUrl(task.getResultTempUrl());
         resp.setResultOssUrl(task.getResultOssUrl());
+        resp.setLocalPath(task.getLocalPath());
         resp.setErrorMessage(task.getErrorMessage());
         resp.setCost(task.getCost());
         resp.setCreatedAt(task.getCreatedAt());

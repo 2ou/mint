@@ -6,7 +6,7 @@ if (window.location.hostname === 'localhost' || window.location.hostname === '12
     axios.defaults.baseURL = window.location.origin;
 } else {
     // 部署后，前端和后端同源，直接设为部署地址
-    axios.defaults.baseURL = 'http://39.108.115.240:10010';
+    axios.defaults.baseURL = window.location.origin;
 }
 // --------------------------
 

@@ -6,7 +6,9 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import org.springframework.web.filter.CorsFilter;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
+import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
+import com.ai.config.AppProperties;
 import lombok.RequiredArgsConstructor;
 
 @Configuration
@@ -15,6 +17,7 @@ public class WebMvcConfig implements WebMvcConfigurer {
 
     // 注入你写的拦截器
     private final TokenInterceptor tokenInterceptor;
+    private final AppProperties appProperties;
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
@@ -24,6 +27,20 @@ public class WebMvcConfig implements WebMvcConfigurer {
                 .excludePathPatterns("/api/aplus/callback") // KIE 任务回调不带系统登录态
                 .excludePathPatterns("/api/canvas/callback") // AI 画布独立回调入口
                 .excludePathPatterns("/api/tasks/proxy-download"); // 排除下载接口
+    }
+
+    // 🔴 AI 画布结果本地落盘：把 D:/AiResult（或 prod 的 /data/ai-images/tmp）以 /ai-result/** 对外提供静态访问
+    // 仅本地，不上 OSS；前端展示优先用本地 URL，避免 KIE 远程链接过期导致裂图
+    @Override
+    public void addResourceHandlers(ResourceHandlerRegistry registry) {
+        String root = appProperties.getLocalSaveRoot();
+        if (root == null) {
+            String os = System.getProperty("os.name").toLowerCase();
+            root = os.contains("win") ? "D:/AiResult" : "/tmp/ai-result";
+        }
+        registry.addResourceHandler("/ai-result/**")
+                .addResourceLocations("file:" + root + "/")
+                .setCachePeriod(3600);
     }
 
     // 🔴 终极跨域解决方案：使用 CorsFilter 替代原本的 addCorsMappings

@@ -16,6 +16,8 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.Profiles;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -47,6 +49,7 @@ public class ImageTaskServiceImpl implements ImageTaskService {
     private final ImageTaskRepository imageTaskRepository;
     private final KieClientService kieClientService;
     private final OssService ossService;
+    private final Environment environment;
 
     @Autowired
     private AppProperties appProperties;
@@ -60,10 +63,16 @@ public class ImageTaskServiceImpl implements ImageTaskService {
             .readTimeout(60, TimeUnit.SECONDS)
             .build();
 
-    public ImageTaskServiceImpl(ImageTaskRepository imageTaskRepository, KieClientService kieClientService, OssService ossService) {
+    public ImageTaskServiceImpl(ImageTaskRepository imageTaskRepository, KieClientService kieClientService, OssService ossService, Environment environment) {
         this.imageTaskRepository = imageTaskRepository;
         this.kieClientService = kieClientService;
         this.ossService = ossService;
+        this.environment = environment;
+    }
+
+    /** 本地环境（dev profile）判定：本地轮询已将 resultOssUrl 改写为相对路径 /ai-result/...，批量下载需改走 KIE 临时地址 */
+    private boolean isLocalEnv() {
+        return environment.acceptsProfiles(Profiles.of("dev"));
     }
 
     // ======================== 核心业务逻辑 ========================
@@ -180,26 +189,22 @@ public class ImageTaskServiceImpl implements ImageTaskService {
                 imageTaskRepository.save(task);
                 log.info("【保底成功】任务 {} 已变更为 SUCCESS，临时链接已安全入库保护！", id);
 
-                // 🔴 核心逻辑：转存隔离块
+                // 🔴 核心逻辑：本地落盘（仅本地，不再上 OSS）
                 try {
-                    log.info("【步骤3】尝试执行双保险转存（本地硬盘 + OSS）...");
-                    // 💡 这里的参数调整为 3 个，传入 task.getId() 供命名使用
-                    String combinedResult = ossService.uploadResultToOss(task.getSpu(), kieResult.getResultUrl(), task.getId());
+                    log.info("【步骤3】尝试将 KIE 结果落本地 D:/AiResult（不再上 OSS）...");
+                    String localPath = ossService.downloadResultToLocal("tasks", String.valueOf(task.getId()), kieResult.getResultUrl());
+                    if (localPath != null) {
+                        task.setLocalPath(localPath);
+                        String localUrl = ossService.localServingUrl(localPath);
+                        if (localUrl != null) task.setResultOssUrl(localUrl); // 主要展示链接改为本地 /ai-result/...
 
-                    if (combinedResult != null && combinedResult.contains("|")) {
-                        String[] parts = combinedResult.split("\\|");
-                        if (parts.length == 2) {
-                            task.setResultOssUrl(parts[0]); // 永久链接
-                            task.setLocalPath("DELETED".equals(parts[1]) ? null : parts[1]);
-
-                            // 🔴 第二段提交：转存数据补充入库
-                            imageTaskRepository.save(task);
-                            log.info("【转存成功】任务 {} 的 OSS 永久链接及本地路径更新完毕！", id);
-                        }
+                        // 🔴 第二段提交：本地落盘数据补充入库
+                        imageTaskRepository.save(task);
+                        log.info("【转存成功】任务 {} 的本地路径更新完毕：{}", id, localPath);
                     }
                 } catch (Exception subEx) {
                     // 仅记录转存异常，不修改 task 状态，不让 refresh 操作报错
-                    log.error("【转存降级】任务 {} 原始图已拿到，但本地保存或 OSS 上传失败: {}", id, subEx.getMessage());
+                    log.error("【转存降级】任务 {} 原始图已拿到，但本地保存失败: {}", id, subEx.getMessage());
                 }
 
             } else if (kieResult != null && ("FAILED".equalsIgnoreCase(kieResult.getStatus()) || "FAIL".equalsIgnoreCase(kieResult.getStatus()))) {
@@ -242,7 +247,15 @@ public class ImageTaskServiceImpl implements ImageTaskService {
                     ImageTask task = imageTaskRepository.findById(id).orElse(null);
                     if (task == null) continue;
 
-                    String imageUrl = task.getResultOssUrl() != null ? task.getResultOssUrl() : task.getResultTempUrl();
+                    // 🔴 本地环境批量下载单独走 KIE 临时文件地址：本地轮询后 resultOssUrl 被改写为相对路径
+                    // /ai-result/...，okhttp 无法抓取（抛 IllegalArgumentException），故本地环境优先用绝对地址的
+                    // resultTempUrl（KIE 临时链接）；生产环境仍优先用 resultOssUrl（绝对 OSS 地址）。
+                    String imageUrl;
+                    if (isLocalEnv()) {
+                        imageUrl = task.getResultTempUrl() != null ? task.getResultTempUrl() : task.getResultOssUrl();
+                    } else {
+                        imageUrl = task.getResultOssUrl() != null ? task.getResultOssUrl() : task.getResultTempUrl();
+                    }
                     if (imageUrl == null || imageUrl.isEmpty()) continue;
 
                     String lowerUrl = imageUrl.toLowerCase();

@@ -21,6 +21,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.Profiles;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -61,6 +63,7 @@ public class AplusController {
     private final CanvasTaskService canvasTaskService;
     private final AplusProjectRepository projectRepository;
     private final AplusImageTaskRepository imageTaskRepository;
+    private final Environment environment;
 
     @Resource(name = "aplusAsyncExecutor")
     private Executor aplusAsyncExecutor;
@@ -148,7 +151,7 @@ public class AplusController {
 
         List<AplusImageTask> successTasks = imageTaskRepository.findByProjectId(id).stream()
                 .filter(task -> AplusTaskStatus.SUCCESS.name().equals(task.getStatus())
-                        && cleanUrl(task.getResultOssUrl()) != null)
+                        && resolveDownloadUrl(task) != null)
                 .toList();
 
         if (successTasks.isEmpty()) {
@@ -164,7 +167,7 @@ public class AplusController {
 
         try (ZipOutputStream zos = new ZipOutputStream(response.getOutputStream())) {
             for (AplusImageTask task : successTasks) {
-                String imageUrl = cleanUrl(task.getResultOssUrl());
+                String imageUrl = resolveDownloadUrl(task);
                 String entryName = sanitizeFileName(task.getModuleCode() + "_" + task.getModuleName() + ".jpg");
                 try (InputStream is = new URL(imageUrl).openStream()) {
                     zos.putNextEntry(new ZipEntry(entryName));
@@ -270,6 +273,21 @@ public class AplusController {
         }
         int separator = url.indexOf('|');
         return separator >= 0 ? url.substring(0, separator) : url;
+    }
+
+    /** 本地环境（dev profile）判定：本地轮询已将 resultOssUrl 改写为相对路径 /ai-result/...，批量下载需改走 KIE 临时地址 */
+    private boolean isLocalEnv() {
+        return environment.acceptsProfiles(Profiles.of("dev"));
+    }
+
+    /** 解析批量下载应抓取的图片地址：本地环境优先用 KIE 临时文件地址（绝对 URL），生产环境优先用 resultOssUrl（绝对 OSS 地址） */
+    private String resolveDownloadUrl(AplusImageTask task) {
+        if (isLocalEnv()) {
+            String temp = cleanUrl(task.getResultTempUrl());
+            return temp != null ? temp : cleanUrl(task.getResultOssUrl());
+        }
+        String oss = cleanUrl(task.getResultOssUrl());
+        return oss != null ? oss : cleanUrl(task.getResultTempUrl());
     }
 
     private String sanitizeFileName(String fileName) {

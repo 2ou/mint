@@ -570,13 +570,18 @@ public class ModelLibraryServiceImpl implements ModelLibraryService {
             return markStoragePending(model, "No temporary result URL is available for permanent storage");
         }
         try {
-            String uploadResult = ossService.uploadResultToOss("model-" + model.getId(), model.getResultUrl(), model.getId(), true);
-            String permanentUrl = extractOssUrl(uploadResult);
-            if (isBlank(permanentUrl)) {
-                return markStoragePending(model, "Permanent OSS upload returned an empty URL");
+            // 🔴 本地轮询结果落本地 D:/AiResult，不再上 OSS
+            String localPath = ossService.downloadResultToLocal("models", String.valueOf(model.getId()), model.getResultUrl());
+            if (isBlank(localPath)) {
+                return markStoragePending(model, "Local result download returned an empty path");
             }
-            model.setResultUrl(permanentUrl);
-            model.setCoverImageUrl(permanentUrl);
+            String localUrl = ossService.localServingUrl(localPath);
+            if (isBlank(localUrl)) {
+                return markStoragePending(model, "Local serving URL resolution failed");
+            }
+            model.setLocalPath(localPath);
+            model.setResultUrl(localUrl);
+            model.setCoverImageUrl(localUrl);
             model.setStatus("ACTIVE");
             model.setStorageStatus("PERSISTED");
             model.setStorageError(null);

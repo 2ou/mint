@@ -848,10 +848,6 @@ function isGptImageAutoSizeModel(model){
 function defaultApiImageResolution(model){
     return isGptImageAutoSizeModel(resolveImageModel(model)) ? '4k' : '1k';
 }
-function normalizedImageQuality(value){
-    const quality = String(value || 'auto').trim().toLowerCase();
-    return ['low','medium','high'].includes(quality) ? quality : '';
-}
 function resolveChatModel(value, providerId=''){
     const providerModels = providerId ? providerChatModels(providerId) : [];
     return value || providerModels[0] || allChatModels()[0] || chatModels[0] || 'gpt-4o-mini';
@@ -8727,12 +8723,6 @@ function renderGeneratorBody(node){
                     <option value="source">${tr('canvas.adaptiveRatio')}</option>
                     <option value="custom">${tr('canvas.custom')}</option>
                 </select>
-                <select class="select-lite quality-select">
-                    <option value="auto">Q auto</option>
-                    <option value="low">Q low</option>
-                    <option value="medium">Q med</option>
-                    <option value="high">Q high</option>
-                </select>
                 <div class="gen-count-row">
                     <div class="gen-stepper">
                         <button class="gen-step-btn" data-step="-1" type="button" title="${tr('canvas.decrease')}" aria-label="${tr('canvas.decreaseCount')}"><i data-lucide="chevron-left" class="w-3.5 h-3.5"></i></button>
@@ -8782,7 +8772,6 @@ function renderGeneratorBody(node){
         node.resolution = defaultApiImageResolution(node.model);
         modelSelect.innerHTML = imageModelOptions(node.model, node.apiProvider);
         syncSizeControls();
-        syncQualityControls();
         scheduleSave();
     };
     modelSelect.onmousedown = e => e.stopPropagation();
@@ -8793,12 +8782,10 @@ function renderGeneratorBody(node){
         node._apiResolutionUserSet = false;
         if(node.resolution !== 'custom') node.resolution = defaultApiImageResolution(node.model);
         syncSizeControls();
-        syncQualityControls();
         scheduleSave();
     };
     const ratioSelect = wrap.querySelector('.ratio');
     const resolutionSelect = wrap.querySelector('.resolution');
-    const qualitySelect = wrap.querySelector('.quality-select');
     const customRatioRow = wrap.querySelector('.custom-ratio-row');
     const customSizeRow = wrap.querySelector('.custom-size-row');
     const customRatioWInput = wrap.querySelector('.custom-ratio-w-input');
@@ -8807,11 +8794,6 @@ function renderGeneratorBody(node){
     const customHInput = wrap.querySelector('.custom-h-input');
     const fitSizeBtn = wrap.querySelector('.fit-size-btn');
     const referenceImages = ordered.flatMap(src => src.refs || []);
-    const syncQualityControls = () => {
-        qualitySelect.disabled = false;
-        if(!['auto','low','medium','high'].includes(String(node.quality || 'auto'))) node.quality = 'auto';
-        qualitySelect.value = node.quality || 'auto';
-    };
     const hydrateCustomParts = () => {
         if((!node.customRatioWidth || !node.customRatioHeight) && node.customRatio) {
             const raw = String(node.customRatio || '');
@@ -8875,15 +8857,7 @@ function renderGeneratorBody(node){
         customWInput.value = node.customWidth || '';
         customHInput.value = node.customHeight || '';
         if(fitSizeBtn) fitSizeBtn.disabled = !referenceImages.some(ref => ref.url);
-        syncQualityControls();
         if(node.ratio === 'source') updateSourceRatioFromFirstRef();
-    };
-    qualitySelect.onmousedown = e => e.stopPropagation();
-    qualitySelect.onclick = e => e.stopPropagation();
-    qualitySelect.onchange = e => {
-        e.stopPropagation();
-        node.quality = e.target.value;
-        scheduleSave();
     };
     ratioSelect.onmousedown = e => e.stopPropagation();
     ratioSelect.onclick = e => e.stopPropagation();
@@ -9411,7 +9385,6 @@ const RH_KNOWN_FIELD_OPTIONS = {
     resolution:['1k','2k','4k','8k'],
     size:['512','768','1024','1280','1536','2048'],
     mode:['text2img','img2img'],
-    quality:['low','medium','high','best'],
     instanceType:['default','plus','pro'],
     instance_type:['default','plus','pro'],
     precision:['fp16','fp32','bf16'],
@@ -9595,7 +9568,6 @@ function applyRhEntrySelection(node, ref){
         node.apiProvider = 'runninghub';
         node.resolution = node.resolution || defaultApiImageResolution(ref.id);
         node.ratio = node.ratio || 'square';
-        node.quality = node.quality || 'auto';
         node.count = Math.max(1, Math.min(8, Number(node.count || 1)));
     }
 }
@@ -9949,12 +9921,6 @@ function rhModelSettingsHtml(node){
                     <option value="source">${tr('canvas.adaptiveRatio')}</option>
                     <option value="custom">${tr('canvas.custom')}</option>
                 </select>
-                <select class="select-lite quality-select" data-rh-model-field="quality">
-                    <option value="auto">Q auto</option>
-                    <option value="low">Q low</option>
-                    <option value="medium">Q med</option>
-                    <option value="high">Q high</option>
-                </select>
                 <input class="setting-input rh-model-count-input" data-rh-model-field="count" type="number" min="1" max="8" step="1" value="${count}" style="width:64px">
             </div>
             <div class="gen-settings-row custom-ratio-row" style="display:none">
@@ -9971,7 +9937,6 @@ function rhModelSettingsHtml(node){
 function bindRhModelControls(wrap, node, media){
     const resolutionSelect = wrap.querySelector('[data-rh-model-field="resolution"]');
     const ratioSelect = wrap.querySelector('[data-rh-model-field="ratio"]');
-    const qualitySelect = wrap.querySelector('[data-rh-model-field="quality"]');
     const countInput = wrap.querySelector('[data-rh-model-field="count"]');
     const customRatioRow = wrap.querySelector('.custom-ratio-row');
     const customSizeRow = wrap.querySelector('.custom-size-row');
@@ -9999,7 +9964,6 @@ function bindRhModelControls(wrap, node, media){
         normalizeApiNodeSizeChoice(node);
         if(resolutionSelect) resolutionSelect.value = node.resolution || defaultApiImageResolution(node.model);
         if(ratioSelect) ratioSelect.value = node.ratio || 'square';
-        if(qualitySelect) qualitySelect.value = node.quality || 'auto';
         if(countInput) countInput.value = Math.max(1, Math.min(8, Number(node.count || 1)));
         if(customRatioRow) customRatioRow.style.display = node.ratio === 'custom' ? '' : 'none';
         if(customSizeRow) customSizeRow.style.display = node.resolution === 'custom' ? '' : 'none';
@@ -10018,8 +9982,6 @@ function bindRhModelControls(wrap, node, media){
                 node._apiResolutionUserSet = true;
             } else if(field === 'ratio'){
                 node.ratio = e.target.value || 'square';
-            } else if(field === 'quality'){
-                node.quality = e.target.value || 'auto';
             } else if(field === 'count'){
                 node.count = Math.max(1, Math.min(8, Number(e.target.value || 1)));
             } else if(field === 'customRatioWidth' || field === 'customRatioHeight'){
@@ -10414,8 +10376,6 @@ async function runRhModelNode(node, opts={}){
         size:await generatorSizeForRun(node, refs),
         reference_images:refs.slice(0, CANVAS_REFERENCE_IMAGE_MAX)
     };
-    const quality = normalizedImageQuality(node.quality);
-    if(quality) payload.quality = quality;
     let pendingIds = [];
     const startedAt = nowMs();
     if(!opts.cascade){
@@ -10932,8 +10892,6 @@ async function runGenerator(genId, opts={}){
         size:await generatorSizeForRun(gen, refs),
         reference_images:refs.slice(0, CANVAS_REFERENCE_IMAGE_MAX)
     };
-    const quality = normalizedImageQuality(gen.quality);
-    if(quality) payload.quality = quality;
     let pendingIds = [];
     const startedAt = nowMs();
     if(!opts.cascade){
@@ -11036,8 +10994,6 @@ async function runGeneratorLegacy(genId, opts={}){
             size:requestSize,
             reference_images:refs.slice(0, CANVAS_REFERENCE_IMAGE_MAX)
         };
-        const quality = normalizedImageQuality(gen.quality);
-        if(quality) payload.quality = quality;
         const results = await Promise.all(Array.from({length:count}, () => fetch('/api/online-image', {
             method:'POST',
             headers:{'Content-Type':'application/json'},

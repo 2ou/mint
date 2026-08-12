@@ -17,6 +17,15 @@ public interface OssService {
     // 保存结果到本地
     String saveResultToLocal(String spu, String resultUrl, String localRootPath);
 
+    // AI 画布：仅把 KIE 结果下载到本地硬盘（不上传 OSS），返回本地绝对路径；失败返回 null
+    String downloadResultToLocal(String taskId, String resultUrl);
+
+    // 同名重载：指定子目录（canvas / aplus / tasks / models ...），便于各模块结果分区存放
+    String downloadResultToLocal(String subDir, String taskId, String resultUrl);
+
+    // 把本地落盘的绝对路径转成前端可访问的服务 URL（/ai-result/** 由 WebMvcConfig 静态映射）；不在 localSaveRoot 之下返回 null
+    String localServingUrl(String absolutePath);
+
     // 🔴 新增这一行：暴露 OSS 客户端供外部调用
     com.aliyun.oss.OSS getOssClient();
 }

@@ -35,6 +35,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.io.File;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -302,7 +303,9 @@ public class AiCanvasController {
 
         KieTaskResult result = kieClientService.getFullResult(taskId);
         canvasTaskService.recordPolledResult(result);
-        return toAsyncTaskResponse(taskId, mediaType, result);
+        // 重新读取已落本地的结果（含 localPath），保证返回本地 /ai-result URL
+        KieTaskResult stored = canvasTaskService.findResult(taskId).orElse(result);
+        return toAsyncTaskResponse(taskId, mediaType, stored);
     }
 
     private Map<String, Object> toAsyncTaskResponse(String taskId, String mediaType, KieTaskResult result) {
@@ -312,7 +315,13 @@ public class AiCanvasController {
         }
         List<Map<String, String>> outputs = new ArrayList<>();
         if ("SUCCESS".equalsIgnoreCase(status) && result.getResultUrl() != null && !result.getResultUrl().isBlank()) {
-            outputs.add(Map.of("url", result.getResultUrl(), "type", mediaType));
+            String url = result.getResultUrl();
+            // 🔴 优先返回本地落盘后的 /ai-result/... 地址（仅本地，不走 OSS）
+            String localUrl = result.getLocalPath() != null ? ossService.localServingUrl(result.getLocalPath()) : null;
+            if (localUrl != null && result.getLocalPath() != null && new File(result.getLocalPath()).exists()) {
+                url = localUrl;
+            }
+            outputs.add(Map.of("url", url, "type", mediaType));
         }
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("taskId", taskId);

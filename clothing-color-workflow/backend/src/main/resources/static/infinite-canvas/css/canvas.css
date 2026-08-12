@@ -21,6 +21,9 @@ html[data-studio-scale="off"].studio-scale-managed .asset-manager-panel {
 .canvas-nav-meta { min-width:0; display:flex; flex-direction:column; gap:2px; }
 .current-canvas-title { max-width:260px; color:var(--text); font-size:12px; font-weight:800; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .current-canvas-time { max-width:260px; color:var(--faint); font-size:10px; font-weight:400; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.canvas-nav-sub { display:flex; align-items:center; gap:2px; min-width:0; }
+.current-canvas-cost { margin-left:8px; padding:1px 8px; border-radius:999px; background:rgba(245,158,11,.16); color:#b45309; font-size:10px; font-weight:700; font-variant-numeric:tabular-nums; }
+.theme-dark .current-canvas-cost { background:rgba(245,158,11,.22); color:#fbbf24; }
 .canvas-list { display:flex; flex-direction:column; gap:8px; overflow:auto; max-height:360px; }
 .canvas-item { position:relative; width:100%; aspect-ratio:1/1; text-align:left; border:1px solid #edf0f3; background:#fff; border-radius:14px; padding:0; transition:all .18s var(--ease); cursor:pointer; }
 .canvas-item:hover { border-color:#cbd5e1; box-shadow:0 1px 3px rgba(15,23,42,.06); }

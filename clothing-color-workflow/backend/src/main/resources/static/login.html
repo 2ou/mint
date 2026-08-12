@@ -10,8 +10,6 @@
     <script src="https://unpkg.com/element-plus"></script>
     <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
     <script src="https://unpkg.com/@element-plus/icons-vue"></script>
-    <!-- 腾讯云验证码 TCaptcha -->
-    <script src="https://turing.captcha.qcloud.com/TJCaptcha.js"></script>
 
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -234,17 +232,6 @@
 <script>
     const { createApp, reactive, ref } = Vue;
 
-    /* ====================
-       腾讯云 TCaptcha 配置
-       ====================
-       1. 登录 https://console.cloud.tencent.com/captcha/graphical
-       2. 左侧「图形验证 → 验证管理」→ 新建验证
-       3. 拿到 CaptchaAppId 和 AppSecretKey
-       4. 把下面 YOUR_CAPTCHA_APP_ID 替换成你的 CaptchaAppId
-       5. 后端 application.yml 填入 app-secret-key
-    */
-    const CAPTCHA_APP_ID = '192381451';
-
     const app = createApp({
         setup() {
             const loginFormRef = ref(null);
@@ -256,33 +243,21 @@
                 password: [{ required: true, message: '请输入密码', trigger: 'blur' }]
             });
 
-            /** 点击登录 → 先弹验证码 → 通过后再登录 */
+            /** 点击登录 → 直接校验账号密码 */
             const handleLogin = () => {
                 if (!loginFormRef.value) return;
                 loginFormRef.value.validate((valid) => {
                     if (!valid) return;
-
-                    // 弹出腾讯滑块验证码
-                    const captcha = new TencentCaptcha(CAPTCHA_APP_ID, function(res) {
-                        if (res.ret === 0) {
-                            // 验证通过，拿 ticket + randstr 请求后端
-                            doLogin(res.ticket, res.randstr);
-                        } else {
-                            // 用户关闭了验证弹窗，不做任何事
-                        }
-                    });
-                    captcha.show();
+                    doLogin();
                 });
             };
 
-            const doLogin = async (ticket, randstr) => {
+            const doLogin = async () => {
                 loading.value = true;
                 try {
                     const res = await axios.post('/api/auth/login', {
                         username: form.username,
-                        password: form.password,
-                        ticket: ticket,
-                        randstr: randstr
+                        password: form.password
                     });
                     if (res.data.success) {
                         localStorage.setItem("user_token", res.data.data.token);

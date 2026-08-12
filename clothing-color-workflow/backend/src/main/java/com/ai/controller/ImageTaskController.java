@@ -5,7 +5,7 @@ import com.ai.entity.ImageTask;
 import com.ai.entity.SysUser;
 import com.ai.enums.TaskStatus;
 import com.ai.repository.ImageTaskRepository;
-import com.ai.repository.SysUserRepository;
+import com.ai.repository.UserSessionRepository;
 import com.ai.service.ImageTaskService;
 import com.ai.service.OssService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -30,7 +30,7 @@ import java.util.Map;
 public class ImageTaskController {
 
     private final ImageTaskRepository imageTaskRepository;
-    private final SysUserRepository sysUserRepository;
+    private final UserSessionRepository userSessionRepository;
     private final ImageTaskService imageTaskService;
     // 🔴 新增：注入 KieClientService
     private final com.ai.service.KieClientService kieClientService;
@@ -204,7 +204,7 @@ public class ImageTaskController {
         if (token == null || token.trim().isEmpty()) {
             return ApiResponse.fail("未登录，缺少请求头 Token");
         }
-        SysUser user = sysUserRepository.findByToken(token);
+        SysUser user = userSessionRepository.findUserByToken(token);
         if (user == null) {
             return ApiResponse.fail("未登录或 Token 已失效");
         }

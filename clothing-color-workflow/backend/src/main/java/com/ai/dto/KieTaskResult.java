@@ -4,6 +4,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import java.math.BigDecimal;
 
 @Data
 @Builder
@@ -17,4 +18,6 @@ public class KieTaskResult {
     private String resultUrl;
     private String errorMessage;
     private Long completeTime; // 🔴 对应 KIE 返回的 completeTime
+    private BigDecimal cost; // KIE 返回的真实费用，用于画布计费显示（可为 null）
+    private String localPath; // AI 画布结果本地落盘的绝对路径（不上 OSS），用于本地静态服务展示
 }

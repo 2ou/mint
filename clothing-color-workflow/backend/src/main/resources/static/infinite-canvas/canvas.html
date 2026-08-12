@@ -43,7 +43,10 @@
                 <button id="backToManagerBtn" class="tool-btn" type="button" title="返回画布管理" aria-label="返回画布管理" data-i18n-title="canvas.backToManager"><i data-lucide="arrow-left" class="w-4 h-4"></i></button>
                 <div class="canvas-nav-meta">
                     <div id="currentCanvasTitle" class="current-canvas-title">未命名画布</div>
-                    <div id="currentCanvasTime" class="current-canvas-time">--</div>
+                    <div class="canvas-nav-sub">
+                        <span id="currentCanvasTime" class="current-canvas-time">--</span>
+                        <span id="currentCanvasCost" class="current-canvas-cost" style="display:none"></span>
+                    </div>
                 </div>
                 <p id="saveState" style="display:none" data-i18n="canvas.chooseFirst">请选择或新建画布</p>
             </div>

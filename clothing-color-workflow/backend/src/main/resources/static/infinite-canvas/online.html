@@ -145,14 +145,6 @@
                         </label>
                     </div>
                     <div id="adaptiveExtras" class="size-row" style="margin-top:2px;">
-                        <label id="qualityField" class="size-field">
-                            <select id="qualitySelect" class="size-select" onchange="setQuality(this.value)" title="Quality">
-                                <option value="auto" data-i18n="online.qualityAuto">自动</option>
-                                <option value="low" data-i18n="online.qualityLow">低</option>
-                                <option value="medium" data-i18n="online.qualityMedium">中</option>
-                                <option value="high" data-i18n="online.qualityHigh">高</option>
-                            </select>
-                        </label>
                         <label id="countField" class="size-field">
                             <select id="countSelect" class="size-select" onchange="setCount(this.value)" title="Count">
                                 <option value="1" selected>×1</option>
@@ -266,17 +258,16 @@
         let refs = {1:null,2:null,3:null};
         let refDims = {1:null,2:null,3:null};
         let provider = 'comfly';
-        let selectedModel = 'gpt-image-2';
+        let selectedModel = 'gpt-image-2-image-to-image';
         let apiProviders = [];
         let ratio = 'square';
-        let resolution = '1k';
+        let resolution = '2k';
         let customRatioWidth = '';
         let customRatioHeight = '';
         let customWidth = '';
         let customHeight = '';
-        let quality = 'auto';
         let outputCount = 1;
-        let models = {gpt:'gpt-image-2', nano:'nano-banana-pro'};
+        let models = {gpt:'gpt-image-2-image-to-image', nano:'nano-banana-pro'};
         let allHistory = [], currentIndex = 0, currentResult = null, currentLightboxData = null, isLoading = false;
         const PAGE_SIZE = 24;
         const SIZE_OPTIONS = {
@@ -316,7 +307,7 @@
                 ['3840x2160', '4k']
             ]
         };
-        const RES_LONG_SIDE = { '1k': 1536, '2k': 2048, '4k': 3840 };
+        const RES_LONG_SIDE = { '1k': 1024, '2k': 2048, '4k': 3840 };
         const RES_PIXEL_LIMIT = { '1k': 1572864, '2k': 4194304, '4k': 8294400 };
 
         function uniqueModels(list){
@@ -401,8 +392,6 @@
             runninghub:'online.modeRunningHub', jimeng:'online.modeJimeng',
             volcengine:'online.modeVolcengine', gemini:'online.modeGemini'
         };
-        // 仅 OpenAI / APIMart（gpt-image 系）后端会消费 quality；其它协议忽略，隐藏以免误导。
-        const QUALITY_PROTOCOLS = new Set(['api','apimart']);
         function updateAdaptivePanel(){
             const proto = providerProtocol(provider);
             const badge = document.getElementById('providerModeBadge');
@@ -410,10 +399,6 @@
                 badge.textContent = tr(PROTOCOL_BADGE[proto] || 'online.modeApi');
                 badge.style.display = '';
             }
-            const qf = document.getElementById('qualityField');
-            if(qf) qf.style.display = QUALITY_PROTOCOLS.has(proto) ? '' : 'none';
-            const qs = document.getElementById('qualitySelect');
-            if(qs) qs.value = quality;
             // RunningHub 每次出图都是一次完整工作流运行，隐藏数量并固定为 1，避免误触发多次昂贵任务。
             if(proto === 'runninghub') outputCount = 1;
             const cf = document.getElementById('countField');
@@ -421,7 +406,6 @@
             const cs = document.getElementById('countSelect');
             if(cs) cs.value = String(outputCount);
         }
-        function setQuality(next){ quality = next || 'auto'; }
         function setCount(next){ outputCount = Math.max(1, Math.min(4, parseInt(next, 10) || 1)); }
 
         async function initModels(){
@@ -635,7 +619,6 @@
             btn.disabled = true; placeholder.classList.add('hidden'); out.classList.add('hidden'); dl.classList.add('hidden'); loader.classList.remove('hidden');
             try {
                 const reqBody = { prompt, provider_id:provider, model:selectedModel, size:currentSize(), n:outputCount, reference_images:Object.values(refs).filter(Boolean) };
-                if(QUALITY_PROTOCOLS.has(providerProtocol(provider))) reqBody.quality = quality;
                 const result = await fetch('/api/online-image', {
                     method:'POST', headers:{'Content-Type':'application/json'},
                     body:JSON.stringify(reqBody)
