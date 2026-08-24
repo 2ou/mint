@@ -167,6 +167,7 @@ const smartNodeRunTokens = new Map();
 let smartRhRandomValues = {};
 let lastImagePasteAt = 0;
 let lastNodePasteAt = 0;
+let pendingSmartLiblibCanvasImport = window.MintLiblibCanvasBridge?.takeIncoming?.() || null;
 let suppressNodeClickUntil = 0;
 let textSelectionGuard = null;
 const UNDO_LIMIT = 40;
@@ -1021,6 +1022,87 @@ function insertSmartWorkflowIntoCanvas(imported){
     scheduleSave();
     toast(`已导入 ${newNodes.length} 个节点`);
 }
+async function copySmartLiblibCanvasBookmarklet(){
+    if(!canvas?.id || !window.MintLiblibCanvasBridge) {
+        toast('请先打开一个画布，再创建 Liblib 导入书签');
+        return;
+    }
+    const target = new URL('/infinite-canvas/smart-canvas.html', window.location.origin);
+    target.searchParams.set('id', canvas.id);
+    const bookmarklet = window.MintLiblibCanvasBridge.bookmarkletFor(target.href);
+    const copied = await window.MintLiblibCanvasBridge.copyText(bookmarklet);
+    const hint = document.getElementById('smartLiblibImportHint');
+    if(copied) {
+        if(hint) hint.textContent = '已复制。新建浏览器书签，把内容粘贴到书签 URL；随后打开已登录的 Liblib 画布并点击该书签。';
+        toast('已复制 Liblib 导入书签');
+    } else {
+        toast('浏览器未允许复制，请刷新页面后重试');
+    }
+}
+window.copySmartLiblibCanvasBookmarklet = copySmartLiblibCanvasBookmarklet;
+
+function liblibPayloadAsSmartWorkflow(imported){
+    const nodesById = new Map();
+    (imported?.nodes || []).forEach((item, index) => {
+        if(!item) return;
+        const base = {
+            id:item.id || `liblib-${index + 1}`,
+            x:Number(item.x || 0),
+            y:Number(item.y || 0),
+            created_at:Date.now()
+        };
+        if(item.type === 'image') {
+            nodesById.set(base.id, {
+                ...base,
+                type:'smart-image',
+                title:item.name || 'Liblib 素材',
+                images:[{url:item.url, name:item.name || 'Liblib 素材', kind:item.mediaKind === 'video' ? 'video' : 'image'}]
+            });
+        } else if(item.type === 'group') {
+            nodesById.set(base.id, {
+                ...base,
+                type:'smart-group',
+                title:item.name || 'Liblib 分组',
+                w:Math.max(150, Number(item.w || 340)),
+                h:Math.max(130, Number(item.h || 286)),
+                items:Array.isArray(item.items) ? item.items.slice() : []
+            });
+        } else {
+            nodesById.set(base.id, {
+                ...base,
+                type:'smart-prompt',
+                title:'Liblib 提示词',
+                text:item.prompt || '来自 Liblib 的未识别节点',
+                w:316,
+                h:240,
+                promptSeparator:';',
+                promptSplitEnabled:false,
+                llmEnabled:false
+            });
+        }
+    });
+    const knownIds = new Set(nodesById.keys());
+    const connections = (imported?.connections || [])
+        .filter(connection => connection && knownIds.has(connection.from) && knownIds.has(connection.to))
+        .map(connection => ({id:uid('c'), from:connection.from, to:connection.to, kind:'flow'}));
+    return {nodes:[...nodesById.values()], connections};
+}
+
+function importPendingSmartLiblibCanvas(){
+    const imported = pendingSmartLiblibCanvasImport;
+    pendingSmartLiblibCanvasImport = null;
+    if(!imported || !canvas) return false;
+    try {
+        const workflow = liblibPayloadAsSmartWorkflow(imported);
+        insertSmartWorkflowIntoCanvas(workflow);
+        toast(`已从 ${imported.source?.title || 'Liblib TV 画布'} 导入 ${workflow.nodes.length} 个节点`);
+        return true;
+    } catch(err) {
+        toast(err.message || 'Liblib 画布导入失败');
+        return false;
+    }
+}
+
 async function importSmartWorkflowFile(file){
     if(!canvas || !file) return;
     try {
@@ -2749,7 +2831,7 @@ function normalizeKieSeedanceVideoSettings(target=settings){
     const maxDuration = videoModelMaxDuration(target.videoModel);
     target.videoDuration = Math.max(videoModelMinDuration(target.videoModel), Math.min(maxDuration, Number(target.videoDuration) || 5));
     if(isKieSeedanceVideoModel(target.videoModel)){
-        if(!['480p','720p'].includes(target.videoResolution)) target.videoResolution = '720p';
+        if(!['480p','720p','1080p'].includes(target.videoResolution)) target.videoResolution = '720p';
         if(!['16:9','4:3','1:1','3:4','9:16','21:9','adaptive'].includes(target.videoAspect)) target.videoAspect = '16:9';
     } else {
         target.videoResolution = '';
@@ -2847,7 +2929,7 @@ function renderVideoAspectControl(){
 }
 function renderVideoResolutionControl(){
     const options = isKieSeedanceVideoModel(settings.videoModel)
-        ? [['480p','480P'], ['720p','720P']]
+        ? [['480p','480P'], ['720p','720P'], ['1080p','1080P']]
         : [['', tr('smart.videoResAuto')], ['480p','480P'], ['720p','720P'], ['1080p','1080P']];
     const value = settings.videoResolution || '';
     const labelMap = Object.fromEntries(options);
@@ -18066,6 +18148,7 @@ window.onload = async () => {
     await loadConfig();
     await loadAssetLibrary();
     await loadCanvas();
+    importPendingSmartLiblibCanvas();
     syncApiKindToggleVisibility();
     render();
 };

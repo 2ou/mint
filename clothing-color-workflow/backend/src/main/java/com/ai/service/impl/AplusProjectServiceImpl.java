@@ -5,6 +5,7 @@ import com.ai.dto.AplusModuleDefinition;
 import com.ai.dto.AplusModuleExtra;
 import com.ai.dto.AplusProjectCreateRequest;
 import com.ai.dto.AplusProjectResponse;
+import com.ai.dto.AplusReferenceImage;
 import com.ai.entity.AplusTemplate;
 import com.ai.entity.AplusImageTask;
 import com.ai.entity.AplusProject;
@@ -30,6 +31,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -87,15 +89,18 @@ public class AplusProjectServiceImpl implements AplusProjectService {
             task.setModuleCode(moduleCode);
             task.setModuleName(AplusModuleDefinition.MODULES.getOrDefault(moduleCode, moduleCode));
             task.setStatus(AplusTaskStatus.PENDING.name());
-            task.setAspectRatio("16:9");
+            task.setAspectRatio("21:9");
             task.setModel(imageModel);
             task.setResolution(resolution);
+            task.setVersionNumber(1);
+            task.setQualityStatus("NOT_EVALUATED");
 
             AplusModuleExtra extra = extras.get(moduleCode);
             if (extra != null) {
-                task.setSupplementaryImageUrl(extra.getMergedSupplementaryImageUrl());
+                task.setSupplementaryImageUrl(extra.getMergedLegacySupplementaryImageUrl());
                 task.setSupplementaryText(extra.getSupplementaryText());
             }
+            task.setReferenceImagesJson(toJson(buildReferenceImages(project, layoutTemplate, extra), "[]"));
             tasks.add(task);
         }
         imageTaskRepository.saveAll(tasks);
@@ -169,6 +174,19 @@ public class AplusProjectServiceImpl implements AplusProjectService {
 
     @Override
     @Transactional
+    public AplusProjectResponse linkCanvas(Long id, Long canvasId) {
+        if (canvasId == null) {
+            throw new IllegalArgumentException("canvasId 不能为空");
+        }
+        AplusProject project = projectRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("A+ 项目不存在: " + id));
+        project.setCanvasId(canvasId);
+        projectRepository.save(project);
+        return getProjectById(id);
+    }
+
+    @Override
+    @Transactional
     public void deleteProject(Long id) {
         AplusProject project = projectRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("A+ 项目不存在: " + id));
@@ -219,9 +237,6 @@ public class AplusProjectServiceImpl implements AplusProjectService {
         for (String moduleCode : selectedModules) {
             AplusModuleExtra extra = result.getOrDefault(moduleCode, new AplusModuleExtra());
             List<String> urls = new ArrayList<>();
-            if (layoutTemplate.referenceImageUrl() != null && !layoutTemplate.referenceImageUrl().isBlank()) {
-                urls.add(layoutTemplate.referenceImageUrl().trim());
-            }
             if (extra.getSupplementaryImageUrls() != null) {
                 urls.addAll(extra.getSupplementaryImageUrls());
             }
@@ -234,6 +249,54 @@ public class AplusProjectServiceImpl implements AplusProjectService {
         return result;
     }
 
+    private List<AplusReferenceImage> buildReferenceImages(AplusProject project,
+                                                            LayoutTemplateData layoutTemplate,
+                                                            AplusModuleExtra extra) {
+        List<AplusReferenceImage> result = new ArrayList<>();
+        addReference(result, AplusReferenceImage.PRODUCT_TRUTH, project.getReferenceImageUrl(),
+                "Primary product source of truth. Preserve garment identity exactly.");
+        addReference(result, AplusReferenceImage.LAYOUT, layoutTemplate.referenceImageUrl(),
+                "Layout and presentation structure only; never copy its product or brand.");
+
+        if (extra != null && extra.getReferenceImages() != null) {
+            for (AplusReferenceImage reference : extra.getReferenceImages()) {
+                if (reference == null) continue;
+                addReference(result,
+                        reference.getRole() == null || reference.getRole().isBlank()
+                                ? AplusReferenceImage.SUPPLEMENTARY : reference.getRole(),
+                        reference.getUrl(), reference.getNote());
+            }
+        }
+        if (extra != null) {
+            String merged = extra.getMergedLegacySupplementaryImageUrl();
+            if (merged != null && !merged.isBlank()) {
+                for (String url : merged.split(",")) {
+                    addReference(result, AplusReferenceImage.SUPPLEMENTARY, url,
+                            "Module-specific supporting image. It cannot override the product truth image.");
+                }
+            }
+        }
+        return dedupeReferences(result);
+    }
+
+    private void addReference(List<AplusReferenceImage> result, String role, String url, String note) {
+        if (url == null || url.isBlank()) return;
+        AplusReferenceImage reference = new AplusReferenceImage();
+        reference.setRole(role == null || role.isBlank() ? AplusReferenceImage.SUPPLEMENTARY : role.trim());
+        reference.setUrl(url.trim());
+        reference.setNote(note == null ? "" : note.trim());
+        result.add(reference);
+    }
+
+    private List<AplusReferenceImage> dedupeReferences(List<AplusReferenceImage> source) {
+        Map<String, AplusReferenceImage> unique = new LinkedHashMap<>();
+        for (AplusReferenceImage item : source) {
+            if (item == null || item.getUrl() == null || item.getUrl().isBlank()) continue;
+            unique.putIfAbsent(item.getRole() + "|" + item.getUrl(), item);
+        }
+        return new ArrayList<>(unique.values());
+    }
+
     private String buildLayoutTemplateInstruction(String moduleCode, LayoutTemplateData layoutTemplate) {
         JsonNode root = readJsonOrNull(layoutTemplate.blueprintJson());
         JsonNode global = root != null ? root.path("globalStyle") : null;
@@ -242,9 +305,8 @@ public class AplusProjectServiceImpl implements AplusProjectService {
         return """
                 Structure template mode:
                 - Use the selected A+ layout template for layout structure only.
-                - Generate only this AD module as one standalone 16:9 image; do not generate a full long infographic page.
-                - If an A+ reference image is provided, use it only for A+ layout structure, visual hierarchy, panel rhythm, typography placement, image crop rhythm, and information density.
-                - Do not use the A+ reference image as the garment or product source of truth. Garment identity comes from product information, module-specific instructions, and supplementary product images when provided.
+                - Generate only this AD module as one standalone 21:9 web image; do not generate a full long infographic page.
+                - The product truth image is the garment source of truth. Preserve it before applying any layout or scene instruction.
                 - The layout reference image is only for hierarchy, panel rhythm, rounded card style, image crop rhythm, text placement, and information density.
                 - Do not copy the reference product, model gender, faces, poses, product colors, brand logo, exact scene, accessories, or exact photos.
                 - All visible text inside the final image must be English only; no Chinese characters or bilingual captions.
@@ -346,7 +408,7 @@ public class AplusProjectServiceImpl implements AplusProjectService {
             return "2K";
         }
         String normalized = resolution.trim().toUpperCase();
-        if ("1K".equals(normalized) || "2K".equals(normalized) || "4K".equals(normalized)) {
+        if ("2K".equals(normalized) || "4K".equals(normalized)) {
             return normalized;
         }
         throw new RuntimeException("不支持的分辨率: " + resolution);

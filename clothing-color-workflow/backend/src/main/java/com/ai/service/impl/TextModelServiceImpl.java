@@ -14,6 +14,7 @@ import okhttp3.*;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
@@ -55,10 +56,22 @@ public class TextModelServiceImpl implements TextModelService {
     @Override
     public String generateRawPrompt(String systemPrompt, String userPrompt, String modelType) {
         try {
-            return callGpt(systemPrompt, userPrompt, null, modelType);
+            return callGpt(systemPrompt, userPrompt, List.of(), modelType);
         } catch (Exception e) {
             log.error("调用文本模型失败: {}", e.getMessage(), e);
             throw new BusinessException("生成提示词失败: " + e.getMessage());
+        }
+    }
+
+    @Override
+    public String generateRawPromptWithImages(String systemPrompt, String userPrompt,
+                                              List<String> imageUrls, String modelType) {
+        try {
+            return callGpt(systemPrompt, userPrompt,
+                    imageUrls == null ? List.of() : imageUrls, modelType);
+        } catch (Exception e) {
+            log.error("调用视觉文本模型失败: {}", e.getMessage(), e);
+            throw new BusinessException("视觉解析失败: " + e.getMessage());
         }
     }
 
@@ -272,10 +285,15 @@ public class TextModelServiceImpl implements TextModelService {
      * 调用 GPT API
      */
     private String callGpt(String systemPrompt, String userPrompt) throws IOException {
-        return callGpt(systemPrompt, userPrompt, null, KieGptModels.DEFAULT_TEXT_MODEL);
+        return callGpt(systemPrompt, userPrompt, List.of(), KieGptModels.DEFAULT_TEXT_MODEL);
     }
 
     private String callGpt(String systemPrompt, String userPrompt, String imageUrl, String textModel) throws IOException {
+        return callGpt(systemPrompt, userPrompt,
+                imageUrl == null || imageUrl.isBlank() ? List.of() : List.of(imageUrl.trim()), textModel);
+    }
+
+    private String callGpt(String systemPrompt, String userPrompt, List<String> imageUrls, String textModel) throws IOException {
         String model = KieGptModels.normalizeTextModel(textModel);
         ObjectNode rootNode = objectMapper.createObjectNode();
         rootNode.put("model", model);
@@ -308,7 +326,8 @@ public class TextModelServiceImpl implements TextModelService {
         userText.put("type", "input_text");
         userText.put("text", userPrompt);
         userContent.add(userText);
-        if (imageUrl != null && !imageUrl.isBlank()) {
+        for (String imageUrl : imageUrls == null ? List.<String>of() : imageUrls) {
+            if (imageUrl == null || imageUrl.isBlank()) continue;
             ObjectNode image = objectMapper.createObjectNode();
             image.put("type", "input_image");
             image.put("image_url", imageUrl.trim());

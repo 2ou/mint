@@ -101,6 +101,9 @@ public class InfiniteCanvasController {
     private static final Set<String> KIE_MEDIA_HOST_SUFFIXES = Set.of(
             ".kie.ai", ".aiquickdraw.com", ".redpandaai.co"
     );
+    private static final Set<String> LIBLIB_MEDIA_HOSTS = Set.of(
+            "libtv-res.liblib.art", "liblibai-online.liblib.cloud"
+    );
 
     private final CanvasProjectRepository canvasProjectRepository;
     private final CanvasTaskService canvasTaskService;
@@ -2430,6 +2433,9 @@ public class InfiniteCanvasController {
         if (trustedConfiguredMediaHosts().contains(host)) {
             return true;
         }
+        if (LIBLIB_MEDIA_HOSTS.contains(host)) {
+            return true;
+        }
         return KIE_MEDIA_HOST_SUFFIXES.stream().anyMatch(host::endsWith);
     }
 
@@ -2689,6 +2695,7 @@ public class InfiniteCanvasController {
     }
 
     private String seedanceResolution(String value) {
+        if ("1080p".equalsIgnoreCase(value)) return "1080p";
         return "480p".equalsIgnoreCase(value) ? "480p" : "720p";
     }
 

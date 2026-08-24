@@ -421,6 +421,7 @@ let outputTimer = null;
 let loopContext = null;
 let clipboard = null;
 let lastImagePasteAt = 0;
+let pendingLiblibCanvasImport = window.MintLiblibCanvasBridge?.takeIncoming?.() || null;
 let promptTemplateNodeId = '';
 let promptTemplateCategory = 'all';
 let promptTemplateSelectedId = '';
@@ -569,7 +570,7 @@ function normalizeKieSeedanceVideoNode(node){
     if(!node || (!isKieSeedanceVideoModel(node.model) && !isMiniMaxH3VideoModel(node.model))) return node;
     node.duration = Math.max(videoModelMinDuration(node.model), Math.min(videoModelMaxDuration(node.model), Number(node.duration) || 5));
     if(isKieSeedanceVideoModel(node.model)){
-        if(!['480p','720p'].includes(node.resolution)) node.resolution = '720p';
+        if(!['480p','720p','1080p'].includes(node.resolution)) node.resolution = '720p';
         if(!['16:9','4:3','1:1','3:4','9:16','21:9','adaptive'].includes(node.aspectRatio)) node.aspectRatio = '16:9';
     } else {
         node.resolution = '';
@@ -596,7 +597,7 @@ function videoAspectOptionMarkup(model){
 }
 function videoResolutionOptionMarkup(model){
     const options = isKieSeedanceVideoModel(model)
-        ? [['480p','480p'], ['720p','720p']]
+        ? [['480p','480p'], ['720p','720p'], ['1080p','1080p']]
         : [['','Auto'], ['480p','480p'], ['720p','720p'], ['1080p','1080p'], ['780P','780P']];
     return options.map(([value, label]) => `<option value="${value}">${label}</option>`).join('');
 }
@@ -6260,6 +6261,13 @@ function destroyLTXEditor(node){
 function isNodeDragSurface(target){
     return !isNodeControl(target) && !target.closest('.port, .resize-handle, .output-img-wrap');
 }
+function aplusCanvasOverlayHtml(node){
+    const lines = Array.isArray(node?.aplus?.overlayText)
+        ? node.aplus.overlayText.filter(Boolean).slice(0, 4)
+        : [];
+    if(!lines.length) return '';
+    return `<div class="aplus-canvas-copy-overlay" style="position:absolute;left:12px;bottom:12px;max-width:72%;padding:8px 10px;border-radius:8px;background:rgba(255,255,255,.92);box-shadow:0 4px 18px rgba(15,23,42,.16);color:#111827;font:700 11px/1.35 Inter,system-ui,sans-serif;pointer-events:none;z-index:2;">${lines.map(line => `<div>${escapeHtml(String(line))}</div>`).join('')}</div>`;
+}
 function renderNode(node){
     normalizeUnavailableCanvasNode(node);
     normalizeApiNodeLayout(node);
@@ -6288,7 +6296,7 @@ function renderNode(node){
         else openGeneratorNodeMenu(node.id, e.clientX, e.clientY);
     };
     const title = node.type === 'image' ? 'Image' : node.type === 'prompt' ? 'Prompt' : node.type === 'loop' ? tr('canvas.loopNode') : node.type === 'promptGroup' ? 'Prompts' : node.type === 'group' ? 'Group' : node.type === 'output' ? 'Output' : node.type === 'llm' ? 'LLM' : node.type === 'comfy' ? 'ComfyUI' : node.type === 'ltxDirector' ? tr('canvas.ltxDirector') : node.type === 'rh' ? 'RunningHub' : node.type === 'msgen' ? tr('canvas.modelscopeGenerate') : node.type === 'video' ? tr('canvas.videoGenerateNode') : tr('canvas.apiGenerate');
-    const displayTitle = node.type === 'image' && node.url ? nodeTitleForMedia(node) : title;
+    const displayTitle = node.type === 'image' && (node.url || node.aplus) ? (node.name || nodeTitleForMedia(node)) : title;
     // 失败徽章只在一键运行模式中显示，单节点失败已通过 alert 提示
     const showStatus = ['generator','msgen','comfy','ltxDirector','llm','video','rh'].includes(node.type) && node.runStatus
         && (node.runStatus !== 'failed' || node._cascadeFailed);
@@ -6304,7 +6312,7 @@ function renderNode(node){
             const missing = isMissingAssetUrl(node.url);
             const mediaKind = mediaKindForNode(node);
             const isEditableImage = mediaKind === 'image' && !missing;
-            body.innerHTML = `<div class="image-preview-wrap">${missing ? missingAssetHtml(node.url) : canvasPreviewImgHtml(node.url, 768, 'draggable="false"')}</div><div class="image-caption text-[11px] text-gray-400 truncate">${escapeHtml(node.name || 'image')}${missing ? ` · ${langIsEn() ? 'missing' : '文件缺失'}` : ''}</div>`;
+            body.innerHTML = `<div class="image-preview-wrap">${missing ? missingAssetHtml(node.url) : canvasPreviewImgHtml(node.url, 768, 'draggable="false"')}${missing ? '' : aplusCanvasOverlayHtml(node)}</div><div class="image-caption text-[11px] text-gray-400 truncate">${escapeHtml(node.name || 'image')}${missing ? ` · ${langIsEn() ? 'missing' : '文件缺失'}` : ''}</div>`;
             if(!missing && mediaKind !== 'image'){
                 const mediaHtml = mediaKind === 'video'
                     ? `<div class="media-card video-card">${canvasVideoPreviewHtml(node.url, 768, 'draggable="false" data-video-fallback-attrs="controls"')}<button class="canvas-video-play" type="button" title="播放"><i data-lucide="play"></i></button></div>`
@@ -6379,8 +6387,29 @@ function renderNode(node){
             } else if(loadedImg) {
                 loadedImg.onload = () => refreshGeometryAfterLayout();
             }
+        } else if(node.aplus) {
+            const state = String(node.aplus.state || 'PENDING').toUpperCase();
+            const isFailed = state === 'FAILED';
+            const label = isFailed ? '生成失败' : state === 'SUCCESS' ? '正在载入图片' : state === 'PROCESSING' ? '正在生成' : '等待生成';
+            const detail = node.aplus.variant === 'mobile' ? '手机端 4:3' : '网页端 21:9';
+            body.innerHTML = `<div class="aplus-image-placeholder ${isFailed ? 'failed' : 'pending'}">
+                <i data-lucide="${isFailed ? 'circle-alert' : 'loader-circle'}" class="w-7 h-7"></i>
+                <div class="aplus-placeholder-title">${escapeHtml(label)}</div>
+                <div class="aplus-placeholder-detail">${escapeHtml(detail)} · ${escapeHtml(node.aplus.resolution || '2K')}</div>
+                ${isFailed ? `<button type="button" class="aplus-placeholder-retry">重试</button>` : ''}
+            </div>`;
+            body.onmousedown = e => startNodeDrag(e, node);
+            const retry = body.querySelector('.aplus-placeholder-retry');
+            if(retry){
+                retry.onmousedown = e => e.stopPropagation();
+                retry.onclick = e => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    window.AplusCanvasBridge?.retry(node.id);
+                };
+            }
         } else {
-        body.innerHTML = `<div class="blank-image"><i data-lucide="image-plus" class="w-7 h-7"></i><div class="text-[11px] font-bold">${tr('canvas.clickDragPasteImage')}</div></div>`;
+            body.innerHTML = `<div class="blank-image"><i data-lucide="image-plus" class="w-7 h-7"></i><div class="text-[11px] font-bold">${tr('canvas.clickDragPasteImage')}</div></div>`;
             const blank = body.querySelector('.blank-image');
             blank.onclick = () => pickImageForNode(node.id);
             blank.ondragover = e => allowImageNodeDropEvent(e, blank);
@@ -14582,6 +14611,40 @@ async function importWorkflowFile(file){
         showErrorModal(err.message || '导入工作流失败', '导入工作流');
     }
 }
+async function copyLiblibCanvasBookmarklet(){
+    if(!canvas?.id || !window.MintLiblibCanvasBridge) {
+        showErrorModal('请先打开一个画布，再创建 Liblib 导入书签。', '无法创建导入书签');
+        return;
+    }
+    const target = new URL('/infinite-canvas/canvas.html', window.location.origin);
+    target.searchParams.set('id', canvas.id);
+    const bookmarklet = window.MintLiblibCanvasBridge.bookmarkletFor(target.href);
+    const copied = await window.MintLiblibCanvasBridge.copyText(bookmarklet);
+    const hint = document.getElementById('liblibImportHint');
+    if(copied) {
+        if(hint) hint.textContent = '已复制。新建浏览器书签，把内容粘贴到书签 URL；随后打开已登录的 Liblib 画布并点击该书签。';
+        setStatus('已复制 Liblib 导入书签');
+    } else {
+        showErrorModal('浏览器未允许复制。请刷新页面后重试。', '无法复制导入书签');
+    }
+}
+window.copyLiblibCanvasBookmarklet = copyLiblibCanvasBookmarklet;
+
+function importPendingLiblibCanvas(){
+    const imported = pendingLiblibCanvasImport;
+    pendingLiblibCanvasImport = null;
+    if(!imported || !canvas) return false;
+    try {
+        insertWorkflowIntoCanvas({nodes: imported.nodes || [], connections: imported.connections || []});
+        const source = imported.source?.title || 'Liblib TV 画布';
+        setStatus(`已从 ${source} 导入 ${imported.nodes.length} 个节点`);
+        return true;
+    } catch(err) {
+        showErrorModal(err.message || 'Liblib 画布导入失败', 'Liblib 画布导入');
+        return false;
+    }
+}
+
 function startNodeDrag(e, node){
     if(e.button !== 0) return;
     if(startKnifeDrag(e)) return;
@@ -15604,6 +15667,7 @@ window.onload = async () => {
     const openId = new URLSearchParams(window.location.search).get('id');
     if(openId){
         await openCanvas(openId);
+        importPendingLiblibCanvas();
     } else {
         window.location.replace(canvasListUrlForProject(rememberedCanvasListProject()));
     }

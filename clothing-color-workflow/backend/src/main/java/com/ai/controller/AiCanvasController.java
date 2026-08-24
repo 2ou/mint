@@ -700,6 +700,7 @@ public class AiCanvasController {
     }
 
     private String seedanceResolution(String value) {
+        if ("1080p".equalsIgnoreCase(value)) return "1080p";
         return "480p".equalsIgnoreCase(value) ? "480p" : "720p";
     }
 

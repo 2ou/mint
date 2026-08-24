@@ -26,4 +26,5 @@ public class AplusTemplateSaveRequest {
     private Map<String, AplusModuleExtra> moduleExtras;
     private String layoutReferenceImageUrl;
     private String layoutBlueprintJson;
+    private String layoutQualityReportJson;
 }

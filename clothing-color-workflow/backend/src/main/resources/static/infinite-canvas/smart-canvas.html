@@ -169,6 +169,14 @@
                     </div>
                     <input id="smartWorkflowImportInput" type="file" accept=".json,.zip,application/json,application/zip" hidden>
                 </section>
+                <section class="workflow-transfer-card">
+                    <div class="workflow-transfer-card-head"><i data-lucide="scan-search"></i><strong>导入 Liblib TV 画布</strong></div>
+                    <p>复制导入书签后，在已登录的 Liblib 画布页面点击书签，即可把图片、视频、提示词和布局追加到当前画布。</p>
+                    <div class="workflow-transfer-actions">
+                        <button class="workflow-transfer-btn primary" type="button" onclick="copySmartLiblibCanvasBookmarklet()"><i data-lucide="bookmark-plus"></i><span>复制 Liblib 导入书签</span></button>
+                    </div>
+                    <div id="smartLiblibImportHint" class="workflow-transfer-meta">书签只读取当前已登录页面的可见节点，不需要提供 Liblib 密码或 Cookie。</div>
+                </section>
             </div>
         </aside>
         <aside id="assetPanel" class="asset-panel">
@@ -459,6 +467,7 @@
         <div id="toast" class="toast"></div>
         <div id="mentionPreview" class="mention-preview"><img alt="preview"></div>
     </div>
+    <script src="/infinite-canvas/js/liblib-canvas-import.js?v=2026.08.18.1"></script>
     <script src="/infinite-canvas/js/smart-canvas.js?v=2026.07.15.1784105576"></script>
 </body>
 </html>

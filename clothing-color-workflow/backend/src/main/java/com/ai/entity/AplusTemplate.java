@@ -59,6 +59,10 @@ public class AplusTemplate {
     @Column(columnDefinition = "text")
     private String layoutBlueprintJson;
 
+    /** Parser mode, completeness and warnings for the layout blueprint. */
+    @Column(columnDefinition = "text")
+    private String layoutQualityReportJson;
+
     /** 创建人 */
     @Column(length = 50)
     private String operator;

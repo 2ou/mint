@@ -18,7 +18,9 @@ public class AplusImageTaskResponse {
     private String moduleCopy;
     private String supplementaryImageUrl;
     private String supplementaryText;
+    private String referenceImagesJson;
     private String prompt;
+    private Integer versionNumber;
     private String aspectRatio;
     private String resolution;
     private String kieTaskId;
@@ -28,6 +30,8 @@ public class AplusImageTaskResponse {
     private String resultOssUrl;
     private String localPath;
     private String errorMessage;
+    private String qualityStatus;
+    private String qualityReportJson;
     private BigDecimal cost;
 
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
@@ -44,7 +48,9 @@ public class AplusImageTaskResponse {
         resp.setModuleCopy(task.getModuleCopy());
         resp.setSupplementaryImageUrl(task.getSupplementaryImageUrl());
         resp.setSupplementaryText(task.getSupplementaryText());
+        resp.setReferenceImagesJson(task.getReferenceImagesJson());
         resp.setPrompt(task.getPrompt());
+        resp.setVersionNumber(task.getVersionNumber());
         resp.setAspectRatio(task.getAspectRatio());
         resp.setResolution(task.getResolution());
         resp.setKieTaskId(task.getKieTaskId());
@@ -54,6 +60,8 @@ public class AplusImageTaskResponse {
         resp.setResultOssUrl(task.getResultOssUrl());
         resp.setLocalPath(task.getLocalPath());
         resp.setErrorMessage(task.getErrorMessage());
+        resp.setQualityStatus(task.getQualityStatus());
+        resp.setQualityReportJson(task.getQualityReportJson());
         resp.setCost(task.getCost());
         resp.setCreatedAt(task.getCreatedAt());
         resp.setCompletedAt(task.getCompletedAt());

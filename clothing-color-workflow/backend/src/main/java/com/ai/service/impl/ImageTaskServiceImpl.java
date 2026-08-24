@@ -76,7 +76,7 @@ public class ImageTaskServiceImpl implements ImageTaskService {
     }
 
     // ======================== 核心业务逻辑 ========================
-    @Scheduled(cron = "${app.image-task-polling.cron:-}") // 默认关闭；本地需要时通过配置开启
+    @Scheduled(cron = "${app.kie.image-task-polling.cron:-}") // 默认关闭；本地需要时通过配置开启
     public void scheduledRefreshProcessingTasks() {
         log.info("【定时任务】开始自动刷新处理中的 AI 任务...");
         List<ImageTask> processingTasks = imageTaskRepository.findAll((root, query, cb) -> cb.or(
@@ -192,7 +192,11 @@ public class ImageTaskServiceImpl implements ImageTaskService {
                 // 🔴 核心逻辑：本地落盘（仅本地，不再上 OSS）
                 try {
                     log.info("【步骤3】尝试将 KIE 结果落本地 D:/AiResult（不再上 OSS）...");
-                    String localPath = ossService.downloadResultToLocal("tasks", String.valueOf(task.getId()), kieResult.getResultUrl());
+                    String localSubDir = task.getSpu();
+                    String localFileTaskId = task.getTaskId() != null && !task.getTaskId().isBlank()
+                            ? task.getTaskId()
+                            : String.valueOf(task.getId());
+                    String localPath = ossService.downloadResultToLocal(localSubDir, localFileTaskId, kieResult.getResultUrl());
                     if (localPath != null) {
                         task.setLocalPath(localPath);
                         String localUrl = ossService.localServingUrl(localPath);

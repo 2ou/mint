@@ -1,14 +1,18 @@
 package com.ai.service.impl;
 
 import com.ai.dto.AplusModuleDefinition;
+import com.ai.dto.AplusReferenceImage;
 import com.ai.dto.KieTaskResult;
 import com.ai.entity.AplusImageTask;
+import com.ai.entity.AplusImageTaskVersion;
 import com.ai.entity.AplusProject;
 import com.ai.enums.AplusProjectStatus;
 import com.ai.enums.AplusTaskStatus;
 import com.ai.repository.AplusImageTaskRepository;
+import com.ai.repository.AplusImageTaskVersionRepository;
 import com.ai.repository.AplusProjectRepository;
 import com.ai.service.AplusImageService;
+import com.ai.service.AplusQualityService;
 import com.ai.service.KieClientService;
 import com.ai.service.OssService;
 import com.ai.config.AppProperties;
@@ -20,7 +24,11 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -38,7 +46,10 @@ public class AplusImageServiceImpl implements AplusImageService {
     private final OssService ossService;
     private final AplusProjectRepository projectRepository;
     private final AplusImageTaskRepository imageTaskRepository;
+    private final AplusImageTaskVersionRepository versionRepository;
+    private final AplusQualityService qualityService;
     private final AppProperties appProperties;
+    private final ObjectMapper objectMapper;
 
     @Resource(name = "aplusAsyncExecutor")
     private Executor aplusAsyncExecutor;
@@ -146,15 +157,16 @@ public class AplusImageServiceImpl implements AplusImageService {
             String prompt = buildModulePrompt(task, project);
             String resolution = effectiveResolution(task);
             String imageModel = effectiveModel(task);
+            List<AplusReferenceImage> references = referenceImages(task, project);
             String callbackUrl = appProperties.getKie().getCallbackUrl();
             String kieTaskId = kieClientService.createTask(
                     project.getSpu(),
                     prompt,
                     resolution,
-                    task.getAspectRatio() != null ? task.getAspectRatio() : "16:9",
+                    effectiveAspectRatio(task),
                     imageModel,
-                    project.getReferenceImageUrl(),
-                    task.getSupplementaryImageUrl(),
+                    firstReferenceUrl(references, AplusReferenceImage.PRODUCT_TRUTH),
+                    supportingReferenceUrls(references),
                     callbackUrl
             );
 
@@ -164,6 +176,8 @@ public class AplusImageServiceImpl implements AplusImageService {
             task.setModel(imageModel);
             task.setResolution(resolution);
             task.setErrorMessage(null);
+            task.setQualityStatus("NOT_EVALUATED");
+            task.setQualityReportJson(null);
             imageTaskRepository.save(task);
             return true;
         } catch (Exception e) {
@@ -189,7 +203,11 @@ public class AplusImageServiceImpl implements AplusImageService {
                 task.setResultTempUrl(result.getResultUrl());
                 try {
                     // 🔴 本地轮询结果落本地 D:/AiResult，不再上 OSS
-                    String localPath = ossService.downloadResultToLocal("aplus", String.valueOf(task.getId()), result.getResultUrl());
+                    String localPath = ossService.downloadResultToLocal(
+                            task.getProject().getSpu(),
+                            task.getKieTaskId() == null || task.getKieTaskId().isBlank()
+                                    ? String.valueOf(task.getId()) : task.getKieTaskId(),
+                            result.getResultUrl());
                     if (localPath != null) {
                         task.setLocalPath(localPath);
                         String localUrl = ossService.localServingUrl(localPath);
@@ -208,6 +226,8 @@ public class AplusImageServiceImpl implements AplusImageService {
                     imageTaskRepository.save(task);
                 }
 
+                Long completedTaskId = task.getId();
+                CompletableFuture.runAsync(() -> qualityService.evaluate(completedTaskId), aplusAsyncExecutor);
                 checkProjectCompletion(projectId);
             } else if (result.isFinished() && !result.isSuccess()
                     || "FAILED".equalsIgnoreCase(result.getStatus())) {
@@ -253,13 +273,42 @@ public class AplusImageServiceImpl implements AplusImageService {
     }
 
     private void resetForRegeneration(AplusImageTask task) {
+        archiveCurrentVersion(task);
         task.setStatus(AplusTaskStatus.PENDING.name());
         task.setKieTaskId(null);
         task.setResultTempUrl(null);
         task.setResultOssUrl(null);
+        task.setLocalPath(null);
         task.setErrorMessage(null);
+        task.setQualityStatus("NOT_EVALUATED");
+        task.setQualityReportJson(null);
         task.setCompletedAt(null);
         imageTaskRepository.save(task);
+    }
+
+    private void archiveCurrentVersion(AplusImageTask task) {
+        if (task.getKieTaskId() == null && task.getResultTempUrl() == null && task.getResultOssUrl() == null
+                && task.getPrompt() == null) {
+            task.setVersionNumber(task.getVersionNumber() == null ? 1 : task.getVersionNumber());
+            return;
+        }
+        AplusImageTaskVersion version = new AplusImageTaskVersion();
+        version.setProjectId(task.getProject().getId());
+        version.setTaskId(task.getId());
+        version.setVersionNumber(task.getVersionNumber() == null ? 1 : task.getVersionNumber());
+        version.setModuleCode(task.getModuleCode());
+        version.setKieTaskId(task.getKieTaskId());
+        version.setPrompt(task.getPrompt());
+        version.setReferenceImagesJson(task.getReferenceImagesJson());
+        version.setAspectRatio(task.getAspectRatio());
+        version.setResolution(task.getResolution());
+        version.setModel(task.getModel());
+        version.setStatus(task.getStatus());
+        version.setResultTempUrl(task.getResultTempUrl());
+        version.setResultOssUrl(task.getResultOssUrl());
+        version.setQualityReportJson(task.getQualityReportJson());
+        versionRepository.save(version);
+        task.setVersionNumber(version.getVersionNumber() + 1);
     }
 
     // ── 模块 Prompt 数据：布局规范 + 文案指导 + 生成模式，一处定义，不再散落 ──
@@ -299,10 +348,10 @@ public class AplusImageServiceImpl implements AplusImageService {
                 "2-4 comfort/fit labels, e.g. Relaxed Fit; Soft Drape; Comfortable Coverage; Moves With You.");
 
         MODULE_LAYOUTS.put("AD-06",
-                "Technical layout: front product view, measurement arrows, compact size chart panel. " +
-                "If size data provided, render exact table (Size/Bust/Length/Sleeve). Otherwise use fit labels, no fake numbers.");
+                "Technical layout: front product view, measurement arrows, and a clean blank chart panel reserved for deterministic canvas text. " +
+                "Use fit labels only inside the generated image; never rasterize numeric measurements.");
         MODULE_TEXT_GUIDES.put("AD-06",
-                "Size chart with exact supplied values, or fit labels if no measurements provided.");
+                "Fit labels plus an empty chart panel; exact supplied values are rendered as canvas overlay text.");
 
         MODULE_LAYOUTS.put("AD-07",
                 "Still-life with folded garment or neat arrangement, care/quality visual cues, readable care explanation panel.");
@@ -325,36 +374,45 @@ public class AplusImageServiceImpl implements AplusImageService {
 
     private String buildModulePrompt(AplusImageTask task, AplusProject project) {
         String code = task.getModuleCode();
-        boolean hasRef = hasAplusReference(project);
+        String aspectRatio = effectiveAspectRatio(task);
+        List<AplusReferenceImage> references = referenceImages(task, project);
+        boolean hasProductTruth = !firstReferenceUrl(references, AplusReferenceImage.PRODUCT_TRUTH).isBlank();
+        boolean hasLayoutReference = !firstReferenceUrl(references, AplusReferenceImage.LAYOUT).isBlank();
         String moduleLayout = MODULE_LAYOUTS.getOrDefault(code, "Premium e-commerce A+ module layout.");
         String moduleTextGuide = MODULE_TEXT_GUIDES.getOrDefault(code, "Short headline + 2-3 product-benefit labels.");
         boolean modelScene = MODEL_SCENE_MODULES.contains(code);
 
         StringBuilder sb = new StringBuilder(2048);
         // ── 任务概述 ──
-        sb.append("Create one production-ready 16:9 A+ module image for women's fashion e-commerce.\n");
-        sb.append(hasRef
-                ? "Image-to-image: A+ reference provided for layout style only, not product truth.\n\n"
-                : "No A+ reference. Build from selling points, module copy, and supplementary images.\n\n");
+        sb.append("Create one production-ready ").append(aspectRatio)
+                .append(" A+ module image for women's fashion e-commerce.\n");
+        sb.append(hasProductTruth
+                ? "Image-to-image: image input [0] is the immutable product truth source.\n\n"
+                : "No product truth image is available. Use supplied product information only and do not invent details.\n\n");
 
         // ── 模块 & 产品 ──
         sb.append("Module: ").append(code).append(" ").append(task.getModuleName()).append("\n");
         sb.append("SPU: ").append(project.getSpu()).append("\n");
-        sb.append("A+ Reference: ").append(hasRef ? project.getReferenceImageUrl() : "Not provided").append("\n\n");
+        sb.append("Product truth image: ").append(hasProductTruth ? "provided" : "not provided").append("\n");
+        sb.append("Layout reference image: ").append(hasLayoutReference ? "provided" : "not provided").append("\n\n");
 
         // ── Image Input 角色 ──
-        appendImageInputRoleMap(sb, task, project);
+        appendImageInputRoleMap(sb, references, project);
 
         // ── 参考图使用规则 ──
-        if (hasRef) {
-            sb.append("A+ Reference Rules: layout/hierarchy/panel-rhythm/crop/text-placement only. " +
-                    "Do NOT copy its product, model, face, pose, brand, logo, or scene. " +
-                    "Replace product with user's product from SPU/selling-points/module-copy/supplementary images.\n\n");
+        sb.append("Product Fidelity Rules: image input [0] is the highest-priority garment source of truth. " +
+                "Preserve its category, silhouette, color family, print, fabric texture, neckline, sleeves, hem, trims, and visible construction. " +
+                "Do not redesign the garment or let any layout/supplementary image override it.\n");
+        if (hasLayoutReference) {
+            sb.append("Layout Reference Rules: the layout reference controls hierarchy, card rhythm, crop style, text-safe zones, " +
+                    "and information density only. Never copy its product, model, face, pose, brand, logo, color palette, or exact scene.\n");
         }
+        sb.append("\n");
 
         // ── 产品构建 + 生成模式 ──
         sb.append("Product: match SPU, selling points, module copy. No invented logos/prints/hardware/category changes. " +
                 "Product clarity > scene creativity.\n");
+        appendJsonContext(sb, "Product analysis", project.getProductAnalysisJson());
         sb.append(modelScene
                 ? "Mode: realistic American model + authentic lifestyle scene. Dress in user's product. " +
                   "Model: Curve/Plus-Size or Commercial/Catalog woman, 30-42, natural skin, body-positive. " +
@@ -365,6 +423,7 @@ public class AplusImageServiceImpl implements AplusImageService {
 
         // ── 风格锚点 + 布局 ──
         sb.append("Style: ").append(AplusModuleDefinition.STYLE_ANCHOR).append("\n\n");
+        appendJsonContext(sb, "Project visual system", project.getVisualSystemJson());
         sb.append("Layout: ").append(moduleLayout).append("\n\n");
 
         // ── 文案 ──
@@ -388,6 +447,10 @@ public class AplusImageServiceImpl implements AplusImageService {
                 "No random words, fake brand names, fake measurements, or unrelated labels.\n\n");
 
         // ── 质量标准 ──
+        if ("AD-06".equals(code)) {
+            sb.append("AD-06 rendering rule: reserve a clean blank chart panel and do not render numeric size data inside the image; exact numbers are overlaid deterministically on the canvas.\n\n");
+        }
+
         sb.append("Quality: sharp edges, realistic drape/folds, clean lighting, balanced spacing, clear hierarchy, " +
                 "consistent palette, safe margins, premium catalog finish.\n\n");
 
@@ -395,26 +458,21 @@ public class AplusImageServiceImpl implements AplusImageService {
         sb.append("Negative: ").append(modelScene ? MODEL_SCENE_NEGATIVE : PRODUCT_NEGATIVE).append("\n\n");
 
         // ── 输出规格 ──
-        sb.append("Output: 16:9, ").append(effectiveResolution(task)).append(", single finished image.");
+        sb.append("Output: ").append(aspectRatio).append(", ")
+                .append(effectiveResolution(task)).append(", single finished image.");
         return sb.toString();
     }
 
-    private void appendImageInputRoleMap(StringBuilder sb, AplusImageTask task, AplusProject project) {
-        boolean hasRef = hasAplusReference(project);
+    private void appendImageInputRoleMap(StringBuilder sb, List<AplusReferenceImage> references, AplusProject project) {
         sb.append("Image Inputs:\n");
-        sb.append(hasRef
-                ? "- [0] A+ reference: layout/style only, not garment identity.\n"
-                : "- No A+ reference. Garment identity from SPU/selling-points/module-copy/supplementary images.\n");
-        String supplementary = task.getSupplementaryImageUrl();
-        if (supplementary != null && !supplementary.isBlank()) {
-            String[] urls = supplementary.split(",");
-            int start = hasRef ? 1 : 0;
-            for (int i = 0; i < urls.length; i++) {
-                String url = urls[i] == null ? "" : urls[i].trim();
-                if (!url.isBlank()) {
-                    sb.append("- [").append(start + i).append("] supplementary: ").append(url)
-                            .append(". Module-specific detail only.\n");
-                }
+        if (references.isEmpty()) {
+            sb.append("- No image input available.\n");
+        } else {
+            for (int index = 0; index < references.size(); index++) {
+                AplusReferenceImage reference = references.get(index);
+                String role = reference.getRole() == null ? AplusReferenceImage.SUPPLEMENTARY : reference.getRole();
+                sb.append("- [").append(index).append("] ").append(role).append(": ")
+                        .append(reference.getNote() == null ? "" : reference.getNote()).append("\n");
             }
         }
         if (project.getLayoutTemplateName() != null && !project.getLayoutTemplateName().isBlank()) {
@@ -423,8 +481,71 @@ public class AplusImageServiceImpl implements AplusImageService {
         sb.append("\n");
     }
 
-    private boolean hasAplusReference(AplusProject project) {
-        return project.getReferenceImageUrl() != null && !project.getReferenceImageUrl().isBlank();
+    private void appendJsonContext(StringBuilder sb, String label, String json) {
+        if (json != null && !json.isBlank()) {
+            sb.append(label).append(": ").append(json).append("\n\n");
+        }
+    }
+
+    private List<AplusReferenceImage> referenceImages(AplusImageTask task, AplusProject project) {
+        List<AplusReferenceImage> parsed = new ArrayList<>();
+        if (task.getReferenceImagesJson() != null && !task.getReferenceImagesJson().isBlank()) {
+            try {
+                parsed.addAll(objectMapper.readValue(task.getReferenceImagesJson(),
+                        new TypeReference<List<AplusReferenceImage>>() {}));
+            } catch (Exception e) {
+                log.warn("[A+] typed reference parse failed: taskId={}, error={}", task.getId(), e.getMessage());
+            }
+        }
+        if (parsed.isEmpty()) {
+            addReference(parsed, AplusReferenceImage.PRODUCT_TRUTH, project.getReferenceImageUrl(),
+                    "Primary product source of truth.");
+            addReference(parsed, AplusReferenceImage.LAYOUT, project.getLayoutReferenceImageUrl(),
+                    "Layout structure only.");
+            if (task.getSupplementaryImageUrl() != null) {
+                for (String url : task.getSupplementaryImageUrl().split(",")) {
+                    addReference(parsed, AplusReferenceImage.SUPPLEMENTARY, url,
+                            "Module-specific supporting image.");
+                }
+            }
+        }
+        List<AplusReferenceImage> ordered = new ArrayList<>();
+        for (String role : List.of(AplusReferenceImage.PRODUCT_TRUTH, AplusReferenceImage.LAYOUT,
+                AplusReferenceImage.DETAIL, AplusReferenceImage.FABRIC, AplusReferenceImage.SIZE,
+                AplusReferenceImage.SCENE, AplusReferenceImage.STYLE_ANCHOR, AplusReferenceImage.SUPPLEMENTARY)) {
+            parsed.stream().filter(item -> item != null && role.equalsIgnoreCase(item.getRole())
+                    && item.getUrl() != null && !item.getUrl().isBlank()).forEach(ordered::add);
+        }
+        parsed.stream().filter(item -> item != null && item.getUrl() != null && !item.getUrl().isBlank()
+                && !ordered.contains(item)).forEach(ordered::add);
+        return ordered;
+    }
+
+    private void addReference(List<AplusReferenceImage> references, String role, String url, String note) {
+        if (url == null || url.isBlank()) return;
+        AplusReferenceImage reference = new AplusReferenceImage();
+        reference.setRole(role);
+        reference.setUrl(url.trim());
+        reference.setNote(note);
+        references.add(reference);
+    }
+
+    private String firstReferenceUrl(List<AplusReferenceImage> references, String role) {
+        return references.stream()
+                .filter(reference -> role.equalsIgnoreCase(reference.getRole()))
+                .map(AplusReferenceImage::getUrl)
+                .filter(url -> url != null && !url.isBlank())
+                .findFirst()
+                .orElse("");
+    }
+
+    private String supportingReferenceUrls(List<AplusReferenceImage> references) {
+        return references.stream()
+                .filter(reference -> !AplusReferenceImage.PRODUCT_TRUTH.equalsIgnoreCase(reference.getRole()))
+                .map(AplusReferenceImage::getUrl)
+                .filter(url -> url != null && !url.isBlank())
+                .distinct()
+                .collect(Collectors.joining(","));
     }
 
     private String effectiveModel(AplusImageTask task) {
@@ -439,6 +560,13 @@ public class AplusImageServiceImpl implements AplusImageService {
             return "2K";
         }
         return task.getResolution().trim().toUpperCase();
+    }
+
+    private String effectiveAspectRatio(AplusImageTask task) {
+        if (task.getAspectRatio() == null || task.getAspectRatio().isBlank()) {
+            return "21:9";
+        }
+        return task.getAspectRatio().trim();
     }
 
     private String extractOssUrl(String ossResult) {

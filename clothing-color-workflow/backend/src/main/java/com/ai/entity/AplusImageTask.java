@@ -45,11 +45,18 @@ public class AplusImageTask {
     @Column(columnDefinition = "text")
     private String supplementaryText;
 
+    /** Typed image references in their intended prompt/KIE order. */
+    @Column(columnDefinition = "text")
+    private String referenceImagesJson;
+
     /** 生成的 Prompt */
     @Column(columnDefinition = "text")
     private String prompt;
 
-    /** 图片比例：16:9 */
+    /** Current immutable output version for this module. */
+    private Integer versionNumber;
+
+    /** 图片比例：新建 A+ 默认网页端 21:9。 */
     @Column(length = 20)
     private String aspectRatio;
 
@@ -84,6 +91,14 @@ public class AplusImageTask {
     /** 错误信息 */
     @Column(columnDefinition = "text")
     private String errorMessage;
+
+    /** NOT_EVALUATED / EVALUATING / PASSED / FLAGGED. */
+    @Column(length = 20)
+    private String qualityStatus;
+
+    /** Structured multimodal quality report. */
+    @Column(columnDefinition = "text")
+    private String qualityReportJson;
 
     /** 预估费用 */
     @Column(precision = 10, scale = 2)

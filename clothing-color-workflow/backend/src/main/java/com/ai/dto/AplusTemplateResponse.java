@@ -31,6 +31,7 @@ public class AplusTemplateResponse {
     private Map<String, AplusModuleExtra> moduleExtrasMap;
     private String layoutReferenceImageUrl;
     private String layoutBlueprintJson;
+    private String layoutQualityReportJson;
     private String operator;
     private String shopName;
 
@@ -55,6 +56,7 @@ public class AplusTemplateResponse {
         resp.setModuleExtrasMap(parseModuleExtras(template.getModuleExtras()));
         resp.setLayoutReferenceImageUrl(template.getLayoutReferenceImageUrl());
         resp.setLayoutBlueprintJson(template.getLayoutBlueprintJson());
+        resp.setLayoutQualityReportJson(template.getLayoutQualityReportJson());
         resp.setOperator(template.getOperator());
         resp.setShopName(template.getShopName());
         resp.setCreatedAt(template.getCreatedAt());

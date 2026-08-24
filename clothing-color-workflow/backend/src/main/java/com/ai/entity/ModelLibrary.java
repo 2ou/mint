@@ -115,9 +115,9 @@ public class ModelLibrary {
     private String taskStatus;  // 任务状态：CREATED/PROCESSING/SUCCESS/FAILED
 
     @Column(length = 500)
-    private String resultUrl;  // 生成结果 URL（本地落盘后改为 /ai-result/** 本地服务地址，不再走 OSS）
+    private String resultUrl;  // 生成结果 URL（OSS 链接，模型库走永久桶）
 
-    /** 本地落盘绝对路径（仅本地，不走 OSS）：persistResult 阶段把 KIE 结果图下载到 D:/AiResult */
+    /** 本地落盘绝对路径（保留字段；模型库当前走 OSS，不写入此字段） */
     @Column(length = 1024)
     private String localPath;
 

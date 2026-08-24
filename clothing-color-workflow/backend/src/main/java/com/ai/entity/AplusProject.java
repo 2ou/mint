@@ -55,6 +55,14 @@ public class AplusProject {
     @Column(columnDefinition = "text")
     private String layoutBlueprintJson;
 
+    /** Vision-extracted garment facts from the product truth image. */
+    @Column(columnDefinition = "text")
+    private String productAnalysisJson;
+
+    /** Project-level visual system shared by every A+ module. */
+    @Column(columnDefinition = "text")
+    private String visualSystemJson;
+
     /** 选择的模块列表，JSON 数组 ["AD-01","AD-03","AD-05"] */
     @Column(columnDefinition = "text")
     private String selectedModules;
@@ -74,6 +82,9 @@ public class AplusProject {
     /** 所属店铺 */
     @Column(length = 100)
     private String shopName;
+
+    /** A+ 套图专属无限画布 ID。 */
+    private Long canvasId;
 
     @CreationTimestamp
     private LocalDateTime createdAt;

@@ -67,6 +67,8 @@
                     <button class="tool-btn" onclick="groupSelectedImages()"><i data-lucide="group" class="w-4 h-4"></i><span data-i18n="canvas.group">分组</span></button>
                 </div>
                 <div class="toolbar-fixed">
+                    <button id="aplusMobileConvertBtn" class="tool-btn" type="button" title="转换手机端 4:3" aria-label="转换手机端 4:3" style="display:none"><i data-lucide="smartphone" class="w-4 h-4"></i><span>手机端 4:3</span></button>
+                    <button id="aplusCopyOverlayBtn" class="tool-btn" type="button" title="编辑 A+ 叠加文案" aria-label="编辑 A+ 叠加文案" style="display:none"><i data-lucide="type" class="w-4 h-4"></i><span>A+ 文案</span></button>
                     <button id="workflowTransferToggle" class="tool-btn toolbar-workflow" type="button" title="导入导出工作流" aria-label="导入导出工作流"><i data-lucide="package-open" class="w-4 h-4"></i><span>工作流</span></button>
                     <button id="canvasAssetToggle" class="tool-btn toolbar-asset canvas-asset-toggle" type="button" title="资产库" aria-label="资产库"><i data-lucide="library" class="w-4 h-4"></i><span>资产库</span></button>
                     <button id="canvasLogToggle" class="tool-btn toolbar-log" type="button" onclick="openCanvasLog(event)" title="日志" aria-label="日志" data-i18n-title="canvas.logs"><i data-lucide="list-todo" class="w-4 h-4"></i><span data-i18n="canvas.logs">日志</span></button>
@@ -157,6 +159,14 @@
                             <span>拖入 JSON / ZIP 工作流</span>
                             <small>或点击选择文件</small>
                         </div>
+                    </section>
+                    <section class="workflow-transfer-card">
+                        <div class="workflow-transfer-card-head"><i data-lucide="scan-search" class="w-4 h-4"></i><strong>导入 Liblib TV 画布</strong></div>
+                        <p>复制导入书签后，在已登录的 Liblib 画布页面点击书签，即可把图片、视频、提示词和布局追加到当前画布。</p>
+                        <div class="workflow-transfer-actions">
+                            <button class="workflow-transfer-btn primary" type="button" onclick="copyLiblibCanvasBookmarklet()"><i data-lucide="bookmark-plus" class="w-4 h-4"></i><span>复制 Liblib 导入书签</span></button>
+                        </div>
+                        <div id="liblibImportHint" class="workflow-transfer-meta">书签只读取当前已登录页面的可见节点，不需要提供 Liblib 密码或 Cookie。</div>
                     </section>
                 </div>
             </aside>
@@ -376,6 +386,8 @@
     <input id="canvasMediaPicker" type="file" accept="image/*,video/*,audio/*" multiple tabindex="-1" aria-hidden="true" style="position:fixed;left:-10000px;top:auto;width:1px;height:1px;opacity:0;pointer-events:none;">
 
     <script src="/infinite-canvas/js/ltx-director-timeline.js?v=2026.07.15.1782696715"></script>
+    <script src="/infinite-canvas/js/liblib-canvas-import.js?v=2026.08.18.1"></script>
     <script src="/infinite-canvas/js/canvas.js?v=2026.07.15.1784105557"></script>
+    <script src="/infinite-canvas/js/aplus-canvas-bridge.js?v=20260817.1"></script>
 </body>
 </html>

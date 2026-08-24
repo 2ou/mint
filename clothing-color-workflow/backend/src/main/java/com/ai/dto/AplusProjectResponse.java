@@ -28,12 +28,15 @@ public class AplusProjectResponse {
     private String layoutTemplateName;
     private String layoutReferenceImageUrl;
     private String layoutBlueprintJson;
+    private String productAnalysisJson;
+    private String visualSystemJson;
     private String selectedModules;
     private List<String> selectedModuleList;
     private String status;
     private String errorMessage;
     private String operator;
     private String shopName;
+    private Long canvasId;
 
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime createdAt;
@@ -55,12 +58,15 @@ public class AplusProjectResponse {
         resp.setLayoutTemplateName(project.getLayoutTemplateName());
         resp.setLayoutReferenceImageUrl(project.getLayoutReferenceImageUrl());
         resp.setLayoutBlueprintJson(project.getLayoutBlueprintJson());
+        resp.setProductAnalysisJson(project.getProductAnalysisJson());
+        resp.setVisualSystemJson(project.getVisualSystemJson());
         resp.setSelectedModules(project.getSelectedModules());
         resp.setSelectedModuleList(parseSelectedModules(project.getSelectedModules()));
         resp.setStatus(project.getStatus());
         resp.setErrorMessage(project.getErrorMessage());
         resp.setOperator(project.getOperator());
         resp.setShopName(project.getShopName());
+        resp.setCanvasId(project.getCanvasId());
         resp.setCreatedAt(project.getCreatedAt());
         resp.setCompletedAt(project.getCompletedAt());
         if (project.getImageTasks() != null) {

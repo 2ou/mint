@@ -6,9 +6,11 @@ import com.ai.dto.AplusImageTaskResponse;
 import com.ai.dto.AplusProjectCreateRequest;
 import com.ai.dto.AplusProjectResponse;
 import com.ai.entity.AplusImageTask;
+import com.ai.entity.AplusImageTaskVersion;
 import com.ai.entity.AplusProject;
 import com.ai.enums.AplusTaskStatus;
 import com.ai.repository.AplusImageTaskRepository;
+import com.ai.repository.AplusImageTaskVersionRepository;
 import com.ai.repository.AplusProjectRepository;
 import com.ai.service.AplusCopyService;
 import com.ai.service.AplusImageService;
@@ -63,6 +65,7 @@ public class AplusController {
     private final CanvasTaskService canvasTaskService;
     private final AplusProjectRepository projectRepository;
     private final AplusImageTaskRepository imageTaskRepository;
+    private final AplusImageTaskVersionRepository imageTaskVersionRepository;
     private final Environment environment;
 
     @Resource(name = "aplusAsyncExecutor")
@@ -108,6 +111,18 @@ public class AplusController {
         return ApiResponse.ok("文案已保存", projectService.updateCopy(id, request));
     }
 
+    @PutMapping("/projects/{id}/canvas")
+    public ApiResponse<AplusProjectResponse> linkCanvas(@PathVariable("id") Long id,
+                                                         @RequestBody Map<String, Object> request) {
+        Long canvasId;
+        try {
+            canvasId = Long.valueOf(String.valueOf(request.get("canvasId")));
+        } catch (Exception e) {
+            throw new IllegalArgumentException("canvasId 格式不正确");
+        }
+        return ApiResponse.ok("A+ 画布已关联", projectService.linkCanvas(id, canvasId));
+    }
+
     @PostMapping("/projects/{id}/generate-images")
     public ApiResponse<String> generateImages(@PathVariable("id") Long id) {
         CompletableFuture.runAsync(() -> imageService.generateImages(id), aplusAsyncExecutor)
@@ -142,6 +157,15 @@ public class AplusController {
                 .map(AplusImageTaskResponse::from)
                 .collect(Collectors.toList());
         return ApiResponse.ok("ok", responses);
+    }
+
+    @GetMapping("/projects/{id}/modules/{moduleCode}/versions")
+    public ApiResponse<List<AplusImageTaskVersion>> getModuleVersions(@PathVariable("id") Long id,
+                                                                       @PathVariable("moduleCode") String moduleCode) {
+        AplusImageTask task = imageTaskRepository.findByProjectIdAndModuleCode(id, moduleCode).stream()
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("A+ module task not found: " + moduleCode));
+        return ApiResponse.ok("ok", imageTaskVersionRepository.findByTaskIdOrderByVersionNumberDesc(task.getId()));
     }
 
     @PostMapping("/projects/{id}/download-zip")

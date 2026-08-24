@@ -10,6 +10,7 @@ public interface AplusProjectService {
     AplusProjectResponse getProjectById(Long id);
     Page<AplusProjectResponse> getProjectPage(int page, int size, String spu, String status);
     AplusProjectResponse updateCopy(Long id, AplusCopyUpdateRequest request);
+    AplusProjectResponse linkCanvas(Long id, Long canvasId);
     void deleteProject(Long id);
     void updateProjectStatus(Long id, String status, String errorMessage);
 }

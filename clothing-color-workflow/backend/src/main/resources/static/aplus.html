@@ -48,25 +48,25 @@
     <script src="js/sidebar.js"></script>
     <style>
         :root {
-            --sh-background: hsl(240 10% 3.9%);
-            --sh-foreground: hsl(0 0% 98%);
-            --sh-card: hsl(240 10% 3.9%);
-            --sh-card-strong: hsl(240 5.9% 6.8%);
-            --sh-popover: hsl(240 5.9% 10%);
-            --sh-muted: hsl(240 3.7% 15.9%);
-            --sh-muted-foreground: hsl(240 5% 64.9%);
-            --sh-border: hsl(240 3.7% 15.9%);
-            --sh-border-soft: hsl(240 3.7% 18%);
-            --sh-input: hsl(240 3.7% 15.9%);
-            --sh-ring: hsl(240 4.9% 83.9%);
-            --sh-primary: hsl(0 0% 98%);
-            --sh-primary-foreground: hsl(240 5.9% 10%);
-            --sh-accent: hsl(240 3.7% 15.9%);
-            --sh-accent-foreground: hsl(0 0% 98%);
-            --sh-destructive: hsl(0 62.8% 30.6%);
-            --sh-destructive-foreground: hsl(0 0% 98%);
-            --sh-warning: hsl(38 92% 50%);
-            --sh-success: hsl(142 70% 45%);
+            --sh-background: #ffffff;
+            --sh-foreground: #172033;
+            --sh-card: #ffffff;
+            --sh-card-strong: #ffffff;
+            --sh-popover: #f8fafc;
+            --sh-muted: #eef2f7;
+            --sh-muted-foreground: #64748b;
+            --sh-border: #e2e8f0;
+            --sh-border-soft: #edf2f7;
+            --sh-input: #d8e0ea;
+            --sh-ring: #3b82f6;
+            --sh-primary: #2563eb;
+            --sh-primary-foreground: #ffffff;
+            --sh-accent: #eff6ff;
+            --sh-accent-foreground: #1d4ed8;
+            --sh-destructive: #dc2626;
+            --sh-destructive-foreground: #ffffff;
+            --sh-warning: #f59e0b;
+            --sh-success: #16a34a;
             --sh-radius: 0.75rem;
         }
 
@@ -74,7 +74,7 @@
         body {
             margin: 0;
             font-family: var(--app-font-family);
-            background: radial-gradient(circle at top left, rgba(255, 255, 255, 0.05), transparent 32rem), var(--sh-background);
+            background: var(--sh-background);
             color: var(--sh-foreground);
             letter-spacing: 0;
         }
@@ -570,19 +570,19 @@
 
         .status-badge.generating {
             background: color-mix(in srgb, var(--sh-warning) 16%, transparent);
-            color: hsl(38 92% 72%);
+            color: #b45309;
             border-color: color-mix(in srgb, var(--sh-warning) 30%, transparent);
         }
 
         .status-badge.completed {
             background: color-mix(in srgb, var(--sh-success) 16%, transparent);
-            color: hsl(142 70% 72%);
+            color: #15803d;
             border-color: color-mix(in srgb, var(--sh-success) 30%, transparent);
         }
 
         .status-badge.failed {
             background: color-mix(in srgb, var(--sh-destructive) 28%, transparent);
-            color: hsl(0 84% 78%);
+            color: #b91c1c;
             border-color: color-mix(in srgb, var(--sh-destructive) 42%, transparent);
         }
 
@@ -1569,7 +1569,6 @@
                             <div>
                                 <span class="model-config-label">分辨率</span>
                                 <select class="form-input" v-model="form.resolution">
-                                    <option value="1K">1K</option>
                                     <option value="2K">2K</option>
                                     <option value="4K">4K</option>
                                 </select>
@@ -1618,7 +1617,7 @@
                             <div>
                                 <div class="stable-layout-title">逐模块生成 A+（推荐）</div>
                                 <div class="stable-layout-desc">
-                                    产品参考图作为款式真相；版式参考图只学习结构风格，商品款式以卖点、模块补充文字和补充图片为准。
+                                    产品参考图作为唯一款式真相；版式参考图只学习结构风格，不能覆盖服装款式、颜色或细节。
                                 </div>
                             </div>
                         </div>
@@ -1653,6 +1652,10 @@
                             </button>
                             <span style="font-size: 12px; color: #666;">保存后可在模板选择器里复用该版式。</span>
                         </div>
+                        <details v-if="form.layoutQualityReportJson" style="margin-top:10px; padding:8px 10px; background:#f8fafc; border-radius:8px;">
+                            <summary style="cursor:pointer; font-size:12px; color:#374151;">查看版式解析质量报告</summary>
+                            <pre style="white-space:pre-wrap; font-size:11px; color:#4b5563; margin:8px 0 0;">{{ formatJson(form.layoutQualityReportJson) }}</pre>
+                        </details>
                     </div>
 
                     <div class="form-section">
@@ -1692,11 +1695,19 @@
                                           :placeholder="getModule(code).extraHint"></textarea>
                                 <div class="detail-label" style="margin-top: 8px;">
                                     补充图片
-                                    <span style="font-size: 10px; color: #555; margin-left: 4px;">支持多张</span>
+                                    <span style="font-size: 10px; color: #555; margin-left: 4px;">支持多张，可标注用途</span>
                                 </div>
                                 <div v-if="getModuleExtra(code).fileList.length > 0" class="module-upload-grid">
                                     <div v-for="(file, idx) in getModuleExtra(code).fileList" :key="file.uid" class="module-upload-item">
                                         <img :src="file.url" alt="preview">
+                                        <select v-model="file.role" @click.stop style="position:absolute; left:4px; right:4px; bottom:4px; width:calc(100% - 8px); font-size:10px; border:0; border-radius:4px; background:rgba(255,255,255,.92);">
+                                            <option value="SUPPLEMENTARY">通用补充</option>
+                                            <option value="DETAIL">款式细节</option>
+                                            <option value="FABRIC">面料纹理</option>
+                                            <option value="SIZE">尺码依据</option>
+                                            <option value="SCENE">场景参考</option>
+                                            <option value="STYLE_ANCHOR">风格锚点</option>
+                                        </select>
                                         <span class="module-upload-remove" @click.stop="removeModuleFile(code, idx)">x</span>
                                     </div>
                                 </div>
@@ -1731,6 +1742,7 @@
                         </span>
                         </div>
                         <div class="right-header-right">
+                            <button v-if="currentProject.canvasId" class="icon-btn" @click="openAplusCanvas" title="进入 A+ 画布">画布</button>
                             <button class="icon-btn" @click="toggleViewMode" :title="viewMode === 'grid' ? '画廊视图' : '网格视图'">
                                 {{ viewMode === 'grid' ? '画廊' : '网格' }}
                             </button>
@@ -1756,6 +1768,18 @@
                     </div>
 
                     <div class="right-content">
+                        <div v-if="currentProject.productAnalysisJson || currentProject.visualSystemJson"
+                             style="margin: 0 0 16px; padding: 13px 15px; border: 1px solid #e5e7eb; border-radius: 12px; background: #fff;">
+                            <div style="font-weight: 700; color: #111827; margin-bottom: 8px;">产品事实与套图视觉系统</div>
+                            <details v-if="currentProject.productAnalysisJson" style="margin-bottom: 7px;">
+                                <summary style="cursor:pointer; color:#374151;">产品事实（来自产品真相图）</summary>
+                                <pre style="white-space:pre-wrap; font-size:11px; color:#4b5563; margin:8px 0 0;">{{ formatJson(currentProject.productAnalysisJson) }}</pre>
+                            </details>
+                            <details v-if="currentProject.visualSystemJson">
+                                <summary style="cursor:pointer; color:#374151;">统一视觉系统（全部模块共用）</summary>
+                                <pre style="white-space:pre-wrap; font-size:11px; color:#4b5563; margin:8px 0 0;">{{ formatJson(currentProject.visualSystemJson) }}</pre>
+                            </details>
+                        </div>
                         <div v-if="isCopyGenerating" class="copy-loading-panel">
                             <div class="copy-loading-content">
                                 <div class="copy-loading-spinner"></div>
@@ -1833,12 +1857,15 @@
                                     <div class="card-info">
                                         <span class="card-code">{{ task.moduleCode }}</span>
                                         <span class="card-name">{{ displayModuleName(task.moduleCode, task.moduleName) }}</span>
+                                        <span v-if="task.versionNumber" style="font-size:11px; color:#6b7280;">v{{ task.versionNumber }}</span>
+                                        <span v-if="task.qualityStatus" :style="qualityStyle(task.qualityStatus)">{{ qualityLabel(task.qualityStatus) }}</span>
                                     </div>
                                     <div class="card-actions">
                                         <button v-if="task.status === 'SUCCESS'" class="card-btn card-btn-download"
                                                 @click="downloadSingle(task)">下载</button>
                                         <button class="card-btn card-btn-regenerate"
                                                 @click="regenerateModule(task.moduleCode)">重试</button>
+                                        <button v-if="task.versionNumber > 1" class="card-btn" @click="viewVersions(task)">历史</button>
                                     </div>
                                 </div>
                             </div>
@@ -1865,12 +1892,15 @@
                                     <div class="gallery-item-info">
                                         <span class="gallery-item-code">{{ task.moduleCode }}</span>
                                         <span class="gallery-item-name">{{ displayModuleName(task.moduleCode, task.moduleName) }}</span>
+                                        <span v-if="task.versionNumber" style="font-size:11px; color:#6b7280;">v{{ task.versionNumber }}</span>
+                                        <span v-if="task.qualityStatus" :style="qualityStyle(task.qualityStatus)">{{ qualityLabel(task.qualityStatus) }}</span>
                                     </div>
                                     <div class="gallery-item-actions">
                                         <button v-if="task.status === 'SUCCESS'" class="gallery-btn gallery-btn-download"
                                                 @click="downloadSingle(task)">下载</button>
                                         <button class="gallery-btn gallery-btn-regenerate"
                                                 @click="regenerateModule(task.moduleCode)">重试</button>
+                                        <button v-if="task.versionNumber > 1" class="gallery-btn" @click="viewVersions(task)">历史</button>
                                     </div>
                                 </div>
                             </div>
@@ -2012,6 +2042,7 @@
                         layoutTemplateName: '',
                         layoutReferenceImageUrl: '',
                         layoutBlueprintJson: '',
+                        layoutQualityReportJson: '',
                         selectedModules: ['AD-01', 'AD-02', 'AD-03', 'AD-04', 'AD-05', 'AD-06', 'AD-07']
                     });
 
@@ -2273,7 +2304,8 @@
                                     url: URL.createObjectURL(file),
                                     raw: file,
                                     uid: Date.now() + Math.random(),
-                                    status: 'ready'
+                                    status: 'ready',
+                                    role: 'SUPPLEMENTARY'
                                 });
                             });
                         };
@@ -2306,7 +2338,8 @@
                                 url: URL.createObjectURL(file),
                                 raw: file,
                                 uid: Date.now() + Math.random(),
-                                status: 'ready'
+                                status: 'ready',
+                                role: 'SUPPLEMENTARY'
                             });
                         });
                     };
@@ -2385,6 +2418,7 @@
                                 form.layoutTemplateName = template.templateName;
                                 form.layoutReferenceImageUrl = template.layoutReferenceImageUrl || layoutUrl;
                                 form.layoutBlueprintJson = template.layoutBlueprintJson || '';
+                                form.layoutQualityReportJson = template.layoutQualityReportJson || '';
                                 form.stableAplusLayout = true;
                                 layoutReferenceFileList.value = [{
                                     name: template.templateName,
@@ -2410,9 +2444,9 @@
                     const stableAplusLayoutText = (code, hasLayoutReference) => {
                         const base = [
                             'Stable A+ layout mode:',
-                            '- Generate only this AD module as one standalone 16:9 image. Do not generate a full long infographic page.',
-                            '- If an A+ reference image is provided, use it only for A+ layout structure, visual hierarchy, card rhythm, typography placement, image crop rhythm, and information density.',
-                            '- Do not use the A+ reference image as the garment or product source of truth. Garment identity comes from selling points, module instructions, and supplementary product images when provided.',
+                            '- Generate only this AD module as one standalone 21:9 web image. Do not generate a full long infographic page.',
+                            '- The product truth image is the garment source of truth. Preserve its category, silhouette, color, print, fabric, neckline, sleeves, hem, trims, and visible construction.',
+                            '- A layout reference, when present, controls only hierarchy, card rhythm, typography placement, image crop rhythm, and information density.',
                             hasLayoutReference
                                 ? '- The attached A+ layout reference image is for layout structure only: card hierarchy, rounded panels, section rhythm, text placement, image crop rhythm, and information density.'
                                 : '- Follow the stable A+ layout recipe: premium rounded panels, clean white/neutral cards, readable English text, clear product hierarchy, and controlled spacing.',
@@ -2442,8 +2476,8 @@
                                 'Use labels like: Relaxed Fit / Soft Drape / Comfortable Coverage / Moves With You.'
                             ],
                             'AD-06': [
-                                'AD-06 layout: size chart page with product cutout, measurement arrows, and a compact readable table.',
-                                'If the user provided size data, reproduce the exact numbers. If no data is provided, do not invent numbers.'
+                                'AD-06 layout: size chart page with product cutout, measurement arrows, and a clean blank chart panel.',
+                                'Never rasterize numeric size values in the generated image; exact data is rendered as an editable canvas overlay.'
                             ],
                             'AD-07': [
                                 'AD-07 layout: recommended styling, care, or brand closing module with product still-life and short bullet text.',
@@ -2478,17 +2512,18 @@
                                 const text = (extra?.text || '').trim();
                                 const stableText = form.stableAplusLayout ? stableAplusLayoutText(code, Boolean(layoutReferenceUrl)) : '';
                                 const mergedText = [stableText, text].filter(Boolean).join('\n\n');
-                                if (fileList.length > 0 || mergedText || layoutReferenceUrl) {
-                                    const uploadedUrls = [];
-                                    if (layoutReferenceUrl) {
-                                        uploadedUrls.push(layoutReferenceUrl);
-                                    }
+                                if (fileList.length > 0 || mergedText) {
+                                    const referenceImages = [];
                                     for (const file of fileList) {
                                         const url = await uploadToOss(file);
-                                        if (url) uploadedUrls.push(url);
+                                        if (url) referenceImages.push({
+                                            role: file.role || 'SUPPLEMENTARY',
+                                            url,
+                                            note: `Module ${code} user-supplied ${(file.role || 'SUPPLEMENTARY').toLowerCase()} reference.`
+                                        });
                                     }
                                     moduleExtrasData[code] = {
-                                        supplementaryImageUrls: uploadedUrls,
+                                        referenceImages,
                                         supplementaryText: mergedText || null
                                     };
                                 }
@@ -2543,6 +2578,7 @@
                         form.layoutTemplateName = '';
                         form.layoutReferenceImageUrl = '';
                         form.layoutBlueprintJson = '';
+                        form.layoutQualityReportJson = '';
                         form.selectedModules = ['AD-01', 'AD-02', 'AD-03', 'AD-04', 'AD-05', 'AD-06', 'AD-07'];
                         referenceFileList.value = [];
                         layoutReferenceFileList.value = [];
@@ -2587,6 +2623,7 @@
                                 form.layoutTemplateName = '';
                                 form.layoutReferenceImageUrl = '';
                                 form.layoutBlueprintJson = '';
+                                form.layoutQualityReportJson = '';
                                 layoutReferenceFileList.value = [];
                                 referenceFileList.value = data.referenceImageUrl ? [{
                                     name: '产品参考图',
@@ -2601,6 +2638,7 @@
                                     form.layoutTemplateName = data.layoutTemplateName || '';
                                     form.layoutReferenceImageUrl = data.layoutReferenceImageUrl || '';
                                     form.layoutBlueprintJson = data.layoutBlueprintJson || '';
+                                    form.layoutQualityReportJson = data.layoutQualityReportJson || template.layoutQualityReportJson || '';
                                     form.stableAplusLayout = true;
                                     layoutReferenceFileList.value = data.layoutReferenceImageUrl ? [{
                                         name: data.layoutTemplateName || template.templateName,
@@ -2621,9 +2659,10 @@
                                             fileList: urls.map((url, idx) => ({
                                                 name: `模板补充图 ${idx + 1}`,
                                                 url,
-                                                raw: null,
-                                                uid: `template-${template.id}-${code}-${idx}`,
-                                                status: 'ready'
+                                            raw: null,
+                                            uid: `template-${template.id}-${code}-${idx}`,
+                                            status: 'ready',
+                                            role: 'SUPPLEMENTARY'
                                             })),
                                             text: extra.supplementaryText || ''
                                         };
@@ -2647,6 +2686,7 @@
                         form.layoutTemplateName = '';
                         form.layoutReferenceImageUrl = '';
                         form.layoutBlueprintJson = '';
+                        form.layoutQualityReportJson = '';
                     };
 
                     // 鏌ョ湅椤圭洰璇︽儏
@@ -2743,9 +2783,8 @@
                         try {
                             const r = await axios.post(`/api/aplus/projects/${projectId}/generate-images`);
                             if (r.data.success) {
-                                ElementPlus.ElMessage.success('图片生成任务已提交');
-                                await viewProject(projectId);
-                                startPolling();
+                                const canvasId = await ensureAplusCanvas();
+                                window.location.href = `/infinite-canvas/canvas.html?id=${encodeURIComponent(canvasId)}&project=default&aplusProjectId=${encodeURIComponent(projectId)}`;
                             } else {
                                 ElementPlus.ElMessage.error(r.data.message || '提交失败');
                             }
@@ -2754,6 +2793,36 @@
                         } finally {
                             generatingImages.value = false;
                         }
+                    };
+
+                    const ensureAplusCanvas = async () => {
+                        if (!currentProject.value) throw new Error('项目不存在');
+                        if (currentProject.value.canvasId) return currentProject.value.canvasId;
+
+                        const project = currentProject.value;
+                        const created = await axios.post('/api/canvases', {
+                            title: `${project.projectName} · A+ 拼接`,
+                            kind: 'classic',
+                            project: 'default',
+                            aplusProjectId: project.id,
+                            nodes: [],
+                            connections: [],
+                            viewport: { x: 0, y: 0, scale: 1 }
+                        });
+                        const canvasId = created.data?.canvas?.id;
+                        if (!canvasId) throw new Error('创建画布失败');
+
+                        const linked = await axios.put(`/api/aplus/projects/${project.id}/canvas`, {
+                            canvasId: Number(canvasId)
+                        });
+                        if (!linked.data?.success) throw new Error(linked.data?.message || '关联画布失败');
+                        currentProject.value = linked.data.data;
+                        return canvasId;
+                    };
+
+                    const openAplusCanvas = () => {
+                        if (!currentProject.value?.canvasId) return;
+                        window.location.href = `/infinite-canvas/canvas.html?id=${encodeURIComponent(currentProject.value.canvasId)}&project=default&aplusProjectId=${encodeURIComponent(currentProject.value.id)}`;
                     };
 
                     const retryFailedModules = async () => {
@@ -2815,6 +2884,47 @@
                             }
                         } catch (e) {
                             ElementPlus.ElMessage.error('提交失败');
+                        }
+                    };
+
+                    const qualityLabel = (status) => ({
+                        NOT_EVALUATED: '质检待执行',
+                        EVALUATING: '质检中',
+                        PASSED: '质检通过',
+                        FLAGGED: '建议复核'
+                    }[status] || status);
+
+                    const qualityStyle = (status) => ({
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        padding: '2px 6px',
+                        borderRadius: '999px',
+                        fontSize: '10px',
+                        fontWeight: '700',
+                        color: status === 'PASSED' ? '#166534' : status === 'FLAGGED' ? '#b45309' : '#475569',
+                        background: status === 'PASSED' ? '#dcfce7' : status === 'FLAGGED' ? '#fef3c7' : '#f1f5f9'
+                    });
+
+                    const formatJson = (value) => {
+                        if (!value) return '';
+                        try { return JSON.stringify(typeof value === 'string' ? JSON.parse(value) : value, null, 2); }
+                        catch (_) { return String(value); }
+                    };
+
+                    const viewVersions = async (task) => {
+                        if (!currentProject.value || !task?.moduleCode) return;
+                        try {
+                            const r = await axios.get(`/api/aplus/projects/${currentProject.value.id}/modules/${task.moduleCode}/versions`);
+                            const versions = r.data?.data || [];
+                            const message = versions.length
+                                ? versions.map(v => `v${v.versionNumber} · ${v.status || 'UNKNOWN'} · ${v.archivedAt || ''}`).join('\n')
+                                : '暂无历史版本';
+                            await ElementPlus.ElMessageBox.alert(message, `${task.moduleCode} 历史版本`, {
+                                confirmButtonText: '关闭',
+                                customClass: 'aplus-version-history'
+                            });
+                        } catch (e) {
+                            ElementPlus.ElMessage.error('加载历史版本失败');
                         }
                     };
 
@@ -2992,12 +3102,17 @@
                         createProject,
                         saveCopy,
                         confirmGenerateImages,
+                        openAplusCanvas,
                         retryFailedModules,
                         viewProject,
                         refreshProject,
                         downloadSingle,
                         downloadZip,
                         regenerateModule,
+                        qualityLabel,
+                        qualityStyle,
+                        formatJson,
+                        viewVersions,
                         openGallery,
                         toggleViewMode,
                         loadProjects,

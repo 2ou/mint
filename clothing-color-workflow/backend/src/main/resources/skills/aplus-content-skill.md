@@ -23,7 +23,7 @@ for A+ module generation.
 When a full A+ page, competitor module, or long infographic is provided as a
 layout reference, treat it as structure guidance only:
 
-- Generate one standalone 16:9 AD module at a time. Do not generate the full
+- Generate one standalone 21:9 web AD module at a time. Do not generate the full
   long page in a single image.
 - Use the layout reference only for section hierarchy, card rhythm, rounded
   panels, image crop style, text placement, and information density.

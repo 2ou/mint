@@ -1,6 +1,7 @@
 package com.ai.service.impl;
 
 import com.ai.dto.AplusModuleDefinition;
+import com.ai.dto.AplusReferenceImage;
 import com.ai.entity.AplusImageTask;
 import com.ai.entity.AplusProject;
 import com.ai.enums.AplusProjectStatus;
@@ -24,6 +25,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashSet;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.HashMap;
@@ -65,11 +67,14 @@ public class AplusCopyServiceImpl implements AplusCopyService {
         projectRepository.save(project);
 
         try {
-            String systemPrompt = buildSystemPrompt(readSkillTemplate(), project.getSelectedModules(), hasAplusReference(project));
+            boolean hasProductTruth = hasProductTruth(project);
+            boolean hasLayoutReference = hasLayoutReference(project);
+            String systemPrompt = buildSystemPrompt(readSkillTemplate(), project.getSelectedModules(), hasProductTruth, hasLayoutReference);
             String userPrompt = buildUserPrompt(project);
 
             log.info("[A+] generating copy: projectId={}, textModel={}", projectId, normalizedTextModel);
-            String rawCopy = textModelService.generateRawPrompt(systemPrompt, userPrompt, normalizedTextModel);
+            String rawCopy = textModelService.generateRawPromptWithImages(
+                    systemPrompt, userPrompt, analysisImageInputs(project), normalizedTextModel);
             CopyParseResult parseResult = parseModuleCopy(rawCopy);
             Map<String, String> moduleContents = parseResult.moduleContents();
             if (moduleContents.isEmpty()) {
@@ -77,6 +82,8 @@ public class AplusCopyServiceImpl implements AplusCopyService {
             }
 
             project.setAplusMarkdown(parseResult.displayMarkdown());
+            project.setProductAnalysisJson(extractPlanSection(rawCopy, "productSpec", fallbackProductAnalysis(project)));
+            project.setVisualSystemJson(extractPlanSection(rawCopy, "visualSystem", fallbackVisualSystem()));
             project.setStatus(AplusProjectStatus.COPY_DONE.name());
             projectRepository.save(project);
 
@@ -128,7 +135,8 @@ public class AplusCopyServiceImpl implements AplusCopyService {
         return "";
     }
 
-    private String buildSystemPrompt(String skillTemplate, String selectedModulesJson, boolean hasAplusReference) {
+    private String buildSystemPrompt(String skillTemplate, String selectedModulesJson,
+                                     boolean hasProductTruth, boolean hasLayoutReference) {
         Set<String> selectedCodes = readSelectedModules(selectedModulesJson);
         StringBuilder sb = new StringBuilder();
         sb.append("# Role\n");
@@ -151,18 +159,23 @@ public class AplusCopyServiceImpl implements AplusCopyService {
             sb.append("- Required user inputs: ").append(AplusModuleDefinition.EXTRA_HINTS.getOrDefault(code, "")).append("\n\n");
         }
         sb.append("# Non-Negotiable Visual Rules\n");
-        if (hasAplusReference) {
-            sb.append("- The uploaded A+ reference image is for A+ layout and visual system only: hierarchy, panel rhythm, crop style, text placement, information density, and overall presentation quality.\n");
-            sb.append("- Do not use the A+ reference image as the garment or product source of truth.\n");
-            sb.append("- Do not copy the A+ reference product, model identity, face, pose, gender, scene, accessories, colors, brand, logo, or exact photos.\n");
-            sb.append("- Garment identity must come from SPU, selling points, module-specific user text, and supplementary product images when provided.\n");
-            sb.append("- For AD-01, AD-04, and AD-05, plan realistic American model and lifestyle scenes when useful. The model must wear the garment described by the user's product information.\n");
+        if (hasProductTruth) {
+            sb.append("- Image input [0] is the immutable PRODUCT TRUTH source. Inspect it visually and preserve the garment category, silhouette, color family, print, fabric, neckline, sleeves, hem, trims, and visible construction across every module.\n");
+            sb.append("- Never let a layout reference or supplementary reference override the product truth.\n");
         } else {
-            sb.append("- No A+ reference image is provided. Build the A+ layout from SPU, selling points, module-specific user text, and supplementary images when provided.\n");
+            sb.append("- No product truth image is provided. Keep the garment conservative and do not invent unsupported construction details.\n");
+        }
+        if (hasLayoutReference) {
+            sb.append("- Image input [1] is a LAYOUT REFERENCE only: inspect it for hierarchy, panel rhythm, crop style, text-safe zones, information density, and presentation quality.\n");
+            sb.append("- Do not copy the layout reference product, model identity, face, pose, gender, scene, accessories, colors, brand, logo, or exact photos.\n");
+        } else {
+            sb.append("- No layout reference image is provided. Build the A+ layout from the product truth, selling points, and module-specific input.\n");
+        }
+        if (!hasProductTruth) {
             sb.append("- Keep the garment design conservative, commercially plausible, and aligned with the supplied product information.\n");
             sb.append("- Do not invent logos, brand labels, new prints, decorative hardware, or unsupported garment categories. If details are missing, use simple e-commerce-safe construction details.\n");
-            sb.append("- For AD-01, AD-04, and AD-05, plan realistic American model and lifestyle scenes when useful. The model must wear the garment described by the product information.\n");
         }
+        sb.append("- For AD-01, AD-04, and AD-05, plan realistic American model and lifestyle scenes when useful. The model must wear the user's product.\n");
         sb.append("- For AD-02, AD-03, AD-06, and AD-07, prefer product/detail/technical layouts unless the user provided module-specific model or scene instructions.\n");
         sb.append("- Model guidance: use Curve / Plus-Size or Commercial / Catalog American women for plus-size, flowy, V-neck, tunic, babydoll, or coverage-focused tops; age 30-42, natural skin texture, body-positive confidence.\n");
         sb.append("- Scene guidance: use authentic American lifestyle scenes such as modern apartment, suburban home, coffee shop, casual office, NYC/LA street, garden/patio, or weekend errands. Avoid Chinese architecture, Chinese furniture, influencer poses, porcelain skin, and over-retouched styling.\n");
@@ -171,8 +184,7 @@ public class AplusCopyServiceImpl implements AplusCopyService {
         sb.append("- Every generated A+ module must include short readable English text that explains the buyer benefit for that page.\n");
         sb.append("- All image-rendered text must be English only. Do not output Chinese characters, Chinese labels, bilingual captions, or untranslated Chinese user text in Copy Text.\n");
         sb.append("- AD-01 needs a headline and short subline. AD-02 needs fabric/feel labels. AD-03 needs design-detail labels. AD-04 needs scenario captions. AD-05 needs comfort/fit labels.\n");
-        sb.append("- AD-06 must include a compact size chart when size data is provided in the product information or AD-06 module instructions. Reproduce supplied size numbers exactly, usually with columns like Size, Bust, Length, and Sleeve.\n");
-        sb.append("- If AD-06 has no supplied measurements, do not invent numeric measurements; use size labels and fit guidance instead.\n");
+        sb.append("- AD-06 must reserve a clean chart panel but must not ask the image model to rasterize any numeric table. Exact supplied measurements are kept as structured canvas overlay data.\n");
         sb.append("- AD-07 must include care/quality explanation text, such as washing guidance, fabric care, and everyday value points.\n");
         sb.append("- Keep image text brief, high-contrast, and commercially useful; avoid long paragraphs.\n");
         sb.append("- Favor realistic product material, clean commercial lighting, editorial e-commerce layout, and high-end apparel detail-page composition.\n\n");
@@ -181,7 +193,7 @@ public class AplusCopyServiceImpl implements AplusCopyService {
         sb.append("# Output Contract\n");
         sb.append("Return JSON only. No markdown, no code fence, no explanation.\n");
         sb.append("Use this exact schema:\n");
-        sb.append("{\"modules\":[{\"code\":\"AD-01\",\"moduleName\":\"Brand Hero\",\"coreSellingPoint\":\"one concise English buyer benefit\",\"visualDescription\":\"detailed English image-generation direction covering layout, product placement, background, lighting, composition, source-product fidelity, and readable text placement\",\"copyText\":[\"short headline\",\"short label 1\",\"short label 2\"],\"qualityGuards\":\"one English line listing what must not change from the source garment or product information\"}]}\n");
+        sb.append("{\"productSpec\":{\"garmentType\":\"...\",\"silhouette\":\"...\",\"colorAndPrint\":\"...\",\"fabricAndTexture\":\"...\",\"constructionDetails\":[\"...\"],\"uncertainties\":[\"...\"]},\"visualSystem\":{\"palette\":[\"...\"],\"lighting\":\"...\",\"typography\":\"...\",\"spacingAndRadius\":\"...\",\"sceneFamily\":\"...\",\"modelProfile\":\"...\",\"textOverlayPolicy\":\"brief English copy, text-safe zones, rasterize no numeric tables\"},\"modules\":[{\"code\":\"AD-01\",\"moduleName\":\"Brand Hero\",\"coreSellingPoint\":\"one concise English buyer benefit\",\"visualDescription\":\"detailed English image-generation direction covering layout, product placement, background, lighting, composition, source-product fidelity, and readable text placement\",\"copyText\":[\"short headline\",\"short label 1\",\"short label 2\"],\"qualityGuards\":\"one English line listing what must not change from the source garment or product information\"}]}\n");
         sb.append("Output exactly one object for each selected module, in selected-module order.\n");
         sb.append("All string values must be English only and must not contain Chinese characters.\n");
         return sb.toString();
@@ -189,15 +201,21 @@ public class AplusCopyServiceImpl implements AplusCopyService {
 
     private String buildUserPrompt(AplusProject project) {
         StringBuilder sb = new StringBuilder();
-        boolean hasAplusReference = hasAplusReference(project);
+        boolean hasProductTruth = hasProductTruth(project);
+        boolean hasLayoutReference = hasLayoutReference(project);
         sb.append("# Product Information\n\n");
         sb.append("SPU: ").append(project.getSpu()).append("\n");
-        if (hasAplusReference) {
-            sb.append("A+ Reference Image: ").append(project.getReferenceImageUrl()).append("\n");
-            sb.append("A+ Reference Rule: Use this image only for layout, hierarchy, crop rhythm, text placement, information density, and style quality. Do not copy its product, model, brand, logo, face, exact scene, or product colors.\n\n");
+        if (hasProductTruth) {
+            sb.append("Product truth image: attached as image input [0]. Use it as the factual visual source for the garment.\n");
         } else {
-            sb.append("A+ Reference Image: Not provided.\n\n");
+            sb.append("Product truth image: not provided.\n");
         }
+        if (hasLayoutReference) {
+            sb.append("Layout reference image: attached as image input [1]. Use it only for structure and presentation language.\n");
+        } else {
+            sb.append("Layout reference image: not provided.\n");
+        }
+        sb.append("\n");
         sb.append("Raw Selling Points:\n").append(project.getSellingPoints()).append("\n\n");
 
         List<AplusImageTask> tasks = imageTaskRepository.findByProjectId(project.getId());
@@ -230,12 +248,9 @@ public class AplusCopyServiceImpl implements AplusCopyService {
             }
         }
         sb.append("# Task\n");
-        sb.append("Create the A+ module brief now. Make every module visually distinct, but keep the product and brand system consistent. ");
-        if (hasAplusReference) {
-            sb.append("The image generator may receive an A+ reference image, but it is only for layout and presentation style. Write concrete production directions that replace the reference product with the user's product information.\n");
-        } else {
-            sb.append("No A+ reference image will be passed to the image generator. Write concrete text-to-image production directions based on product information, module instructions, and any supplementary images.\n");
-        }
+        sb.append("First extract one factual productSpec and one reusable visualSystem. Then create the module briefs. ");
+        sb.append("Make every module visually distinct, but keep garment fidelity and visual-system tokens consistent. ");
+        sb.append("Use text-safe zones for buyer copy; do not put numeric size tables inside generated pixels.\n");
         return sb.toString();
     }
 
@@ -403,8 +418,68 @@ public class AplusCopyServiceImpl implements AplusCopyService {
         });
     }
 
-    private boolean hasAplusReference(AplusProject project) {
+    private boolean hasProductTruth(AplusProject project) {
         return project.getReferenceImageUrl() != null && !project.getReferenceImageUrl().isBlank();
+    }
+
+    private boolean hasLayoutReference(AplusProject project) {
+        return project.getLayoutReferenceImageUrl() != null && !project.getLayoutReferenceImageUrl().isBlank();
+    }
+
+    /** The explicit ordering is part of the model contract: product truth, then layout. */
+    private List<String> analysisImageInputs(AplusProject project) {
+        List<String> images = new ArrayList<>();
+        if (hasProductTruth(project)) {
+            images.add(project.getReferenceImageUrl().trim());
+        }
+        if (hasLayoutReference(project)) {
+            images.add(project.getLayoutReferenceImageUrl().trim());
+        }
+        return images;
+    }
+
+    private String extractPlanSection(String rawCopy, String field, String fallback) {
+        String json = extractJson(rawCopy);
+        if (json == null) {
+            return fallback;
+        }
+        try {
+            JsonNode node = objectMapper.readTree(json).path(field);
+            if (!node.isObject() && !node.isArray()) {
+                return fallback;
+            }
+            return objectMapper.writeValueAsString(node);
+        } catch (Exception e) {
+            log.warn("[A+] plan section parse failed: field={}, error={}", field, e.getMessage());
+            return fallback;
+        }
+    }
+
+    private String fallbackProductAnalysis(AplusProject project) {
+        try {
+            return objectMapper.writeValueAsString(Map.of(
+                    "source", hasProductTruth(project) ? "product_truth_image" : "user_input_only",
+                    "spu", project.getSpu(),
+                    "sellingPointSummary", safeEnglishBenefit(project.getSellingPoints()),
+                    "uncertainties", List.of("Vision analysis fallback: verify garment details before publishing.")));
+        } catch (Exception e) {
+            return "{}";
+        }
+    }
+
+    private String fallbackVisualSystem() {
+        try {
+            return objectMapper.writeValueAsString(Map.of(
+                    "palette", List.of("neutral product-led palette"),
+                    "lighting", "clean soft commercial lighting",
+                    "typography", "high-contrast editorial sans-serif",
+                    "spacingAndRadius", "consistent generous spacing with restrained rounded panels",
+                    "sceneFamily", "premium American e-commerce lifestyle",
+                    "modelProfile", "commercial American woman, natural skin, garment-led styling",
+                    "textOverlayPolicy", "short English copy in text-safe zones; numeric tables remain canvas overlays"));
+        } catch (Exception e) {
+            return "{}";
+        }
     }
 
     private String stripCjk(String text) {

@@ -35,6 +35,8 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class AplusTemplateServiceImpl implements AplusTemplateService {
 
+    private record LayoutBlueprintResult(String blueprintJson, String qualityReportJson) {}
+
     public static final String TYPE_FORM_TEMPLATE = "FORM_TEMPLATE";
     public static final String TYPE_LAYOUT_REFERENCE = "LAYOUT_REFERENCE";
     public static final String STATUS_ACTIVE = "ACTIVE";
@@ -57,6 +59,7 @@ public class AplusTemplateServiceImpl implements AplusTemplateService {
         template.setSellingPoints(request.getSellingPoints());
         template.setLayoutReferenceImageUrl(blankToNull(request.getLayoutReferenceImageUrl()));
         template.setLayoutBlueprintJson(normalizeBlueprintOrNull(request.getLayoutBlueprintJson()));
+        template.setLayoutQualityReportJson(normalizeBlueprintOrNull(request.getLayoutQualityReportJson()));
         template.setOperator(operator);
         template.setShopName(shopName);
 
@@ -81,7 +84,7 @@ public class AplusTemplateServiceImpl implements AplusTemplateService {
 
         List<String> modules = normalizeSelectedModules(request.getSelectedModules());
         String layoutReferenceImageUrl = request.getLayoutReferenceImageUrl().trim();
-        String blueprintJson = generateLayoutBlueprint(request, modules, layoutReferenceImageUrl);
+        LayoutBlueprintResult blueprint = generateLayoutBlueprint(request, modules, layoutReferenceImageUrl);
 
         AplusTemplateSaveRequest saveRequest = new AplusTemplateSaveRequest();
         saveRequest.setTemplateName(request.getTemplateName().trim());
@@ -89,8 +92,9 @@ public class AplusTemplateServiceImpl implements AplusTemplateService {
         saveRequest.setTemplateStatus(normalizeTemplateStatus(request.getTemplateStatus()));
         saveRequest.setSelectedModules(modules);
         saveRequest.setLayoutReferenceImageUrl(layoutReferenceImageUrl);
-        saveRequest.setLayoutBlueprintJson(blueprintJson);
-        saveRequest.setModuleExtras(buildLayoutModuleExtras(blueprintJson, layoutReferenceImageUrl, modules));
+        saveRequest.setLayoutBlueprintJson(blueprint.blueprintJson());
+        saveRequest.setLayoutQualityReportJson(blueprint.qualityReportJson());
+        saveRequest.setModuleExtras(buildLayoutModuleExtras(blueprint.blueprintJson(), layoutReferenceImageUrl, modules));
         return saveTemplate(saveRequest, operator, shopName);
     }
 
@@ -159,18 +163,21 @@ public class AplusTemplateServiceImpl implements AplusTemplateService {
         return request;
     }
 
-    private String generateLayoutBlueprint(AplusLayoutTemplateParseRequest request,
-                                           List<String> modules,
-                                           String layoutReferenceImageUrl) {
+    private LayoutBlueprintResult generateLayoutBlueprint(AplusLayoutTemplateParseRequest request,
+                                                          List<String> modules,
+                                                          String layoutReferenceImageUrl) {
         try {
-            String raw = textModelService.generateRawPrompt(
+            String raw = textModelService.generateRawPromptWithImages(
                     buildLayoutParseSystemPrompt(),
                     buildLayoutParseUserPrompt(request, modules, layoutReferenceImageUrl),
+                    List.of(layoutReferenceImageUrl),
                     normalizeTextModel(request.getTextModel()));
-            return normalizeBlueprintJson(raw, modules, layoutReferenceImageUrl, "MODEL_PARSED");
+            String blueprint = normalizeBlueprintJson(raw, modules, layoutReferenceImageUrl, "MODEL_PARSED");
+            return new LayoutBlueprintResult(blueprint, buildLayoutQualityReport(blueprint, modules));
         } catch (Exception e) {
             log.warn("[A+] layout template parse failed, using fallback blueprint: {}", e.getMessage());
-            return fallbackLayoutBlueprint(modules, layoutReferenceImageUrl, request.getNotes(), "FALLBACK");
+            String blueprint = fallbackLayoutBlueprint(modules, layoutReferenceImageUrl, request.getNotes(), "FALLBACK");
+            return new LayoutBlueprintResult(blueprint, buildLayoutQualityReport(blueprint, modules));
         }
     }
 
@@ -178,6 +185,7 @@ public class AplusTemplateServiceImpl implements AplusTemplateService {
         return """
                 You are an A+ Content layout architect for women's fashion e-commerce.
                 Convert an A+ layout reference into a reusable structure blueprint.
+                The attached image is the layout reference and must be visually inspected before writing the blueprint.
                 The reference is for structure only. Never preserve product identity, model gender, faces, brand logos, colors, exact scenes, or exact photos.
                 Return JSON only. No markdown, no explanation.
                 All shopper-facing text instructions must be English only.
@@ -208,6 +216,15 @@ public class AplusTemplateServiceImpl implements AplusTemplateService {
                     "spacing": "...",
                     "colorGuidance": "neutral, product-adaptive; do not copy reference product colors"
                   },
+                  "designTokens": {
+                    "gridColumns": "...",
+                    "outerMargin": "percentage or relative rule",
+                    "cardRadius": "...",
+                    "panelGap": "...",
+                    "textSafeZones": ["..."],
+                    "visualDensity": "...",
+                    "modelProfile": "..."
+                  },
                   "modules": {
                     "AD-01": {
                       "role": "hero",
@@ -220,7 +237,7 @@ public class AplusTemplateServiceImpl implements AplusTemplateService {
                   }
                 }
 
-                Create one module blueprint per requested AD code. Each module must describe one standalone 16:9 image, not one long infographic page.
+                Create one module blueprint per requested AD code. Each module must describe one standalone 21:9 web image, not one long infographic page.
                 """.formatted(
                 layoutReferenceImageUrl,
                 request.getNotes() == null ? "" : request.getNotes(),
@@ -245,7 +262,8 @@ public class AplusTemplateServiceImpl implements AplusTemplateService {
             root.put("templateType", TYPE_LAYOUT_REFERENCE);
             root.put("parseMode", parseMode);
             root.put("sourceImageUrl", layoutReferenceImageUrl);
-            root.put("usageRule", "Use this blueprint for layout structure only. If an A+ reference image is provided, use it only for layout and presentation style; garment identity comes from product information, module instructions, and supplementary product images when provided.");
+            root.put("usageRule", "Use this blueprint for layout structure only. The project product truth image is the garment source of truth and cannot be overridden by this layout reference.");
+            normalizeBlueprintShape(root, modules, layoutReferenceImageUrl);
             return objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(root);
         } catch (Exception e) {
             return fallbackLayoutBlueprint(modules, layoutReferenceImageUrl, null, "FALLBACK");
@@ -262,18 +280,28 @@ public class AplusTemplateServiceImpl implements AplusTemplateService {
             root.put("templateType", TYPE_LAYOUT_REFERENCE);
             root.put("parseMode", parseMode);
             root.put("sourceImageUrl", layoutReferenceImageUrl);
-            root.put("usageRule", "Use the reference image and this blueprint for layout structure only. If an A+ reference image is provided, use it only for layout and presentation style; garment identity comes from product information, module instructions, and supplementary product images when provided.");
+            root.put("usageRule", "Use the reference image and this blueprint for layout structure only. The project product truth image remains the garment source of truth.");
             if (notes != null && !notes.isBlank()) {
                 root.put("notes", notes.trim());
             }
 
             ObjectNode globalStyle = root.putObject("globalStyle");
-            globalStyle.put("pageRhythm", "Premium A+ page rhythm split into independent 16:9 modules.");
+            globalStyle.put("pageRhythm", "Premium A+ page rhythm split into independent 21:9 web modules.");
             globalStyle.put("panelStyle", "Clean white or soft neutral panels, rounded cards, subtle dividers, balanced spacing.");
             globalStyle.put("imageCropStyle", "Commercial product and lifestyle crops with clear hierarchy and safe margins.");
             globalStyle.put("typography", "Short readable English-only headings, labels, and captions.");
             globalStyle.put("spacing", "Dense but controlled information layout; no empty technical sections.");
             globalStyle.put("colorGuidance", "Product-adaptive neutral system; do not copy reference product colors.");
+
+            ObjectNode designTokens = root.putObject("designTokens");
+            designTokens.put("gridColumns", "Use a simple 12-column horizontal web grid.");
+            designTokens.put("outerMargin", "Keep 5-8% outer safe margins.");
+            designTokens.put("cardRadius", "Soft premium rounded cards; consistent radius.");
+            designTokens.put("panelGap", "Use compact, even panel gaps and aligned baselines.");
+            ArrayNode safeZones = designTokens.putArray("textSafeZones");
+            safeZones.add("Reserve high-contrast text-safe areas away from the product silhouette.");
+            designTokens.put("visualDensity", "Dense but breathable e-commerce information hierarchy.");
+            designTokens.put("modelProfile", "Commercial American catalog woman, natural and consistent across model modules.");
 
             ObjectNode moduleNode = root.putObject("modules");
             for (String code : modules) {
@@ -357,6 +385,66 @@ public class AplusTemplateServiceImpl implements AplusTemplateService {
         return node;
     }
 
+    private void normalizeBlueprintShape(ObjectNode root, List<String> modules, String layoutReferenceImageUrl) {
+        JsonNode fallbackNode = readJsonOrNull(fallbackLayoutBlueprint(modules, layoutReferenceImageUrl, null, "FALLBACK"));
+        ObjectNode fallback = fallbackNode instanceof ObjectNode ? (ObjectNode) fallbackNode : objectMapper.createObjectNode();
+        if (!(root.get("globalStyle") instanceof ObjectNode)) {
+            root.set("globalStyle", fallback.path("globalStyle").deepCopy());
+        }
+        if (!(root.get("designTokens") instanceof ObjectNode)) {
+            root.set("designTokens", fallback.path("designTokens").deepCopy());
+        }
+        ObjectNode moduleRoot = root.get("modules") instanceof ObjectNode item ? item : root.putObject("modules");
+        ObjectNode fallbackModules = fallback.path("modules") instanceof ObjectNode item ? item : objectMapper.createObjectNode();
+        for (String code : modules) {
+            ObjectNode module = moduleRoot.get(code) instanceof ObjectNode item ? item : moduleRoot.putObject(code);
+            ObjectNode fallbackModule = fallbackModules.get(code) instanceof ObjectNode item
+                    ? item : fallbackModuleBlueprint(code);
+            fillText(module, fallbackModule, "role");
+            fillText(module, fallbackModule, "layout");
+            fillArray(module, fallbackModule, "imageZones");
+            fillArray(module, fallbackModule, "textZones");
+            fillArray(module, fallbackModule, "textRules");
+            fillArray(module, fallbackModule, "doNotCopy");
+        }
+    }
+
+    private void fillText(ObjectNode target, ObjectNode fallback, String key) {
+        if (target.path(key).asText("").isBlank()) target.put(key, fallback.path(key).asText(""));
+    }
+
+    private void fillArray(ObjectNode target, ObjectNode fallback, String key) {
+        if (!target.path(key).isArray() || target.path(key).isEmpty()) {
+            target.set(key, fallback.path(key).deepCopy());
+        }
+    }
+
+    private String buildLayoutQualityReport(String blueprintJson, List<String> modules) {
+        ObjectNode report = objectMapper.createObjectNode();
+        ArrayNode warnings = report.putArray("warnings");
+        JsonNode root = readJsonOrNull(blueprintJson);
+        String parseMode = root == null ? "FALLBACK" : root.path("parseMode").asText("FALLBACK");
+        report.put("parseMode", parseMode);
+        report.put("referenceVisuallyInspected", "MODEL_PARSED".equals(parseMode));
+        report.put("targetAspectRatio", "21:9");
+        ArrayNode supportedModules = report.putArray("supportedModules");
+        JsonNode moduleRoot = root != null ? root.path("modules") : null;
+        for (String code : modules) {
+            if (moduleRoot != null && moduleRoot.path(code).isObject()) supportedModules.add(code);
+            else warnings.add("Missing normalized blueprint for " + code);
+        }
+        boolean hasTokens = root != null && root.path("designTokens").isObject();
+        report.put("hasDesignTokens", hasTokens);
+        if (!hasTokens) warnings.add("Design tokens were missing and fallback tokens were inserted.");
+        if (!"MODEL_PARSED".equals(parseMode)) warnings.add("The visual parser was unavailable; a safe fallback layout is in use.");
+        report.put("confidence", "MODEL_PARSED".equals(parseMode) ? 0.86 : 0.48);
+        try {
+            return objectMapper.writeValueAsString(report);
+        } catch (JsonProcessingException e) {
+            return "{\"parseMode\":\"FALLBACK\",\"confidence\":0.0}";
+        }
+    }
+
     public Map<String, AplusModuleExtra> buildLayoutModuleExtras(String blueprintJson,
                                                                   String layoutReferenceImageUrl,
                                                                   List<String> modules) {
@@ -367,9 +455,6 @@ public class AplusTemplateServiceImpl implements AplusTemplateService {
 
         for (String code : normalizeSelectedModules(modules)) {
             AplusModuleExtra extra = new AplusModuleExtra();
-            if (layoutReferenceImageUrl != null && !layoutReferenceImageUrl.isBlank()) {
-                extra.setSupplementaryImageUrls(List.of(layoutReferenceImageUrl.trim()));
-            }
             extra.setSupplementaryText(buildLayoutInstructionText(code, globalStyle, moduleRoot, layoutReferenceImageUrl));
             result.put(code, extra);
         }
@@ -386,9 +471,8 @@ public class AplusTemplateServiceImpl implements AplusTemplateService {
         return """
                 Structure template mode:
                 - Use the selected A+ layout template for layout structure only.
-                - Generate only this AD module as one standalone 16:9 image; do not generate a full long infographic page.
-                - If an A+ reference image is provided, use it only for A+ layout structure, visual hierarchy, panel rhythm, typography placement, image crop rhythm, and information density.
-                - Do not use the A+ reference image as the garment or product source of truth. Garment identity comes from product information, module-specific instructions, and supplementary product images when provided.
+                - Generate only this AD module as one standalone 21:9 web image; do not generate a full long infographic page.
+                - The product truth image is the garment source of truth and must remain unchanged in category, silhouette, color, print, fabric, neckline, sleeves, hem, trims, and visible construction.
                 - The layout reference image is only for hierarchy, panel rhythm, rounded card style, image crop rhythm, text placement, and information density.
                 - Do not copy the reference product, model gender, faces, poses, product colors, brand logo, exact scene, accessories, or exact photos.
                 - All visible text inside the final image must be English only; no Chinese characters or bilingual captions.

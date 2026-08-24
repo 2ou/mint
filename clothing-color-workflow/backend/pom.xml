@@ -16,6 +16,8 @@
         <java.version>24</java.version>
         <spring.boot.version>3.3.2</spring.boot.version>
         <maven.compiler.plugin.version>3.11.0</maven.compiler.plugin.version>
+        <!-- Default runtime profile. Maven profile selection overrides this value. -->
+        <activeProfile>dev</activeProfile>
     </properties>
 
     <dependencyManagement>
@@ -119,8 +121,57 @@
         </dependency>
     </dependencies>
 
+    <profiles>
+        <profile>
+            <id>dev</id>
+            <activation>
+                <activeByDefault>true</activeByDefault>
+            </activation>
+            <properties>
+                <activeProfile>dev</activeProfile>
+            </properties>
+        </profile>
+        <profile>
+            <id>prod</id>
+            <properties>
+                <activeProfile>prod</activeProfile>
+            </properties>
+        </profile>
+    </profiles>
+
     <build>
+        <resources>
+            <!-- Only the root configuration needs Maven filtering. -->
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>true</filtering>
+                <includes>
+                    <include>application.yml</include>
+                </includes>
+            </resource>
+            <!-- Keep profile files and static assets byte-for-byte unchanged. -->
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>false</filtering>
+                <excludes>
+                    <exclude>application.yml</exclude>
+                </excludes>
+            </resource>
+        </resources>
         <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-resources-plugin</artifactId>
+                <version>3.3.1</version>
+                <configuration>
+                    <encoding>UTF-8</encoding>
+                    <useDefaultDelimiters>false</useDefaultDelimiters>
+                    <delimiters>
+                        <delimiter>@</delimiter>
+                    </delimiters>
+                </configuration>
+            </plugin>
+
             <!-- Maven Compiler Plugin -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
