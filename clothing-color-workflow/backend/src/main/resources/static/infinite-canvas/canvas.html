@@ -32,7 +32,7 @@
     <script src="/infinite-canvas/js/theme.js?v=2026.07.15.1783117645"></script>
     <script src="/infinite-canvas/js/touch-mouse.js?v=2026.07.15.1783079819"></script>
     <script src="/infinite-canvas/js/i18n.js?v=2026.07.15.1783116068"></script>
-    <script src="/infinite-canvas/js/project-bridge.js?v=ai-project-20260722"></script>
+    <script src="/infinite-canvas/js/project-bridge.js?v=ai-project-20260824.1"></script>
     <link rel="stylesheet" href="/infinite-canvas/css/canvas.css?v=2026.07.15.1783304444">
     <link rel="stylesheet" href="/infinite-canvas/css/theme.css?v=2026.07.15.1782696682">
 </head>
@@ -71,7 +71,7 @@
                     <button id="aplusCopyOverlayBtn" class="tool-btn" type="button" title="编辑 A+ 叠加文案" aria-label="编辑 A+ 叠加文案" style="display:none"><i data-lucide="type" class="w-4 h-4"></i><span>A+ 文案</span></button>
                     <button id="workflowTransferToggle" class="tool-btn toolbar-workflow" type="button" title="导入导出工作流" aria-label="导入导出工作流"><i data-lucide="package-open" class="w-4 h-4"></i><span>工作流</span></button>
                     <button id="canvasAssetToggle" class="tool-btn toolbar-asset canvas-asset-toggle" type="button" title="资产库" aria-label="资产库"><i data-lucide="library" class="w-4 h-4"></i><span>资产库</span></button>
-                    <button id="canvasLogToggle" class="tool-btn toolbar-log" type="button" onclick="openCanvasLog(event)" title="日志" aria-label="日志" data-i18n-title="canvas.logs"><i data-lucide="list-todo" class="w-4 h-4"></i><span data-i18n="canvas.logs">日志</span></button>
+                    <button id="canvasLogToggle" class="tool-btn toolbar-log" type="button" onclick="openCanvasLog(event)" title="生成历史" aria-label="生成历史" data-i18n-title="canvas.logs"><i data-lucide="list-todo" class="w-4 h-4"></i><span data-i18n="canvas.logs">生成历史</span></button>
                 </div>
             </div>
         </div>
@@ -229,7 +229,7 @@
         <div id="logModal" class="log-modal" onclick="closeCanvasLog()">
             <div class="log-panel" onclick="event.stopPropagation()">
                 <div class="log-head">
-                    <div class="log-title" data-i18n="canvas.generationLogs">生成日志</div>
+                    <div class="log-title" data-i18n="canvas.generationLogs">生成历史</div>
                     <button class="preview-icon-btn" type="button" onclick="closeCanvasLog()" title="关闭" data-i18n-title="common.close"><i data-lucide="x" class="w-4 h-4"></i></button>
                 </div>
                 <div id="logList" class="log-list"></div>

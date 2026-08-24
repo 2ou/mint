@@ -10394,6 +10394,7 @@ async function runRhModelNode(node, opts={}){
     const prompt = media.prompt || '';
     const refs = imageRefsOnly(media.refs || []);
     if(!prompt && !refs.length){ alert(tr('canvas.needPromptOrImage')); return; }
+    if(!await confirmKieCanvasSubmission('图片生成')) return;
     const count = Math.max(1, Math.min(8, Number(node.count || 1)));
     let out = outputForNode(node, 500);
     const run = runSnapshot(node, prompt || 'Edit the reference images.', refs);
@@ -10911,6 +10912,7 @@ async function runGenerator(genId, opts={}){
     const prompt = sources.map(s => s.prompt).filter(Boolean).join('\n\n');
     const refs = imageRefsOnly(sources.flatMap(s => s.refs || []));
     if(!prompt && !refs.length){ alert(tr('canvas.needPromptOrImage')); return; }
+    if(!await confirmKieCanvasSubmission('图片生成')) return;
     const count = Math.max(1, Math.min(8, Number(gen.count || 1)));
     let out = outputForNode(gen, 460);
     const run = runSnapshot(gen, prompt || 'Edit the reference images.', refs);
@@ -11003,6 +11005,7 @@ async function runGeneratorLegacy(genId, opts={}){
     const prompt = sources.map(s => s.prompt).filter(Boolean).join('\n\n');
     const refs = imageRefsOnly(sources.flatMap(s => s.refs || []));
     if(!prompt && !refs.length){ alert(tr('canvas.needPromptOrImage')); return; }
+    if(!await confirmKieCanvasSubmission('图片生成')) return;
     const count = Math.max(1, Math.min(8, Number(gen.count || 1)));
     let out = outputForNode(gen, 460);
     const pendingIds = Array.from({length:count}, () => uid('p'));
@@ -11072,6 +11075,7 @@ async function runVideoNode(nodeId, opts={}){
         alert('MiniMax H3 多模态参考需要至少一项图片、视频或音频素材');
         return;
     }
+    if(!await confirmKieCanvasSubmission('视频生成')) return;
     let out = outputForNode(node, 460);
     const pendingId = uid('p');
     const run = runSnapshot(node, prompt, refs);
@@ -11633,6 +11637,10 @@ async function cascadeFetch(input, init={}, options={}){
         ctx.controllers.delete(controller);
     }
 }
+async function confirmKieCanvasSubmission(type){
+    if(typeof window.confirmKieSubmission !== 'function') return true;
+    return window.confirmKieSubmission({type});
+}
 function updateLTXNodeElementSize(node){
     const el = document.querySelector(`.node[data-id="${CSS.escape(node.id)}"]`);
     if(!el) return;
@@ -11999,6 +12007,7 @@ async function runLLMNode(nodeId, opts={}){
         if(opts.cascade) throw new Error('LLM 缺少提示词输入');
         alert(tr('canvas.needPromptToLLM')); return;
     }
+    if(!await confirmKieCanvasSubmission('文本处理')) return;
     if(!opts.cascade){ node.running = true; refreshNodes([node.id]); }
     try {
         node.outputText = await callCanvasLLM(node, input, [], {cascadeTargetId});
@@ -12426,6 +12435,7 @@ async function runLLMChat(nodeId){
     if(!node || node.running) return;
     const message = (node.chatInput || '').trim();
     if(!message) return;
+    if(!await confirmKieCanvasSubmission('文本处理')) return;
     node.messages = node.messages || [];
     const history = node.messages.slice();
     node.messages.push({role:'user', content:message});
@@ -13066,6 +13076,7 @@ async function retryCanvasPendingOutput(pendingId){
     const out = findOutputByPendingId(pendingId);
     const pending = pendingById(out, pendingId);
     if(!out || !pending || !pending.failed || pending.retrying) return;
+    if(!await confirmKieCanvasSubmission('任务重试')) return;
     pending.retrying = true;
     refreshNodes([out.id]);
     try {

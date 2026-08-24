@@ -40,7 +40,9 @@ public class WebMvcConfig implements WebMvcConfigurer {
         }
         registry.addResourceHandler("/ai-result/**")
                 .addResourceLocations("file:" + root + "/")
-                .setCachePeriod(3600);
+                // Generated file names are immutable, so repeat LAN previews
+                // can stay in the browser cache without hitting the app.
+                .setCachePeriod(7 * 24 * 60 * 60);
     }
 
     // 🔴 终极跨域解决方案：使用 CorsFilter 替代原本的 addCorsMappings

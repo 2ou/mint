@@ -2202,18 +2202,23 @@ public class InfiniteCanvasController {
         body.put("id", taskId);
         body.put("task_id", taskId);
         body.put("media_type", mediaType);
+        String servingUrl = canvasTaskService.resultServingUrl(result);
+        boolean persistedResultReady = servingUrl != null && !servingUrl.isBlank();
+        boolean waitingForLocalCache = "succeeded".equals(status)
+                && result.getResultUrl() != null
+                && !result.getResultUrl().isBlank()
+                && !persistedResultReady;
+        // Never expose KIE's temporary result URL. Dev serves /ai-result;
+        // prod serves the permanent OSS URL after promotion succeeds.
+        if (waitingForLocalCache) status = "running";
         body.put("status", status);
         body.put("cost", result.getCost());
-        body.put("completion_mode", useCallbackTaskCompletion() ? "callback" : "polling");
-        body.put("error", firstNonBlank(result.getErrorMessage(), ""));
+        body.put("completion_mode", waitingForLocalCache ? canvasTaskService.resultStorageMode() : (useCallbackTaskCompletion() ? "callback" : "polling"));
+        body.put("result_storage_pending", waitingForLocalCache);
+        body.put("error", waitingForLocalCache ? "正在保存生成结果..." : firstNonBlank(result.getErrorMessage(), ""));
         if ("succeeded".equals(status) && result.getResultUrl() != null && !result.getResultUrl().isBlank()) {
-            String url = result.getResultUrl();
             // 优先使用本地落盘结果（仅本地，不上 OSS），避免 KIE 远程链接过期导致裂图
-            String localUrl = localServingUrl(result.getLocalPath());
-            if (localUrl != null && result.getLocalPath() != null && new File(result.getLocalPath()).exists()) {
-                url = localUrl;
-            }
-            body.put("result", Map.of(mediaType.equals("video") ? "videos" : "images", List.of(url), "url", url));
+            body.put("result", Map.of(mediaType.equals("video") ? "videos" : "images", List.of(servingUrl), "url", servingUrl));
         } else {
             body.put("result", Map.of(mediaType.equals("video") ? "videos" : "images", List.of()));
         }
@@ -2225,29 +2230,20 @@ public class InfiniteCanvasController {
      * 路径不在 localSaveRoot 之下时返回 null，调用方应回退到 KIE 远程链接。
      */
     private String localServingUrl(String absolutePath) {
-        if (absolutePath == null || absolutePath.isBlank()) return null;
-        String root = appProperties.getLocalSaveRoot();
-        if (root == null) {
-            String os = System.getProperty("os.name").toLowerCase();
-            root = os.contains("win") ? "D:/AiResult" : "/tmp/ai-result";
-        }
-        String normAbs = absolutePath.replace('\\', '/');
-        String normRoot = root.replace('\\', '/');
-        if (normAbs.startsWith(normRoot)) {
-            String rel = normAbs.substring(normRoot.length()).replaceAll("^/+", "");
-            return "/ai-result/" + rel;
-        }
-        return null;
+        return ossService.localServingUrl(absolutePath);
     }
 
     private KieTaskResult readTaskResult(String taskId) {
         Optional<KieTaskResult> stored = canvasTaskService.findResult(taskId);
-        if (stored.isPresent() && (stored.get().isFinished() || useCallbackTaskCompletion())) {
+        if (stored.isPresent() && stored.get().isFinished()) {
+            return canvasTaskService.ensureResultPersisted(taskId).orElse(stored.get());
+        }
+        if (stored.isPresent() && useCallbackTaskCompletion()) {
             return stored.get();
         }
         KieTaskResult result = kieClientService.getFullResult(taskId);
         canvasTaskService.recordPolledResult(result);
-        return result;
+        return canvasTaskService.findResult(taskId).orElse(result);
     }
 
     private boolean useCallbackTaskCompletion() {

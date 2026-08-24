@@ -708,6 +708,10 @@ function normalizeSmartVideoModeSettings(target, preferMultimodal=false){
 function isApiLikeEngine(engine){
     return String(engine || '').toLowerCase() === 'api';
 }
+async function confirmKieSmartSubmission(type){
+    if(typeof window.confirmKieSubmission !== 'function') return true;
+    return window.confirmKieSubmission({type});
+}
 function forceKieSmartSettings(target){
     if(!target || typeof target !== 'object') return target;
     target.engine = 'api';
@@ -15260,6 +15264,12 @@ async function runGeneration(){
         toast(tr('smart.toastNeedPrompt'));
         return;
     }
+    const needsKieConfirmation = isApiLikeEngine(settings.engine)
+        || (settings.engine === 'runninghub' && Boolean(runningHubSelectedModel(settings)));
+    if(needsKieConfirmation && !await confirmKieSmartSubmission(settings.apiKind === 'video' ? '视频生成' : '图片生成')){
+        settings = previousSettings;
+        return;
+    }
     const outpaintSize = node?.outpaintSize && Number(node.outpaintSize.width) > 0 && Number(node.outpaintSize.height) > 0
         ? {width:Math.round(Number(node.outpaintSize.width)), height:Math.round(Number(node.outpaintSize.height))}
         : null;
@@ -15451,6 +15461,7 @@ async function runPromptLLMNode(nodeId){
     if(!node || node.type !== 'smart-prompt') return;
     const message = promptNodeLLMInputText(node).trim();
     if(!message){ toast(tr('smart.promptLlmNeedText')); return; }
+    if(!await confirmKieSmartSubmission('文本处理')) return;
     const systemPrompt = (node.llmSystemPrompt || '').trim();
     node.llmEnabled = true;
     node.running = true;
@@ -16083,6 +16094,7 @@ async function retrySmartPendingTask(nodeId, localTaskId){
     const node = nodes.find(n => n.id === nodeId);
     const task = smartPendingTasks(node).find(item => item.taskId === localTaskId) || smartRecoverableImageTask(node);
     if(!node || !task || !task.failed || task.retrying) return;
+    if(!await confirmKieSmartSubmission('任务重试')) return;
     if(task.taskId){
         task.retrying = true;
         render();

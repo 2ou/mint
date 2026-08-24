@@ -11,6 +11,9 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import java.io.File;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.Profiles;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,6 +37,7 @@ public class CanvasTaskService {
     private final ObjectMapper objectMapper;
     private final OssService ossService;
     private final AppProperties appProperties;
+    private final Environment environment;
 
     @Transactional
     public void recordCreated(String taskId, String mediaType, String operator, String shopName) {
@@ -94,6 +98,36 @@ public class CanvasTaskService {
         return canvasTaskRepository.findByTaskId(taskId).map(this::toResult);
     }
 
+    /**
+     * Dev serves a local LAN copy; prod serves only a result that has been
+     * promoted from KIE's temporary URL to the permanent OSS bucket.
+     */
+    @Transactional
+    public Optional<KieTaskResult> ensureResultPersisted(String taskId) {
+        if (taskId == null || taskId.isBlank()) return Optional.empty();
+        return canvasTaskRepository.findByTaskId(taskId).map(task -> {
+            if (isSuccessfulResult(task) && !hasPersistedResult(task)) {
+                persistResult(task);
+                canvasTaskRepository.save(task);
+            }
+            return toResult(task);
+        });
+    }
+
+    /**
+     * Retry the profile's selected storage target even after the browser closes.
+     */
+    @Scheduled(fixedDelayString = "${app.canvas.local-cache-retry-ms:60000}")
+    @Transactional
+    public void retryPendingLocalResultCache() {
+        for (CanvasTask task : canvasTaskRepository.findTop20ByStatusIgnoreCaseOrderByUpdatedAtAsc("SUCCESS")) {
+            if (!hasPersistedResult(task)) {
+                persistResult(task);
+                canvasTaskRepository.save(task);
+            }
+        }
+    }
+
     @Transactional(readOnly = true)
     public Map<String, Integer> taskCapacity(String operator, String shopName) {
         int active = Math.toIntExact(canvasTaskRepository.countByShopNameAndOperatorAndStatusIgnoreCase(shopName, operator, "PROCESSING"));
@@ -129,11 +163,7 @@ public class CanvasTaskService {
             item.put("task_id", task.getTaskId());
             item.put("status", status.toLowerCase());
             item.put("media_type", task.getMediaType());
-            String resultUrl = task.getResultUrl() == null ? "" : task.getResultUrl();
-            String localUrl = localServingUrl(task.getLocalPath());
-            if (localUrl != null && task.getLocalPath() != null && new File(task.getLocalPath()).exists()) {
-                resultUrl = localUrl;
-            }
+            String resultUrl = resultServingUrl(task);
             item.put("result_url", resultUrl);
             item.put("error", task.getErrorMessage() == null ? "" : task.getErrorMessage());
             item.put("terminal", isTerminalStatus(status));
@@ -201,18 +231,114 @@ public class CanvasTaskService {
         if (callbackPayloadJson != null) {
             task.setCallbackPayloadJson(callbackPayloadJson);
         }
-        // 🔴 AI 画布结果本地落盘（仅本地，不上 OSS）：成功后把 KIE 远程图下载到 D:/AiResult
-        if (task.getLocalPath() == null
-                && ("SUCCESS".equalsIgnoreCase(result.getStatus()) || result.isSuccess())
-                && result.getResultUrl() != null && !result.getResultUrl().isBlank()) {
-            try {
-                String localPath = ossService.downloadResultToLocal(task.getTaskId(), result.getResultUrl());
-                if (localPath != null) task.setLocalPath(localPath);
-            } catch (Exception dlEx) {
-                log.warn("[AI Canvas] 结果本地落盘失败，继续保留 KIE 远程链接: taskId={}, error={}", task.getTaskId(), dlEx.getMessage());
-            }
+        // Persist each completed KIE result according to the active profile.
+        if (isSuccessfulResult(task)) {
+            persistResult(task);
         }
         canvasTaskRepository.save(task);
+    }
+
+    private boolean isSuccessfulResult(CanvasTask task) {
+        return task != null
+                && "SUCCESS".equalsIgnoreCase(task.getStatus())
+                && task.getResultUrl() != null
+                && !task.getResultUrl().isBlank();
+    }
+
+    private boolean hasUsableLocalResult(CanvasTask task) {
+        if (task == null || task.getLocalPath() == null || task.getLocalPath().isBlank()) return false;
+        File localFile = new File(task.getLocalPath());
+        return localFile.isFile() && localFile.length() > 0 && localServingUrl(task.getLocalPath()) != null;
+    }
+
+    public String resultServingUrl(KieTaskResult result) {
+        if (result == null) return null;
+        if (usesPermanentOssStorage()) {
+            return isPermanentOssUrl(result.getResultUrl()) ? result.getResultUrl() : null;
+        }
+        if (result.getLocalPath() == null || result.getLocalPath().isBlank()) return null;
+        File localFile = new File(result.getLocalPath());
+        return localFile.isFile() && localFile.length() > 0 ? localServingUrl(result.getLocalPath()) : null;
+    }
+
+    public String resultStorageMode() {
+        return usesPermanentOssStorage() ? "permanent-oss" : "local-cache";
+    }
+
+    private String resultServingUrl(CanvasTask task) {
+        if (task == null) return "";
+        if (usesPermanentOssStorage()) {
+            return isPermanentOssUrl(task.getResultUrl()) ? task.getResultUrl() : "";
+        }
+        return hasUsableLocalResult(task) ? localServingUrl(task.getLocalPath()) : "";
+    }
+
+    private boolean hasPersistedResult(CanvasTask task) {
+        return usesPermanentOssStorage()
+                ? isPermanentOssUrl(task == null ? null : task.getResultUrl())
+                : hasUsableLocalResult(task);
+    }
+
+    private boolean usesPermanentOssStorage() {
+        return environment.acceptsProfiles(Profiles.of("prod"));
+    }
+
+    private boolean isPermanentOssUrl(String value) {
+        if (value == null || value.isBlank() || appProperties.getOss() == null) return false;
+        String host = appProperties.getOss().getResultPublicHost();
+        if (host == null || host.isBlank()) return false;
+        String prefix = host.endsWith("/") ? host : host + "/";
+        return value.startsWith(prefix);
+    }
+
+    private void persistResult(CanvasTask task) {
+        if (usesPermanentOssStorage()) {
+            cacheResultPermanently(task);
+        } else {
+            cacheResultLocally(task);
+        }
+    }
+
+    private void cacheResultPermanently(CanvasTask task) {
+        if (!isSuccessfulResult(task) || isPermanentOssUrl(task.getResultUrl())) return;
+        try {
+            String transferResult = ossService.uploadResultToOss("canvas", task.getResultUrl(), task.getId(), true);
+            String permanentUrl = extractOssUrl(transferResult);
+            if (isPermanentOssUrl(permanentUrl)) {
+                task.setResultUrl(permanentUrl);
+                task.setLocalPath(null);
+                log.info("[AI Canvas] result promoted to permanent OSS: taskId={}", task.getTaskId());
+            } else {
+                log.warn("[AI Canvas] permanent OSS result is pending retry: taskId={}", task.getTaskId());
+            }
+        } catch (Exception storageEx) {
+            log.warn("[AI Canvas] permanent OSS storage failed; it will retry before serving: taskId={}, error={}", task.getTaskId(), storageEx.getMessage());
+        }
+    }
+
+    private String extractOssUrl(String transferResult) {
+        if (transferResult == null || transferResult.isBlank()) return "";
+        int separator = transferResult.indexOf('|');
+        return (separator >= 0 ? transferResult.substring(0, separator) : transferResult).trim();
+    }
+
+    private void cacheResultLocally(CanvasTask task) {
+        if (!isSuccessfulResult(task) || hasUsableLocalResult(task)) return;
+        if (task.getLocalPath() != null && !task.getLocalPath().isBlank()) {
+            log.warn("[AI Canvas] local result is missing; downloading again: taskId={}, path={}", task.getTaskId(), task.getLocalPath());
+            task.setLocalPath(null);
+        }
+        try {
+            String localPath = ossService.downloadResultToLocal(task.getTaskId(), task.getResultUrl());
+            if (localPath != null && !localPath.isBlank()) {
+                task.setLocalPath(localPath);
+                log.info("[AI Canvas] result cached for LAN access: taskId={}, path={}", task.getTaskId(), localPath);
+            } else {
+                log.warn("[AI Canvas] local result download is pending retry: taskId={}", task.getTaskId());
+            }
+        } catch (Exception dlEx) {
+            log.warn("[AI Canvas] local result download failed; it will retry before serving: taskId={}, error={}", task.getTaskId(), dlEx.getMessage());
+        }
     }
 
     private KieTaskResult toResult(CanvasTask task) {

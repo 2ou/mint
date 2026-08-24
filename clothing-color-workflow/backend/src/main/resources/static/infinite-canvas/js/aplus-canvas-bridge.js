@@ -24,6 +24,11 @@
         });
     }
 
+    async function confirmKieAplusSubmission(type) {
+        if (typeof window.confirmKieSubmission !== 'function') return true;
+        return window.confirmKieSubmission({type: type});
+    }
+
     function imageUrl(task) {
         return text(task && (task.resultOssUrl || task.resultTempUrl)).trim();
     }
@@ -298,6 +303,7 @@
     async function convertSelected(instruction, resolution) {
         const sources = selectedImageNodes();
         if (!sources.length) throw new Error('请先选中至少一张图片');
+        if (!await confirmKieAplusSubmission('图片生成')) return;
         const created = sources.map((source, index) => {
             const node = mobileNode(source, index, mobilePrompt(source, instruction, resolution), resolution);
             nodes.push(node);
@@ -320,6 +326,7 @@
     async function retry(nodeId) {
         const node = nodes.find(item => item.id === nodeId);
         if (!node || !node.aplus) return;
+        if (!await confirmKieAplusSubmission('任务重试')) return;
         try {
             if (node.aplus.source === 'aplus') {
                 const moduleCode = text(node.aplus.moduleCode).trim();

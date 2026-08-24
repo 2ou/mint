@@ -11,5 +11,7 @@ public interface CanvasTaskRepository extends JpaRepository<CanvasTask, Long> {
 
     List<CanvasTask> findTop100ByShopNameAndOperatorOrderByUpdatedAtDesc(String shopName, String operator);
 
+    List<CanvasTask> findTop20ByStatusIgnoreCaseOrderByUpdatedAtAsc(String status);
+
     long countByShopNameAndOperatorAndStatusIgnoreCase(String shopName, String operator, String status);
 }

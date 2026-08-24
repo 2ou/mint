@@ -61,6 +61,185 @@
         window.fetch = patched;
     }
 
+    var KIE_SUBMISSION_PATHS = [
+        '/api/canvas/kie/v1/chat/completions',
+        '/api/canvas/kie/v1/images/generations',
+        '/api/canvas/kie/v1/videos/generations',
+        '/api/canvas-image-tasks',
+        '/api/online-image',
+        '/api/canvas-video',
+        '/api/canvas-video-tasks',
+        '/api/canvas-llm'
+    ];
+    var kieActionSequence = 0;
+    var activeKieActionId = 0;
+    var kieActionConfirmations = {};
+
+    function isKieConfirmationElement(target) {
+        return !!(target && target.closest && target.closest('#ai-project-kie-confirmation'));
+    }
+
+    function startKieUserAction(event) {
+        if (event && event.isTrusted === false) return;
+        if (isKieConfirmationElement(event && event.target)) return;
+        activeKieActionId = ++kieActionSequence;
+        Object.keys(kieActionConfirmations).forEach(function (key) {
+            if (Number(key.replace('action-', '')) < activeKieActionId - 8) {
+                delete kieActionConfirmations[key];
+            }
+        });
+    }
+
+    document.addEventListener('pointerdown', startKieUserAction, true);
+    document.addEventListener('keydown', function (event) {
+        if (event.key === 'Enter' || event.key === ' ') startKieUserAction(event);
+    }, true);
+
+    function kieActionKey() {
+        if (!activeKieActionId) activeKieActionId = ++kieActionSequence;
+        return 'action-' + activeKieActionId;
+    }
+
+    function isKieSubmissionRequest(input, init) {
+        var method = String((init && init.method) || (input && input.method) || 'GET').toUpperCase();
+        if (method !== 'POST') return false;
+
+        var url = typeof input === 'string' ? input : (input && input.url) || '';
+        try {
+            var pathname = new URL(url, window.location.origin).pathname;
+            if (/^\/api\/canvas-tasks\/[^/]+\/retry$/.test(pathname)) return true;
+            return KIE_SUBMISSION_PATHS.indexOf(pathname) !== -1;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function kieSubmissionType(input) {
+        var url = typeof input === 'string' ? input : (input && input.url) || '';
+        var path = '';
+        try {
+            path = new URL(url, window.location.origin).pathname;
+        } catch (error) {
+            path = url;
+        }
+        if (path.indexOf('video') !== -1) return '视频生成';
+        if (path.indexOf('chat') !== -1 || path.indexOf('llm') !== -1) return '文本处理';
+        if (path.indexOf('/retry') !== -1) return '任务重试';
+        return '图片生成';
+    }
+
+    function ensureKieConfirmationStyles() {
+        if (document.getElementById('aiProjectKieConfirmationStyles')) return;
+        var style = document.createElement('style');
+        style.id = 'aiProjectKieConfirmationStyles';
+        style.textContent = '' +
+            '#ai-project-kie-confirmation{position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(15,23,42,.58);}' +
+            '.ai-project-kie-confirm-panel{width:min(440px,100%);box-sizing:border-box;border:1px solid #d8e0ea;border-radius:16px;background:#fff;color:#172033;box-shadow:0 24px 80px rgba(15,23,42,.3);padding:24px;}' +
+            '.ai-project-kie-confirm-kicker{margin:0 0 8px;color:#b45309;font-size:12px;font-weight:800;letter-spacing:.04em;}' +
+            '.ai-project-kie-confirm-title{margin:0;color:#172033;font-size:20px;line-height:1.35;}' +
+            '.ai-project-kie-confirm-copy{margin:12px 0 0;color:#475569;font-size:14px;line-height:1.65;}' +
+            '.ai-project-kie-confirm-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:22px;}' +
+            '.ai-project-kie-confirm-actions button{min-height:40px;border-radius:9px;padding:0 15px;font:inherit;font-size:14px;font-weight:700;cursor:pointer;transition:background-color .16s ease,border-color .16s ease,box-shadow .16s ease;}' +
+            '.ai-project-kie-confirm-cancel{border:1px solid #cbd5e1;background:#fff;color:#334155;}' +
+            '.ai-project-kie-confirm-cancel:hover{background:#f8fafc;}' +
+            '.ai-project-kie-confirm-submit{border:1px solid #b45309;background:#b45309;color:#fff;}' +
+            '.ai-project-kie-confirm-submit:hover{background:#92400e;border-color:#92400e;}' +
+            '.ai-project-kie-confirm-actions button:focus-visible{outline:3px solid rgba(37,99,235,.42);outline-offset:2px;}' +
+            'html.studio-theme-dark #ai-project-kie-confirmation,html.theme-dark #ai-project-kie-confirmation{background:rgba(2,6,23,.72);}' +
+            'html.studio-theme-dark .ai-project-kie-confirm-panel,html.theme-dark .ai-project-kie-confirm-panel{border-color:#334155;background:#182235;color:#f8fafc;}' +
+            'html.studio-theme-dark .ai-project-kie-confirm-title,html.theme-dark .ai-project-kie-confirm-title{color:#f8fafc;}' +
+            'html.studio-theme-dark .ai-project-kie-confirm-copy,html.theme-dark .ai-project-kie-confirm-copy{color:#cbd5e1;}' +
+            'html.studio-theme-dark .ai-project-kie-confirm-cancel,html.theme-dark .ai-project-kie-confirm-cancel{border-color:#475569;background:#243044;color:#e2e8f0;}' +
+            'html.studio-theme-dark .ai-project-kie-confirm-cancel:hover,html.theme-dark .ai-project-kie-confirm-cancel:hover{background:#334155;}' +
+            '@media(max-width:480px){#ai-project-kie-confirmation{padding:16px}.ai-project-kie-confirm-panel{padding:20px}.ai-project-kie-confirm-actions{flex-direction:column-reverse}.ai-project-kie-confirm-actions button{width:100%;}}';
+        (document.head || document.documentElement).appendChild(style);
+    }
+
+    function showKieSubmissionConfirmation(type) {
+        return new Promise(function (resolve) {
+            ensureKieConfirmationStyles();
+            var previousFocus = document.activeElement;
+            var overlay = document.createElement('div');
+            overlay.id = 'ai-project-kie-confirmation';
+            overlay.innerHTML = '<div class="ai-project-kie-confirm-panel" role="dialog" aria-modal="true" aria-labelledby="ai-project-kie-confirm-title" aria-describedby="ai-project-kie-confirm-copy">' +
+                '<p class="ai-project-kie-confirm-kicker">KIE 额度操作</p>' +
+                '<h2 id="ai-project-kie-confirm-title" class="ai-project-kie-confirm-title">确认提交到 Kie？</h2>' +
+                '<p id="ai-project-kie-confirm-copy" class="ai-project-kie-confirm-copy">本次将提交' + type + '请求，可能消耗 Kie 额度。确认后任务会立即创建，已提交的任务无法撤回。</p>' +
+                '<div class="ai-project-kie-confirm-actions"><button class="ai-project-kie-confirm-cancel" type="button">取消</button><button class="ai-project-kie-confirm-submit" type="button">确认提交</button></div>' +
+                '</div>';
+            document.body.appendChild(overlay);
+
+            var cancelButton = overlay.querySelector('.ai-project-kie-confirm-cancel');
+            var submitButton = overlay.querySelector('.ai-project-kie-confirm-submit');
+            var closed = false;
+
+            function close(approved) {
+                if (closed) return;
+                closed = true;
+                document.removeEventListener('keydown', onKeydown, true);
+                overlay.remove();
+                if (previousFocus && previousFocus.isConnected && previousFocus.focus) previousFocus.focus();
+                resolve(approved);
+            }
+
+            function onKeydown(event) {
+                if (event.key === 'Escape') {
+                    event.preventDefault();
+                    close(false);
+                    return;
+                }
+                if (event.key !== 'Tab') return;
+                event.preventDefault();
+                if (event.shiftKey) cancelButton.focus();
+                else submitButton.focus();
+            }
+
+            cancelButton.addEventListener('click', function () { close(false); });
+            submitButton.addEventListener('click', function () { close(true); });
+            overlay.addEventListener('click', function (event) {
+                if (event.target === overlay) close(false);
+            });
+            document.addEventListener('keydown', onKeydown, true);
+            window.setTimeout(function () { submitButton.focus(); }, 0);
+        });
+    }
+
+    function confirmKieSubmission(details) {
+        var key = kieActionKey();
+        var current = kieActionConfirmations[key];
+        if (current) {
+            return current.state === 'pending' ? current.promise : Promise.resolve(current.state === 'approved');
+        }
+
+        current = {state: 'pending', promise: null};
+        kieActionConfirmations[key] = current;
+        current.promise = showKieSubmissionConfirmation((details && details.type) || 'AI').then(function (approved) {
+            current.state = approved ? 'approved' : 'rejected';
+            return approved;
+        });
+        return current.promise;
+    }
+
+    function patchKieSubmissionConfirmation() {
+        var rawFetch = window.fetch ? window.fetch.bind(window) : null;
+        if (!rawFetch || rawFetch.__aiProjectKieConfirmationPatched) return;
+
+        var patched = function (input, init) {
+            if (!isKieSubmissionRequest(input, init)) return rawFetch(input, init);
+            return confirmKieSubmission({type: kieSubmissionType(input)}).then(function (approved) {
+                if (approved) return rawFetch(input, init);
+                var error = new Error('已取消 Kie 提交');
+                error.name = 'KieSubmissionCancelledError';
+                error.kieSubmissionCancelled = true;
+                throw error;
+            });
+        };
+        patched.__aiProjectKieConfirmationPatched = true;
+        window.fetch = patched;
+    }
+
+    window.confirmKieSubmission = confirmKieSubmission;
+
     function writeJson(key, value) {
         try {
             localStorage.setItem(key, JSON.stringify(value));
@@ -215,6 +394,7 @@
 
     ensureLogin();
     patchFetchAuth();
+    patchKieSubmissionConfirmation();
     bootstrapModels();
 
     document.addEventListener('DOMContentLoaded', function () {
