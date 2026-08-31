@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>系统管理 - 模型价格</title>
+    <link rel="stylesheet" href="css/variables.css">
+    <link rel="stylesheet" href="css/shared.css">
+    <link rel="stylesheet" href="/infinite-canvas/css/price-catalog.css?v=2026.08.28.3">
+    <script src="auth.js"></script>
+    <script>
+        if (window.AppAuth && !window.AppAuth.isAdmin()) window.location.replace('list.html');
+    </script>
+    <script src="js/sidebar.js"></script>
+    <script src="/infinite-canvas/vendor/js/lucide.js?v=2026.07.15.1782696749"></script>
+    <script src="/infinite-canvas/js/project-bridge.js?v=ai-project-20260828.1"></script>
+    <style>
+        .price-management-page { position: relative; }
+        .price-management-hero { max-width: 920px; margin: 10vh auto 0; padding: 38px; }
+        .price-management-eyebrow { margin: 0 0 8px; color: var(--app-brand-primary); font-size: 12px; font-weight: 800; letter-spacing: .08em; }
+        .price-management-hero h1 { margin: 0; color: var(--app-text-primary); font-size: 26px; line-height: 1.3; }
+        .price-management-hero p { max-width: 680px; margin: 12px 0 24px; color: var(--app-text-secondary); font-size: 14px; line-height: 1.75; }
+        .price-management-open { display: inline-flex; align-items: center; gap: 8px; min-height: 42px; padding: 0 16px; border: 0; border-radius: 9px; background: var(--app-brand-primary); color: #fff; font: inherit; font-weight: 700; cursor: pointer; box-shadow: 0 8px 18px rgba(37, 99, 235, .2); }
+        .price-management-open:hover { filter: brightness(1.04); }
+    </style>
+</head>
+<body>
+    <div class="app-layout">
+        <main class="app-main price-management-page">
+            <section class="app-card price-management-hero">
+                <p class="price-management-eyebrow">系统管理</p>
+                <h1>模型价格</h1>
+                <p>统一维护图片、视频等模型的计费规则。发布新版本只影响后续提交的任务，已有任务仍使用提交时保存的价格快照。</p>
+                <button class="price-management-open" type="button" onclick="openPriceCatalog({readOnly: false})">
+                    <i data-lucide="wallet-cards" class="w-4 h-4"></i>
+                    打开模型价格目录
+                </button>
+            </section>
+        </main>
+    </div>
+    <script src="/infinite-canvas/js/price-catalog.js?v=2026.08.28.3"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            if (window.lucide && typeof window.lucide.createIcons === 'function') window.lucide.createIcons();
+            window.openPriceCatalog({readOnly: false});
+        });
+    </script>
+</body>
+</html>

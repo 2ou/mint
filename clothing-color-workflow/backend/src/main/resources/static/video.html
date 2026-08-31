@@ -725,7 +725,36 @@
                 reference: 'minimax-h3/reference-to-video'
             }[form.h3Mode]));
             const seedanceMaxDuration = computed(() => form.model === 'bytedance/seedance-2-5' ? 30 : 15);
-            const KIE_CREDIT_CNY = 0.036;
+            const KIE_CREDIT_CNY = 0.032;
+            const serverQuotedCost = ref(null);
+            const videoQuotePayload = () => {
+                const model = isMiniMaxH3.value ? h3TargetModel.value : form.model;
+                if (form.model === 'kling-3.0/motion-control') {
+                    return {model, payload:{duration: form.motionVidDuration || 5, resolution: form.motionMode, video_urls: filesToUpload.motionVid ? ['pending'] : []}};
+                }
+                if (form.model === 'kling-3.0/video') {
+                    return {model, payload:{duration: form.klingShotMode === 'single' ? form.klingDuration : totalMultiShotDuration.value, mode: form.klingMode, generate_audio: form.klingAudio}};
+                }
+                if (form.model === 'kling/v3-turbo-image-to-video') {
+                    return {model, payload:{duration: form.klingTurboDuration, resolution: form.klingTurboRes, image_urls: filesToUpload.klingTurboImg ? ['pending'] : []}};
+                }
+                if (isMiniMaxH3.value) {
+                    return {model, payload:{duration: form.h3Duration, reference_video_urls: filesToUpload.h3ReferenceVideo ? ['pending'] : [], reference_image_urls: filesToUpload.h3ReferenceImages.length ? ['pending'] : []}};
+                }
+                if (form.model === 'bytedance/seedance-2-mini') {
+                    return {model, payload:{duration: form.miniDuration, resolution: form.miniRes, generate_audio: form.miniAudio, reference_video_urls: filesToUpload.miniVid ? ['pending'] : []}};
+                }
+                return {model, payload:{duration: form.seeDuration, resolution: form.seeRes, generate_audio: form.seeAudio, reference_video_urls: filesToUpload.seeVid ? ['pending'] : []}};
+            };
+            const refreshServerQuotedCost = async () => {
+                try {
+                    const quote = videoQuotePayload();
+                    const response = await axios.post('/api/tasks/model-pricing/quote', {media_type:'video', payload:{...quote.payload, model:quote.model}, quantity:1});
+                    serverQuotedCost.value = response.data?.available ? Number(response.data.amount_cny) : null;
+                } catch (error) {
+                    serverQuotedCost.value = null;
+                }
+            };
             const h3ImageInputCount = computed(() => {
                 if (!isMiniMaxH3.value) return 0;
                 if (form.h3Mode === 'image') return Number(Boolean(filesToUpload.h3FirstFrame)) + Number(Boolean(filesToUpload.h3LastFrame));
@@ -768,6 +797,7 @@
             });
 
             const estimatedCost = computed(() => {
+                if (serverQuotedCost.value !== null) return serverQuotedCost.value;
                 let pricePerSec = 0;
                 let duration = 0;
 
@@ -811,6 +841,7 @@
                 return Number((pricePerSec * duration).toFixed(2));
             });
             const estimatedCostLabel = computed(() => {
+                if (serverQuotedCost.value !== null) return `￥${serverQuotedCost.value.toFixed(2)}`;
                 const h3 = h3Quote.value;
                 if (h3?.pendingVideoDuration) return '正在读取参考视频时长';
                 if (h3) return `${h3.credits} 积分（约￥${h3.costCny.toFixed(2)}）`;
@@ -828,6 +859,7 @@
                     form.h3AspectRatio = '16:9';
                 }
             });
+            watch(() => [form.model, form.motionMode, form.motionVidDuration, form.klingShotMode, form.klingDuration, form.klingMode, form.klingAudio, form.klingTurboRes, form.klingTurboDuration, form.h3Mode, form.h3Duration, form.seeRes, form.seeDuration, form.seeAudio, form.miniRes, form.miniDuration, form.miniAudio, Boolean(filesToUpload.motionVid), Boolean(filesToUpload.seeVid), Boolean(filesToUpload.miniVid), Boolean(filesToUpload.h3ReferenceVideo)], refreshServerQuotedCost, {immediate:true});
             watch(() => form.h3Mode, () => {
                 if (form.h3Mode !== 'reference' && form.h3AspectRatio === 'adaptive') form.h3AspectRatio = '16:9';
             });
@@ -991,6 +1023,8 @@
                     && !filesToUpload.h3ReferenceAudio) {
                     return ElementPlus.ElMessage.warning('MiniMax H3 多模态参考至少需要上传一项图片、视频或音频素材');
                 }
+
+                await refreshServerQuotedCost();
 
                 try {
                     await ElementPlus.ElMessageBox.confirm(

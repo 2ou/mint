@@ -4,8 +4,10 @@ import com.ai.config.AppProperties;
 import com.ai.dto.KieTaskResult;
 import com.ai.entity.CanvasProject;
 import com.ai.repository.CanvasProjectRepository;
+import com.ai.service.CanvasMediaCleanupService;
 import com.ai.service.CanvasTaskService;
 import com.ai.service.KieClientService;
+import com.ai.service.ModelPricingService;
 import com.ai.service.OssService;
 import com.ai.service.TextModelService;
 import com.ai.service.impl.KieGptModels;
@@ -41,6 +43,17 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
+import java.awt.image.BufferedImage;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import javax.imageio.IIOImage;
+import javax.imageio.ImageIO;
+import javax.imageio.ImageWriteParam;
+import javax.imageio.ImageWriter;
+import javax.imageio.stream.ImageOutputStream;
 import java.net.URI;
 import java.net.URLDecoder;
 import java.net.URLEncoder;
@@ -95,19 +108,26 @@ public class InfiniteCanvasController {
     private static final String PROJECT_VIDEO_MODEL = SEEDANCE_2_5_MODEL;
     private static final long KIE_IMAGE_UPLOAD_MAX_BYTES = 10L * 1024 * 1024;
     private static final long KIE_MEDIA_UPLOAD_MAX_BYTES = 100L * 1024 * 1024;
+    private static final long KIE_VIDEO_REFERENCE_IMAGE_MAX_BYTES = 30L * 1024 * 1024;
+    private static final long KIE_VIDEO_REFERENCE_AUDIO_MAX_BYTES = 15L * 1024 * 1024;
     private static final long WORKFLOW_ARCHIVE_MAX_BYTES = 220L * 1024 * 1024;
     private static final long MEDIA_PROXY_MAX_BYTES = 110L * 1024 * 1024;
     private static final int MEDIA_PROXY_MAX_REDIRECTS = 3;
     private static final Set<String> KIE_MEDIA_HOST_SUFFIXES = Set.of(
             ".kie.ai", ".aiquickdraw.com", ".redpandaai.co"
     );
+    private static final Set<String> KIE_IMAGE_ASPECT_RATIOS = Set.of(
+            "1:1", "16:9", "9:16", "4:3", "3:4", "4:5", "5:4", "3:2", "2:3", "21:9", "9:21"
+    );
     private static final Set<String> LIBLIB_MEDIA_HOSTS = Set.of(
             "libtv-res.liblib.art", "liblibai-online.liblib.cloud"
     );
 
     private final CanvasProjectRepository canvasProjectRepository;
+    private final CanvasMediaCleanupService canvasMediaCleanupService;
     private final CanvasTaskService canvasTaskService;
     private final KieClientService kieClientService;
+    private final ModelPricingService modelPricingService;
     private final TextModelService textModelService;
     private final OssService ossService;
     private final AppProperties appProperties;
@@ -124,14 +144,119 @@ public class InfiniteCanvasController {
                                @RequestParam(value = "name", required = false) String name,
                                @RequestParam(value = "inline", defaultValue = "false") boolean inline,
                                HttpServletResponse response) throws IOException {
+        if (url != null && url.startsWith("/ai-result/")) {
+            serveLocalFile(url, name, inline, response);
+            return;
+        }
         proxyTrustedMedia(url, name, inline, response);
+    }
+
+    /**
+     * 本地落盘结果图（/ai-result/**）直接以附件形式回传原文件字节，供画布「下载图片」使用。
+     * 复用与 serveLocalResized 相同的路径穿越防护与 localSaveRoot 解析逻辑。
+     */
+    private void serveLocalFile(String relativeUrl, String requestedName, boolean inline,
+                                HttpServletResponse response) throws IOException {
+        String root = appProperties.getLocalSaveRoot();
+        if (root == null || root.isBlank()) {
+            String os = System.getProperty("os.name").toLowerCase(Locale.ROOT);
+            root = os.contains("win") ? "D:/AiResult" : "/tmp/ai-result";
+        }
+        String rel = relativeUrl.substring("/ai-result/".length());
+        Path rootPath = Paths.get(root).toAbsolutePath().normalize();
+        Path filePath = rootPath.resolve(rel).normalize();
+        if (!filePath.startsWith(rootPath) || !Files.exists(filePath) || !Files.isRegularFile(filePath)) {
+            response.sendError(HttpServletResponse.SC_NOT_FOUND, "本地文件不存在");
+            return;
+        }
+        String filename = safeMediaFilename(requestedName, filePath.toUri());
+        String contentType = Files.probeContentType(filePath);
+        if (contentType == null) {
+            contentType = "application/octet-stream";
+        }
+        response.setStatus(HttpServletResponse.SC_OK);
+        response.setContentType(contentType);
+        response.setHeader("Cache-Control", "public, max-age=300");
+        response.setHeader("Content-Disposition", contentDisposition(filename, inline));
+        response.setContentLengthLong(Files.size(filePath));
+        try (InputStream in = Files.newInputStream(filePath);
+             OutputStream out = response.getOutputStream()) {
+            byte[] buf = new byte[8192];
+            int n;
+            while ((n = in.read(buf)) != -1) {
+                out.write(buf, 0, n);
+            }
+        }
     }
 
     @GetMapping("/media-preview")
     public void mediaPreview(@RequestParam("url") String url,
-                             @RequestParam(value = "w", required = false) Integer ignoredWidth,
+                             @RequestParam(value = "w", required = false) Integer width,
                              HttpServletResponse response) throws IOException {
+        if (url != null && url.startsWith("/ai-result/")) {
+            serveLocalResized(url, width, response);
+            return;
+        }
         proxyTrustedMedia(url, "canvas-preview", true, response);
+    }
+
+    /**
+     * 本地落盘结果图（/ai-result/**）按尺寸缩放并转 JPEG 输出，避免局域网直接拉 6~19MB 原图。
+     * 仅读取 localSaveRoot 目录下文件，并做路径穿越防护。
+     */
+    private void serveLocalResized(String relativeUrl, Integer requestedWidth, HttpServletResponse response) throws IOException {
+        String root = appProperties.getLocalSaveRoot();
+        if (root == null || root.isBlank()) {
+            String os = System.getProperty("os.name").toLowerCase(Locale.ROOT);
+            root = os.contains("win") ? "D:/AiResult" : "/tmp/ai-result";
+        }
+        String rel = relativeUrl.substring("/ai-result/".length());
+        Path rootPath = Paths.get(root).toAbsolutePath().normalize();
+        Path filePath = rootPath.resolve(rel).normalize();
+        if (!filePath.startsWith(rootPath) || !Files.exists(filePath) || !Files.isRegularFile(filePath)) {
+            response.sendError(HttpServletResponse.SC_NOT_FOUND, "本地预览文件不存在");
+            return;
+        }
+        BufferedImage image;
+        try (InputStream in = Files.newInputStream(filePath)) {
+            image = ImageIO.read(in);
+        }
+        if (image == null) {
+            response.sendError(HttpServletResponse.SC_UNSUPPORTED_MEDIA_TYPE, "无法解析的图片文件");
+            return;
+        }
+        int srcWidth = image.getWidth();
+        int srcHeight = image.getHeight();
+        int targetWidth = (requestedWidth != null && requestedWidth > 0)
+                ? Math.max(32, Math.min(2048, requestedWidth)) : srcWidth;
+        BufferedImage out = image;
+        if (targetWidth < srcWidth) {
+            int targetHeight = (int) Math.round(srcHeight * (targetWidth / (double) srcWidth));
+            out = new BufferedImage(targetWidth, targetHeight, BufferedImage.TYPE_INT_RGB);
+            Graphics2D g = out.createGraphics();
+            g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+            g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g.drawImage(image, 0, 0, targetWidth, targetHeight, null);
+            g.dispose();
+        }
+        response.setStatus(HttpServletResponse.SC_OK);
+        response.setContentType("image/jpeg");
+        response.setHeader("Cache-Control", "public, max-age=86400");
+        ImageWriter writer = ImageIO.getImageWritersByFormatName("jpeg").next();
+        try {
+            ImageWriteParam param = writer.getDefaultWriteParam();
+            if (param.canWriteCompressed()) {
+                param.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);
+                param.setCompressionQuality(0.82f);
+            }
+            try (ImageOutputStream ios = ImageIO.createImageOutputStream(response.getOutputStream())) {
+                writer.setOutput(ios);
+                writer.write(null, new IIOImage(out, null, null), param);
+            }
+        } finally {
+            writer.dispose();
+        }
     }
 
     @GetMapping("/projects")
@@ -302,6 +427,46 @@ public class InfiniteCanvasController {
         return Map.of("canvas", canvasRecord(row, true));
     }
 
+    @PostMapping("/canvases/{canvasId}/logs/delete")
+    public ResponseEntity<Map<String, Object>> deleteCanvasLog(@PathVariable("canvasId") String canvasId,
+                                                                @RequestBody Map<String, Object> payload,
+                                                                HttpServletRequest request) {
+        CanvasProject row = ownedCanvasRow(canvasId, request);
+        Map<String, Object> canvas = canvasData(row);
+        long baseUpdatedAt = firstLong(payload.get("base_updated_at"), 0L);
+        long currentUpdatedAt = firstLong(canvas.get("updated_at"), 0L);
+        if (baseUpdatedAt > 0L && currentUpdatedAt > baseUpdatedAt) {
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("detail", "画布已在其他位置更新，请刷新后重试");
+            body.put("canvas", canvasRecord(row, true));
+            body.put("updated_at", currentUpdatedAt);
+            return ResponseEntity.status(409).body(body);
+        }
+
+        try {
+            CanvasMediaCleanupService.CleanupPlan plan = canvasMediaCleanupService.prepare(
+                    canvas,
+                    textValue(payload.get("log_id")),
+                    boolValue(payload.get("delete_unreferenced_media")),
+                    boolValue(payload.get("reset_referencing_nodes"))
+            );
+            saveCanvasData(row, plan.canvas());
+            CanvasMediaCleanupService.CleanupResult cleanup = canvasMediaCleanupService.finish(
+                    plan, row.getOperator(), row.getShopName());
+
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("ok", true);
+            body.put("canvas", canvasRecord(row, true));
+            body.put("removed_files", cleanup.removedFiles());
+            body.put("reset_node_ids", plan.resetNodeIds());
+            body.put("skipped_referenced", cleanup.skippedReferenced());
+            body.put("removed_task_ids", cleanup.removedTaskIds());
+            return ResponseEntity.ok(body);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("detail", e.getMessage()));
+        }
+    }
+
     @DeleteMapping("/canvases/{canvasId}")
     public Map<String, Object> deleteCanvas(@PathVariable("canvasId") String canvasId, HttpServletRequest request) {
         CanvasProject row = ownedCanvasRow(canvasId, request);
@@ -382,6 +547,51 @@ public class InfiniteCanvasController {
         );
     }
 
+    /** Server calculated quotation for the AI canvas confirmation dialog. */
+    @PostMapping("/canvas-billing/quote")
+    public Map<String, Object> quoteCanvasBilling(@RequestBody Map<String, Object> payload) {
+        String mediaType = firstNonBlank(textValue(payload.get("media_type")), "image");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> input = payload.get("payload") instanceof Map<?, ?> map
+                ? toStringObjectMap(map)
+                : payload;
+        int quantity = Math.max(1, intValue(payload.get("quantity"), 1));
+        return modelPricingService.quote(mediaType, input, quantity).toMap();
+    }
+
+    /** Immutable per-canvas task ledger. Deleted nodes are intentionally not removed from it. */
+    @GetMapping("/canvas-billing")
+    public Map<String, Object> canvasBilling(@RequestParam("canvas_id") String canvasId,
+                                             HttpServletRequest request) {
+        CanvasProject owned = ownedCanvasRow(canvasId, request);
+        return canvasTaskService.billingSummary(currentOperator(request), currentShopName(request), String.valueOf(owned.getId()));
+    }
+
+    @GetMapping("/admin/model-prices")
+    public Map<String, Object> modelPriceCatalogue(HttpServletRequest request) {
+        return Map.of(
+                "catalogue", modelPricingService.currentCatalogue(),
+                "rules", modelPricingService.currentRules(),
+                "currency", "CNY",
+                "credit_to_cny", "0.032",
+                "can_edit", isPriceAdmin(request)
+        );
+    }
+
+    @PutMapping("/admin/model-prices/rules")
+    public Map<String, Object> replaceCurrentModelPriceRules(@RequestBody Map<String, Object> payload,
+                                                        HttpServletRequest request) {
+        requirePriceAdmin(request);
+        List<Map<String, Object>> rules = new ArrayList<>();
+        Object rawRules = payload.get("rules");
+        if (rawRules instanceof List<?> list) {
+            for (Object item : list) {
+                if (item instanceof Map<?, ?> map) rules.add(toStringObjectMap(map));
+            }
+        }
+        return Map.of("rules", modelPricingService.replaceCurrentRules(rules));
+    }
+
     @PostMapping("/canvas-image-tasks")
     public Map<String, Object> createCanvasImageTask(@RequestBody Map<String, Object> payload,
                                                      HttpServletRequest request) {
@@ -394,24 +604,32 @@ public class InfiniteCanvasController {
         String colorUrl = refs.size() > 1
                 ? refs.subList(1, refs.size()).stream().map(this::normalizeInputUrl).collect(Collectors.joining(","))
                 : "";
-        String size = textValue(payload.get("size"));
+        String resolution = explicitImageResolution(textValue(payload.get("resolution")));
+        String aspectRatio = explicitImageAspectRatio(textValue(payload.get("aspect_ratio")));
+        if (resolution.isBlank()) {
+            throw new IllegalArgumentException("KIE 图片任务必须明确传 resolution：1K、2K 或 4K");
+        }
+        if (aspectRatio.isBlank()) {
+            throw new IllegalArgumentException("KIE 图片任务必须明确传受支持的 aspect_ratio");
+        }
         String model = normalizeImageModel(textValue(payload.get("model")));
         String taskId = kieClientService.createTask(
                 "AI_CANVAS",
                 prompt,
-                resolutionFromSize(size),
-                aspectRatioFromSize(size),
+                resolution,
+                aspectRatio,
                 model,
                 inputUrl,
                 colorUrl,
                 appProperties.getKie().getCallbackUrl()
         );
         canvasTaskService.recordCreated(taskId, "image", operator, shopName, payload);
-        return Map.of(
-                "task_id", taskId,
-                "status", "queued",
-                "completion_mode", useCallbackTaskCompletion() ? "callback" : "polling"
-        );
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("task_id", taskId);
+        response.put("status", "queued");
+        response.put("completion_mode", useCallbackTaskCompletion() ? "callback" : "polling");
+        response.putAll(canvasTaskService.billingFields(taskId));
+        return response;
     }
 
     @GetMapping("/canvas-image-tasks/{taskId}")
@@ -420,14 +638,23 @@ public class InfiniteCanvasController {
     }
 
     @GetMapping("/canvas-tasks")
-    public Map<String, Object> getCanvasTasks(HttpServletRequest request) {
-        List<Map<String, Object>> tasks = canvasTaskService.recentTasks(currentOperator(request), currentShopName(request));
+    public Map<String, Object> getCanvasTasks(@RequestParam(value = "canvas_id", required = false) String canvasId,
+                                              HttpServletRequest request) {
+        String scopedCanvasId = "";
+        if (canvasId != null && !canvasId.isBlank()) {
+            // Resolve through the owning canvas first: task history must never be
+            // used to probe another user's canvas id.
+            scopedCanvasId = String.valueOf(ownedCanvasRow(canvasId, request).getId());
+        }
+        List<Map<String, Object>> tasks = canvasTaskService.recentTasks(
+                currentOperator(request), currentShopName(request), scopedCanvasId);
         Map<String, Long> summary = new LinkedHashMap<>();
         for (Map<String, Object> task : tasks) {
             String status = textValue(task.get("status"));
             summary.put(status, summary.getOrDefault(status, 0L) + 1L);
         }
         Map<String, Object> response = new LinkedHashMap<>();
+        response.put("canvas_id", scopedCanvasId);
         response.put("tasks", tasks);
         response.put("summary", summary);
         response.put("completion_mode", useCallbackTaskCompletion() ? "callback" : "polling");
@@ -511,11 +738,12 @@ public class InfiniteCanvasController {
         KieTaskResult created = kieClientService.createVideoTask(model, input);
         String taskId = created.getTaskId();
         canvasTaskService.recordCreated(taskId, "video", operator, shopName, payload);
-        return Map.of(
-                "task_id", taskId,
-                "status", "queued",
-                "completion_mode", useCallbackTaskCompletion() ? "callback" : "polling"
-        );
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("task_id", taskId);
+        response.put("status", "queued");
+        response.put("completion_mode", useCallbackTaskCompletion() ? "callback" : "polling");
+        response.putAll(canvasTaskService.billingFields(taskId));
+        return response;
     }
 
     @GetMapping("/canvas-video-tasks/{taskId}")
@@ -2213,6 +2441,7 @@ public class InfiniteCanvasController {
         if (waitingForLocalCache) status = "running";
         body.put("status", status);
         body.put("cost", result.getCost());
+        body.putAll(canvasTaskService.billingFields(taskId));
         body.put("completion_mode", waitingForLocalCache ? canvasTaskService.resultStorageMode() : (useCallbackTaskCompletion() ? "callback" : "polling"));
         body.put("result_storage_pending", waitingForLocalCache);
         body.put("error", waitingForLocalCache ? "正在保存生成结果..." : firstNonBlank(result.getErrorMessage(), ""));
@@ -2235,10 +2464,13 @@ public class InfiniteCanvasController {
 
     private KieTaskResult readTaskResult(String taskId) {
         Optional<KieTaskResult> stored = canvasTaskService.findResult(taskId);
-        if (stored.isPresent() && stored.get().isFinished()) {
+        // A callback can arrive before KIE's billing field. Keep polling a
+        // completed task without actual cost so the canvas ledger can replace
+        // the estimate with the provider-confirmed amount.
+        if (stored.isPresent() && stored.get().isFinished() && stored.get().getCost() != null) {
             return canvasTaskService.ensureResultPersisted(taskId).orElse(stored.get());
         }
-        if (stored.isPresent() && useCallbackTaskCompletion()) {
+        if (stored.isPresent() && useCallbackTaskCompletion() && !stored.get().isFinished()) {
             return stored.get();
         }
         KieTaskResult result = kieClientService.getFullResult(taskId);
@@ -2499,17 +2731,23 @@ public class InfiniteCanvasController {
 
     private String normalizeInputUrl(String value) {
         String raw = textValue(value).trim();
-        if (raw.isBlank() || !raw.startsWith("data:")) return raw;
+        if (raw.isBlank()) return raw;
+        if (raw.startsWith("/ai-result/")) {
+            return uploadLocalCanvasMedia(raw);
+        }
+        if (!raw.startsWith("data:")) return raw;
         try {
             int comma = raw.indexOf(',');
-            if (comma < 0) return raw;
+            if (comma < 0) throw new IllegalArgumentException("参考图片 data URL 格式无效");
             String header = raw.substring(0, comma);
+            String contentType = header.contains(";") ? header.substring(5, header.indexOf(';')) : "image/png";
+            validateVideoReferenceMediaType(contentType);
             String base64 = raw.substring(comma + 1);
             if (base64.contains("%")) {
                 base64 = URLDecoder.decode(base64, StandardCharsets.UTF_8);
             }
             byte[] bytes = java.util.Base64.getDecoder().decode(base64);
-            String contentType = header.contains(";") ? header.substring(5, header.indexOf(';')) : "image/png";
+            validateVideoReferenceSize(bytes.length, contentType);
             String ext = fileExtension("upload", contentType);
             String objectName = "AI_CANVAS/input/" + System.currentTimeMillis() + "_" + UUID.randomUUID() + ext;
             ObjectMetadata metadata = new ObjectMetadata();
@@ -2523,9 +2761,73 @@ public class InfiniteCanvasController {
             );
             return appProperties.getOss().getInputPublicHost() + "/" + objectName;
         } catch (Exception e) {
-            log.warn("[Infinite Canvas] data url 上传 OSS 失败，回退原始内容: {}", e.getMessage());
-            return raw;
+            log.warn("[Infinite Canvas] data URL 上传 OSS 失败: {}", e.getMessage());
+            throw new IllegalArgumentException("视频参考图片无法上传为 KIE 可访问地址：" + e.getMessage());
         }
+    }
+
+    /**
+     * KIE cannot fetch browser-facing /ai-result/** paths. Convert generated
+     * local media to OSS public URLs before they enter a video request.
+     */
+    private String uploadLocalCanvasMedia(String localUrl) {
+        Path localRoot = localSaveRootPath();
+        String relative = localUrl.substring("/ai-result/".length()).split("[?#]", 2)[0];
+        Path source = localRoot.resolve(relative.replace('/', File.separatorChar)).normalize();
+        if (!source.startsWith(localRoot) || !Files.isRegularFile(source)) {
+            throw new IllegalArgumentException("视频参考图片不存在或不在本地结果目录中：" + localUrl);
+        }
+        try {
+            long size = Files.size(source);
+            if (size <= 0L) throw new IllegalArgumentException("视频参考图片为空");
+            String contentType = firstNonBlank(Files.probeContentType(source), URLConnection.guessContentTypeFromName(source.getFileName().toString()));
+            validateVideoReferenceMediaType(contentType);
+            validateVideoReferenceSize(size, contentType);
+            String publicHost = textValue(appProperties.getOss().getInputPublicHost()).replaceAll("/+$", "");
+            String inputBucket = textValue(appProperties.getOss().getInputBucket());
+            if (publicHost.isBlank() || inputBucket.isBlank()) {
+                throw new IllegalArgumentException("未配置 OSS 输入桶公网地址，无法将本地结果图提供给 KIE");
+            }
+            String extension = fileExtension(source.getFileName().toString(), contentType);
+            String objectName = "AI_CANVAS/video-reference/" + System.currentTimeMillis() + "_" + UUID.randomUUID() + extension;
+            ObjectMetadata metadata = new ObjectMetadata();
+            metadata.setContentLength(size);
+            metadata.setContentType(contentType);
+            try (InputStream in = Files.newInputStream(source)) {
+                ossService.getOssClient().putObject(inputBucket, objectName, in, metadata);
+            }
+            String publicUrl = publicHost + "/" + objectName;
+            log.info("[Infinite Canvas] uploaded local video reference for KIE: source={}, object={}", source.getFileName(), objectName);
+            return publicUrl;
+        } catch (IOException e) {
+            throw new IllegalArgumentException("读取本地视频参考图片失败：" + e.getMessage());
+        }
+    }
+
+    private Path localSaveRootPath() {
+        String configured = textValue(appProperties.getLocalSaveRoot());
+        if (configured.isBlank()) {
+            configured = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win")
+                    ? "D:/AiResult" : "/tmp/ai-result";
+        }
+        return Paths.get(configured).toAbsolutePath().normalize();
+    }
+
+    private void validateVideoReferenceMediaType(String contentType) {
+        String normalized = textValue(contentType).toLowerCase(Locale.ROOT);
+        if (!normalized.startsWith("image/") && !normalized.startsWith("video/") && !normalized.startsWith("audio/")) {
+            throw new IllegalArgumentException("视频参考素材仅支持图片、视频或音频文件");
+        }
+    }
+
+    private void validateVideoReferenceSize(long size, String contentType) {
+        String normalized = textValue(contentType).toLowerCase(Locale.ROOT);
+        long max = normalized.startsWith("image/") ? KIE_VIDEO_REFERENCE_IMAGE_MAX_BYTES
+                : normalized.startsWith("audio/") ? KIE_VIDEO_REFERENCE_AUDIO_MAX_BYTES
+                : KIE_MEDIA_UPLOAD_MAX_BYTES;
+        if (size <= max) return;
+        String label = normalized.startsWith("image/") ? "图片" : normalized.startsWith("audio/") ? "音频" : "视频";
+        throw new IllegalArgumentException("视频参考" + label + "不能超过 " + (max / 1024 / 1024) + "MB");
     }
 
     private List<String> mediaUrls(Object value) {
@@ -2701,35 +3003,18 @@ public class InfiniteCanvasController {
                 : "16:9";
     }
 
-    private String resolutionFromSize(String size) {
-        String raw = size == null ? "" : size.toLowerCase();
-        if (raw.contains("4096") || raw.contains("3840") || raw.contains("4k")) return "4K";
-        if (raw.contains("2048") || raw.contains("2k")) return "2K";
-        if (raw.contains("1024") || raw.contains("1k")) return "1K";
-        return "2K";
+    private String explicitImageResolution(String value) {
+        if (value == null || value.isBlank()) return "";
+        return switch (value.trim().toUpperCase(Locale.ROOT)) {
+            case "1K", "2K", "4K" -> value.trim().toUpperCase(Locale.ROOT);
+            default -> "";
+        };
     }
 
-    private String aspectRatioFromSize(String size) {
-        String raw = size == null ? "" : size.toLowerCase();
-        String[] parts = raw.split("x");
-        if (parts.length != 2) return "auto";
-        try {
-            int w = Integer.parseInt(parts[0].replaceAll("[^0-9]", ""));
-            int h = Integer.parseInt(parts[1].replaceAll("[^0-9]", ""));
-            int gcd = gcd(w, h);
-            return (w / gcd) + ":" + (h / gcd);
-        } catch (Exception e) {
-            return "auto";
-        }
-    }
-
-    private int gcd(int a, int b) {
-        while (b != 0) {
-            int t = b;
-            b = a % b;
-            a = t;
-        }
-        return Math.max(1, Math.abs(a));
+    private String explicitImageAspectRatio(String value) {
+        if (value == null || value.isBlank()) return "";
+        String ratio = value.trim();
+        return KIE_IMAGE_ASPECT_RATIOS.contains(ratio) ? ratio : "";
     }
 
     private String normalizeImageModel(String model) {
@@ -2890,6 +3175,18 @@ public class InfiniteCanvasController {
     private String currentOperator(HttpServletRequest request) {
         Object value = request.getAttribute("operator");
         return value == null ? "unknown" : value.toString();
+    }
+
+    private void requirePriceAdmin(HttpServletRequest request) {
+        if (!isPriceAdmin(request)) {
+            throw new IllegalArgumentException("无权限：仅超级管理员可以维护模型价格目录");
+        }
+    }
+
+    private boolean isPriceAdmin(HttpServletRequest request) {
+        // `operator` is the user's real name; system-management access is
+        // consistently scoped to the PINKSIR shop everywhere in the UI.
+        return "PINKSIR".equalsIgnoreCase(currentShopName(request).trim());
     }
 
     private String currentShopName(HttpServletRequest request) {

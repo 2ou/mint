@@ -2,6 +2,8 @@ package com.ai.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.Profiles;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import org.springframework.web.filter.CorsFilter;
@@ -18,6 +20,7 @@ public class WebMvcConfig implements WebMvcConfigurer {
     // 注入你写的拦截器
     private final TokenInterceptor tokenInterceptor;
     private final AppProperties appProperties;
+    private final Environment environment;
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
@@ -29,10 +32,13 @@ public class WebMvcConfig implements WebMvcConfigurer {
                 .excludePathPatterns("/api/tasks/proxy-download"); // 排除下载接口
     }
 
-    // 🔴 AI 画布结果本地落盘：把 D:/AiResult（或 prod 的 /data/ai-images/tmp）以 /ai-result/** 对外提供静态访问
-    // 仅本地，不上 OSS；前端展示优先用本地 URL，避免 KIE 远程链接过期导致裂图
+    // 🔴 AI 画布结果本地落盘静态服务：仅 dev(本地)环境注册 /ai-result/**
+    // prod 结果图走阿里 OSS（delete-local-after-upload=true 已删除本地），不依赖本地路径，故不暴露本地目录
     @Override
     public void addResourceHandlers(ResourceHandlerRegistry registry) {
+        if (!environment.acceptsProfiles(Profiles.of("dev"))) {
+            return;
+        }
         String root = appProperties.getLocalSaveRoot();
         if (root == null) {
             String os = System.getProperty("os.name").toLowerCase();

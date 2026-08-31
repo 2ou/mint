@@ -1,5 +1,5 @@
 ﻿(function(){
-    const VERSION = '2026.07.04.rec-ui.1';
+    const VERSION = '2026.08.25.canvas-toolbar.2';
     const scripts = [
         '/infinite-canvas/js/i18n-core.js',
         '/infinite-canvas/js/i18n/common.js',

@@ -13,6 +13,9 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.concurrent.*;
 
 @Service
@@ -224,19 +227,22 @@ public class OssServiceImpl implements OssService {
 
     @Override
     public String downloadResultToLocal(String taskId, String resultUrl) {
-        return downloadResultToLocal("canvas", taskId, resultUrl);
+        // 画布默认子目录为 canvas，不嵌套店铺层（保持旧行为）
+        return downloadResultToLocal("canvas", null, taskId, resultUrl);
     }
 
     @Override
     public String downloadResultToLocal(String subDir, String taskId, String resultUrl) {
+        // 图片等任务仍按 spu 直接分区，不嵌套店铺层（保持旧行为）
+        return downloadResultToLocal(subDir, null, taskId, resultUrl);
+    }
+
+    @Override
+    public String downloadResultToLocal(String subDir, String shopName, String taskId, String resultUrl) {
         if (resultUrl == null || resultUrl.isBlank()) return null;
         try {
             // 1. 确定本地根目录
-            String localRootPath = appProperties.getLocalSaveRoot();
-            if (localRootPath == null) {
-                String os = System.getProperty("os.name").toLowerCase();
-                localRootPath = os.contains("win") ? "D:/AiResult" : "/tmp/ai-result";
-            }
+            String localRootPath = resolveLocalRoot();
 
             // 2. 智能判断后缀名
             String ext = ".png";
@@ -245,17 +251,23 @@ public class OssServiceImpl implements OssService {
             else if (lowerUrl.contains(".mp4")) ext = ".mp4";
             else if (lowerUrl.contains(".mov")) ext = ".mov";
 
-            // 3. 构造文件名（子目录 + taskId + 时间戳，避免重名）
+            // 3. 构造目录路径：canvas/{shop}/（shop 在提供时嵌套一层，中文安全清洗）
             String safeSub = (subDir != null && !subDir.isBlank())
                     ? subDir.replaceAll("[^a-zA-Z0-9_\\-]", "_") : "canvas";
+            Path targetDir = Paths.get(localRootPath, safeSub);
+            if (shopName != null && !shopName.isBlank()) {
+                String safeShop = sanitizeFolderName(shopName);
+                if (!safeShop.isEmpty()) {
+                    targetDir = targetDir.resolve(safeShop);
+                }
+            }
+            Files.createDirectories(targetDir);
+
+            // 4. 构造文件名（taskId + 纳秒时间戳，避免重名）
             String safeTask = (taskId != null && !taskId.isBlank())
                     ? taskId.replaceAll("[^a-zA-Z0-9_\\-]", "_") : "task";
             String fileName = safeTask + "_" + System.nanoTime() + ext;
-
-            // 4. 准备本地目录与文件
-            File targetDir = new File(localRootPath + "/" + safeSub);
-            if (!targetDir.exists()) targetDir.mkdirs();
-            File permanentFile = new File(targetDir, fileName);
+            File permanentFile = targetDir.resolve(fileName).toFile();
 
             // 5. 下载字节流落地（仅本地，不上 OSS）
             okhttp3.Request request = new okhttp3.Request.Builder()
@@ -291,6 +303,29 @@ public class OssServiceImpl implements OssService {
             log.warn("[AI Canvas 本地落盘异常] {}", e.getMessage());
             return null;
         }
+    }
+
+    /** 解析本地落盘根目录（与旧逻辑一致：优先配置，回退 D:/AiResult 或 /tmp/ai-result） */
+    private String resolveLocalRoot() {
+        String localRootPath = appProperties.getLocalSaveRoot();
+        if (localRootPath == null || localRootPath.isBlank()) {
+            String os = System.getProperty("os.name").toLowerCase();
+            localRootPath = os.contains("win") ? "D:/AiResult" : "/tmp/ai-result";
+        }
+        return localRootPath;
+    }
+
+    /**
+     * 店铺名 → 安全的文件夹名：剔除 Windows 非法字符（\ / : * ? " < > | 及控制字符），保留中文与字母数字，
+     * 避免旧清洗规则把中文拍成下划线导致不同店铺文件夹撞名。空结果返回空串（交由调用方不嵌套）。
+     */
+    private String sanitizeFolderName(String name) {
+        if (name == null) return "";
+        String cleaned = name.replaceAll("[\\\\/:*?\"<>|\\x00-\\x1f]", "").trim();
+        if (cleaned.length() > 60) {
+            cleaned = cleaned.substring(0, 60).trim();
+        }
+        return cleaned;
     }
 
     @Override

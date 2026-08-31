@@ -76,7 +76,7 @@ public class ImageTaskServiceImpl implements ImageTaskService {
     }
 
     // ======================== 核心业务逻辑 ========================
-    @Scheduled(cron = "${app.kie.image-task-polling.cron:-}") // 默认关闭；本地需要时通过配置开启
+    @Scheduled(cron = "${app.image-task-polling.cron:-}") // 默认关闭；本地需要时通过配置开启
     public void scheduledRefreshProcessingTasks() {
         log.info("【定时任务】开始自动刷新处理中的 AI 任务...");
         List<ImageTask> processingTasks = imageTaskRepository.findAll((root, query, cb) -> cb.or(

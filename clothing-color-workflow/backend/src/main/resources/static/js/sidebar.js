@@ -19,6 +19,7 @@
         var onModelLib = isActive('model-library.html');
         var currentView = getViewParam();
         var onAiCanvas = isActive('ai-canvas.html') || isActive('ai-canvas-templates.html');
+        var onSystemManagement = isActive('admin.html') || isActive('price-management.html');
 
         var sidebar = document.createElement('div');
         sidebar.className = 'sidebar-global';
@@ -43,7 +44,7 @@
             navLink('template-manage.html', 'TP', '场景库', isActive('template-manage.html')),
             navLink('colorCard.html', 'CL', '色卡库', isActive('colorCard.html')),
             navLink('list.html', 'DB', '任务大盘', isActive('list.html')),
-            isAdmin ? navLink('admin.html', 'AD', '用户管理', isActive('admin.html')) : '',
+            isAdmin ? systemManagementMenu(onSystemManagement) : '',
             '</nav>',
             '<div class="sidebar-footer">',
             '  <button class="sidebar-logout-btn" onclick="window.AppAuth.logout()">退出登录</button>',
@@ -138,6 +139,22 @@
             subLink('model-library.html?view=generate', 'G', '生成模特', onModelLib && currentView === 'generate', 'generate'),
             subLink('model-library.html?view=library', 'L', '模特库', onModelLib && currentView === 'library', 'library'),
             subLink('model-library.html?view=history', 'H', '生成历史', onModelLib && currentView === 'history', 'history'),
+            '  </div>',
+            '</div>'
+        ].join('');
+    }
+
+    function systemManagementMenu(onSystemManagement) {
+        return [
+            '<div class="sidebar-parent' + (onSystemManagement ? ' expanded' : '') + '">',
+            '  <div class="sidebar-link sidebar-parent-toggle' + (onSystemManagement ? ' active-parent' : '') + '" onclick="this.parentElement.classList.toggle(\'expanded\')">',
+            '    <span class="sidebar-link-icon">SM</span>',
+            '    <span>系统管理</span>',
+            '    <span class="sidebar-arrow">v</span>',
+            '  </div>',
+            '  <div class="sidebar-submenu">',
+            subLink('admin.html', 'UM', '用户管理', isActive('admin.html')),
+            subLink('price-management.html', '￥', '模型价格', isActive('price-management.html')),
             '  </div>',
             '</div>'
         ].join('');

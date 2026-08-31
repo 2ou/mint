@@ -1128,6 +1128,12 @@ input[type=range].smart-range::-webkit-slider-thumb { -webkit-appearance:none; w
 .log-error.copied { color:#059669; border-color:rgba(5,150,105,.35); background:rgba(5,150,105,.1); font-weight:900; }
 .log-prompt { width:100%; max-width:560px; color:var(--faint); font-size:10.5px; line-height:1.35; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; cursor:copy; }
 .log-prompt.copied { color:#059669; font-weight:900; }
+.log-actions { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+.log-actions button { min-height:28px; padding:0 10px; border-radius:9px; display:inline-flex; align-items:center; gap:5px; border:1px solid var(--line); background:var(--card); color:var(--muted); font-size:10px; font-weight:850; }
+.log-actions button:hover { border-color:var(--text); color:var(--text); }
+.log-actions button.danger { color:#dc2626; border-color:rgba(239,68,68,.28); background:rgba(239,68,68,.08); }
+.log-actions button.danger:hover { border-color:#dc2626; background:rgba(239,68,68,.14); }
+.log-actions button i,.log-actions button svg { width:13px; height:13px; }
 .log-thumbs { display:flex; gap:6px; align-items:flex-start; justify-content:flex-end; max-width:126px; flex-wrap:wrap; }
 .log-thumbs img,.log-thumbs video { width:38px; height:38px; object-fit:cover; border-radius:8px; border:1px solid var(--line); background:#0f172a; cursor:pointer; }
 .asset-panel { position:absolute; right:22px; top:66px; bottom:168px; z-index:55; width:300px; max-width:calc(100vw - 44px); min-height:0; display:flex; flex-direction:column; gap:10px; padding:12px; border-radius:18px; background:var(--panel); border:1px solid var(--line); box-shadow:0 22px 58px var(--shadow); backdrop-filter:blur(20px); overflow:hidden; transform:translateX(16px); opacity:0; visibility:hidden; pointer-events:none; transition:opacity .16s ease, transform .16s ease, visibility .16s ease; }
@@ -1398,3 +1404,59 @@ input[type=range].smart-range::-webkit-slider-thumb { -webkit-appearance:none; w
 .smart-group-summary i,.smart-group-summary svg { width:13px; height:13px; }
 .smart-group-empty { flex:1 1 auto; min-height:74px; display:flex; align-items:center; justify-content:center; gap:6px; color:var(--faint); font-size:10px; font-weight:700; text-align:center; border-radius:10px; border:1px dashed var(--line); background:var(--soft); }
 .smart-group-empty i,.smart-group-empty svg { width:14px; height:14px; }
+
+/* ===== 画布计费显示（横幅 / 确认弹窗 / 明细面板） ===== */
+#currentCanvasCost.current-canvas-cost {
+  display:inline-flex; align-items:center; gap:6px; cursor:pointer;
+  padding:3px 10px; border-radius:999px;
+  background:#fdf6ec; border:1px solid #f4d9a8;
+  font-size:12px; line-height:1; user-select:none;
+}
+#currentCanvasCost.current-canvas-cost:hover { border-color:#e8a33d; }
+.cost-banner-label { color:#b45309; font-weight:700; }
+.cost-banner-amount { color:#dc2626; font-weight:800; font-variant-numeric:tabular-nums; }
+.cost-banner-amount--muted { color:#92400e; font-weight:600; }
+.cost-banner-hint { color:#b45309; opacity:.7; font-size:11px; }
+.theme-dark #currentCanvasCost.current-canvas-cost { background:#3a2c14; border-color:#5b4416; }
+.theme-dark .cost-banner-label { color:#fbbf24; }
+.theme-dark .cost-banner-amount { color:#f87171; }
+.theme-dark .cost-banner-amount--muted { color:#fbbf24; }
+.theme-dark .cost-banner-hint { color:#fbbf24; }
+
+/* 弹窗通用 */
+.smart-modal-overlay {
+  position:fixed; inset:0; z-index:9999; display:flex; align-items:center; justify-content:center;
+  background:rgba(15,23,42,.45); padding:20px;
+}
+.smart-modal {
+  width:420px; max-width:100%; max-height:82vh; overflow:auto;
+  background:var(--card,#fff); border:1px solid var(--line,#e5e7eb); border-radius:14px;
+  box-shadow:0 24px 60px rgba(15,23,42,.28); font-size:14px; color:var(--text,#0f172a);
+}
+.smart-modal-title {
+  display:flex; align-items:center; justify-content:space-between; gap:10px;
+  padding:14px 16px; font-weight:800; font-size:15px; border-bottom:1px solid var(--line,#e5e7eb);
+}
+.smart-modal-close { cursor:pointer; font-size:20px; line-height:1; color:var(--muted,#64748b); padding:0 4px; }
+.smart-modal-close:hover { color:var(--text,#0f172a); }
+.smart-modal-body { padding:16px; line-height:1.6; }
+.smart-modal-actions { display:flex; justify-content:flex-end; gap:10px; padding:14px 16px; border-top:1px solid var(--line,#e5e7eb); }
+.smart-modal-footer { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:14px 16px; border-top:1px solid var(--line,#e5e7eb); }
+.smart-cost-amount { color:#dc2626; font-weight:800; font-variant-numeric:tabular-nums; }
+.smart-btn { padding:8px 16px; border-radius:10px; border:1px solid var(--line,#e5e7eb); background:var(--card,#fff); color:var(--text,#0f172a); font-size:13px; font-weight:700; cursor:pointer; }
+.smart-btn--primary { background:#dc2626; border-color:#dc2626; color:#fff; }
+.smart-btn--primary:hover { background:#b91c1c; }
+.smart-btn--ghost:hover { background:var(--soft,#f1f5f9); }
+
+/* 费用明细列表 */
+.cost-row { padding:10px 2px; border-bottom:1px dashed var(--line,#e5e7eb); }
+.cost-row:last-child { border-bottom:none; }
+.cost-row-head { display:flex; align-items:center; gap:8px; }
+.cost-row-type { flex:0 0 auto; padding:2px 8px; border-radius:999px; background:var(--soft,#f1f5f9); color:var(--muted,#64748b); font-size:11px; font-weight:700; }
+.cost-row-title { flex:1 1 auto; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text,#0f172a); }
+.cost-row-amount { flex:0 0 auto; color:#dc2626; font-weight:800; font-variant-numeric:tabular-nums; }
+.cost-rounds { display:none; flex-wrap:wrap; gap:6px; margin-top:8px; padding-left:4px; }
+.cost-round { padding:2px 8px; border-radius:6px; background:#fdf6ec; border:1px solid #f4d9a8; color:#b45309; font-size:11px; font-weight:700; font-variant-numeric:tabular-nums; }
+.cost-row-toggle { display:inline-block; margin-top:6px; color:#2563eb; font-size:12px; cursor:pointer; user-select:none; }
+.cost-empty { color:var(--muted,#64748b); text-align:center; padding:20px 0; }
+.cost-detail-total { font-weight:700; }

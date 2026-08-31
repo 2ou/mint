@@ -234,7 +234,7 @@ window.addEventListener('studio-lang-change', () => {
     renderCanvasList();
     render();
 });
-window.addEventListener('studio-ui-scale-change', applyQuickToolbarState);
+window.addEventListener('studio-ui-scale-change', applyQuickToolbarLayout);
 const shell = document.getElementById('shell');
 const canvasGate = document.getElementById('canvasGate');
 const board = document.getElementById('board');
@@ -271,6 +271,7 @@ const gateCancelBtn = document.getElementById('gateCancelBtn');
 const backToManagerBtn = document.getElementById('backToManagerBtn');
 const currentCanvasTitle = document.getElementById('currentCanvasTitle');
 const currentCanvasTime = document.getElementById('currentCanvasTime');
+const currentCanvasCost = document.getElementById('currentCanvasCost');
 const outputLightbox = document.getElementById('outputLightbox');
 const outputPreview = document.getElementById('outputPreview');
 const outputLightboxImg = document.getElementById('outputLightboxImg');
@@ -453,6 +454,10 @@ let activeCanvasWorkflowCategoryId = '';
 const activeCanvasTaskPolls = new Set();
 let canvasTaskLedger = [];
 let canvasTaskLedgerMeta = {capacity:{active:0, max:10, available:10}, completionMode:'polling'};
+let canvasBillingSummary = {actual_cost:0, pending_estimate:0, tasks:[]};
+let canvasLogFilter = 'all';
+let canvasTaskLedgerLoading = false;
+const pendingCanvasCostConfirmations = new Map();
 const CANVAS_TASK_SUBMIT_LIMIT = 10;
 const canvasTaskSubmitQueue = [];
 let activeCanvasTaskSubmissions = 0;
@@ -525,10 +530,8 @@ const CUSTOM_IMAGE_MODELS_KEY = 'canvas_custom_image_models';
 const MANAGED_IMAGE_MODELS_KEY = 'canvas_image_models_ordered';
 const MANAGED_CHAT_MODELS_KEY = 'canvas_chat_models_ordered';
 const CANVAS_THEME_KEY = 'canvas_theme';
-const QUICK_TOOLBAR_COLLAPSED_KEY = 'canvas_quick_toolbar_collapsed';
 const CANVAS_SESSION_VIEWPORTS_KEY = 'canvas_session_viewports_v1';
 let canvasSessionViewportFallback = {};
-let quickToolbarExpanded = false;
 const KIE_SEEDANCE_2_5_MODEL = 'bytedance/seedance-2-5';
 const KIE_SEEDANCE_2_MODEL = 'bytedance/seedance-2';
 const KIE_MINIMAX_H3_TEXT_MODEL = 'minimax-h3/text-to-video';
@@ -642,25 +645,14 @@ function applyTheme(theme){
     document.body.classList.toggle('theme-dark', dark);
     shell.classList.toggle('theme-dark', dark);
 }
-function applyQuickToolbarState(){
+function applyQuickToolbarLayout(){
     const toolbar = document.getElementById('quickToolbar');
     if(!toolbar) return;
     const uiScale = Number(getComputedStyle(document.documentElement).getPropertyValue('--studio-ui-scale')) || 1;
     const isScaledUi = uiScale < 0.995;
-    const collapsed = !quickToolbarExpanded;
-    toolbar.classList.toggle('scale-expanded', isScaledUi && quickToolbarExpanded);
-    toolbar.classList.toggle('collapsed', collapsed);
-    const btn = toolbar.querySelector('.toolbar-toggle');
-    if(btn){
-        btn.title = collapsed ? '展开快捷菜单' : '折叠快捷菜单';
-        btn.setAttribute('aria-label', btn.title);
-    }
+    toolbar.classList.remove('collapsed');
+    toolbar.classList.toggle('scale-expanded', isScaledUi);
     refreshIcons();
-}
-function toggleQuickToolbar(){
-    const toolbar = document.getElementById('quickToolbar');
-    quickToolbarExpanded = Boolean(toolbar?.classList.contains('collapsed'));
-    applyQuickToolbarState();
 }
 function loadLocalModelLists(){
     try {
@@ -1078,6 +1070,24 @@ async function generatorSizeForRun(gen, refs){
         : (gen.ratio ?? 'square');
     return apiImageSize(ratio, gen.resolution || defaultApiImageResolution(gen.model), gen.customRatio || '', gen.customSize || '');
 }
+function canvasKieImageResolution(value){
+    const resolution = String(value || '').trim().toUpperCase();
+    return ['1K', '2K', '4K'].includes(resolution) ? resolution : '';
+}
+const CANVAS_KIE_ASPECT_RATIO_BY_PRESET = Object.freeze({
+    square:'1:1', portrait:'2:3', portrait43:'3:4', landscape43:'4:3',
+    landscape:'3:2', story:'9:16', wide:'16:9', ultrawide:'21:9', ultratall:'9:21'
+});
+function canvasAspectRatioFromSize(sizeValue){
+    const size = parseSizePair(sizeValue);
+    if(!size?.width || !size?.height) return '';
+    const divisor = gcdInt(size.width, size.height);
+    return `${size.width / divisor}:${size.height / divisor}`;
+}
+function canvasKieImageAspectRatio(gen, sizeValue){
+    return CANVAS_KIE_ASPECT_RATIO_BY_PRESET[String(gen?.ratio || '')]
+        || canvasAspectRatioFromSize(sizeValue);
+}
 function normalizeApiNodeLayout(node){
     if(!node || node.type !== 'generator') return;
     if(Number(node.w || 0) === 418) node.w = 380;
@@ -1116,6 +1126,26 @@ function formatCanvasTime(value){
 function setStatus(text){
     document.getElementById('saveState').textContent = text;
     if(gateStatus) gateStatus.textContent = text;
+}
+let canvasUploadNoticeTimer = null;
+function showCanvasUploadNotice(message){
+    if(!message) return;
+    let notice = document.getElementById('canvasUploadNotice');
+    if(!notice){
+        notice = document.createElement('div');
+        notice.id = 'canvasUploadNotice';
+        notice.className = 'canvas-upload-notice';
+        notice.setAttribute('role', 'status');
+        notice.setAttribute('aria-live', 'polite');
+        notice.setAttribute('aria-atomic', 'true');
+        notice.innerHTML = '<i data-lucide="file-check-2" aria-hidden="true"></i><span></span>';
+        document.body.appendChild(notice);
+    }
+    notice.querySelector('span').textContent = message;
+    notice.classList.add('open');
+    clearTimeout(canvasUploadNoticeTimer);
+    canvasUploadNoticeTimer = setTimeout(() => notice.classList.remove('open'), 4800);
+    refreshIcons();
 }
 let generationCompleteSoundAt = 0;
 function playGenerationCompleteSound(){
@@ -2111,6 +2141,7 @@ async function openCanvas(id){
         renderCanvasList();
         render();
         resumeCanvasImageTasks();
+        void loadCanvasBilling();
         startCanvasRemotePolling();
         setStatus('Ready');
     } catch(e) {
@@ -2148,6 +2179,7 @@ function applyRemoteCanvasData(remote){
         renderCanvasList();
         render();
         resumeCanvasImageTasks();
+        void loadCanvasBilling();
         if(currentCanvasTitle) currentCanvasTitle.textContent = canvas.title || tr('canvas.untitled');
         if(currentCanvasTime) currentCanvasTime.textContent = formatCanvasTime(canvas.updated_at || canvas.created_at);
         setStatus('Synced');
@@ -4098,23 +4130,125 @@ function createGroupForUploadedNodes(created, point){
     selected.add(group.id);
     return group;
 }
+const CANVAS_IMAGE_MAX_EDGE = 6000;
+const CANVAS_IMAGE_COMPRESS_QUALITIES = [0.92, 0.85, 0.78, 0.7, 0.62, 0.5];
+const CANVAS_IMAGE_COMPRESS_MIN_SCALE = 0.18;
+function canvasDecodeImageFile(file){
+    return new Promise((resolve, reject) => {
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+        img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+        img.onerror = () => { URL.revokeObjectURL(url); reject(new Error(langIsEn() ? 'Image decoding failed' : '图片解析失败')); };
+        img.src = url;
+    });
+}
+function canvasDrawImageFilled(img, scale){
+    const w = Math.max(1, Math.round((img.naturalWidth || 1) * scale));
+    const h = Math.max(1, Math.round((img.naturalHeight || 1) * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff'; // JPEG 无透明通道，先铺白底，避免 PNG 透明区变黑
+    ctx.fillRect(0, 0, w, h);
+    ctx.drawImage(img, 0, 0, w, h);
+    return canvas;
+}
+function canvasEncodeJpeg(canvas, quality){
+    return new Promise(resolve => canvas.toBlob(blob => resolve(blob), 'image/jpeg', quality));
+}
+function canvasCompressedFileName(name){
+    const base = String(name || '').replace(/\.[^./\\]+$/, '').trim();
+    return `${base || 'image'}.jpg`;
+}
+// 动图/矢量图压成静态 JPEG 会静默丢失动画，宁可原样上传
+function canvasSkipImageCompression(file){
+    const type = String(file?.type || '').toLowerCase();
+    const name = String(file?.name || '').toLowerCase();
+    return type === 'image/gif' || type === 'image/svg+xml' || /\.(gif|svg)(\?|$)/.test(name);
+}
+async function compressOversizedImageFile(file, maxBytes){
+    const img = await canvasDecodeImageFile(file);
+    const edge = Math.max(img.naturalWidth || 1, img.naturalHeight || 1);
+    const fit = edge > CANVAS_IMAGE_MAX_EDGE ? CANVAS_IMAGE_MAX_EDGE / edge : 1;
+    let best = null;
+    const encode = async (scale, quality) => {
+        const blob = await canvasEncodeJpeg(canvasDrawImageFilled(img, scale), quality);
+        if(!blob) return null;
+        if(!best || blob.size < best.size) best = blob;
+        return blob;
+    };
+    const pack = blob => new File([blob], canvasCompressedFileName(file.name), {type:'image/jpeg', lastModified:Date.now()});
+    // 第一轮：保留原始像素，只降质量，绝大多数图在这里命中、画质损失最小
+    for(const quality of CANVAS_IMAGE_COMPRESS_QUALITIES){
+        const blob = await encode(fit, quality);
+        if(blob && blob.size <= maxBytes) return pack(blob);
+    }
+    // 第二轮：按实测体积反推需要的缩放比，逐级下探
+    const ratio = Math.sqrt(maxBytes / Math.max(best ? best.size : maxBytes, 1)) * 0.92;
+    let scale = Math.min(0.95, Math.max(0.25, ratio));
+    while(scale > CANVAS_IMAGE_COMPRESS_MIN_SCALE){
+        for(const quality of [0.85, 0.72, 0.6]){
+            const blob = await encode(scale * fit, quality);
+            if(blob && blob.size <= maxBytes) return pack(blob);
+        }
+        scale *= 0.7;
+    }
+    if(best && best.size < Number(file.size || 0)) return pack(best);
+    throw new Error(langIsEn() ? `Image still exceeds ${Math.round(maxBytes / 1024 / 1024)}MB after compression` : `图片压缩后仍超过 ${Math.round(maxBytes / 1024 / 1024)}MB`);
+}
 async function uploadCanvasMediaFiles(files){
+    const originalStatus = document.getElementById('saveState')?.textContent || '';
+    const prepared = [];
+    const compressedImages = [];
     for(const file of files){
         const kind = mediaKindForUpload(file);
         const maxBytes = kind === 'image' ? KIE_IMAGE_UPLOAD_MAX_BYTES : KIE_MEDIA_UPLOAD_MAX_BYTES;
-        if(Number(file.size || 0) > maxBytes){
-            const label = kind === 'image' ? (langIsEn() ? 'Image' : '图片') : kind === 'video' ? (langIsEn() ? 'Video' : '视频') : (langIsEn() ? 'Audio' : '音频');
+        const size = Number(file.size || 0);
+        if(size <= maxBytes){
+            prepared.push(file);
+            continue;
+        }
+        if(kind !== 'image'){
+            const label = kind === 'video' ? (langIsEn() ? 'Video' : '视频') : (langIsEn() ? 'Audio' : '音频');
             const limit = Math.round(maxBytes / 1024 / 1024);
             throw new Error(langIsEn() ? `${label} exceeds the KIE.ai ${limit}MB limit` : `${label}超过 KIE.ai 的 ${limit}MB 大小限制`);
         }
+        if(canvasSkipImageCompression(file)){
+            console.warn(`[canvas] skip auto-compression for ${file.name} (animated/vector image)`);
+            prepared.push(file);
+            continue;
+        }
+        // 图片超限不直接报错：前端自动压缩到限制以内再上传
+        try {
+            setStatus(langIsEn() ? `Compressing ${file.name}…` : `正在压缩 ${file.name}…`);
+            const compressed = await compressOversizedImageFile(file, maxBytes);
+            if(compressed.size < size){
+                console.info(`[canvas] auto-compressed image: ${(size / 1024 / 1024).toFixed(2)}MB -> ${(compressed.size / 1024 / 1024).toFixed(2)}MB`);
+                compressedImages.push({before:size, after:compressed.size});
+            }
+            prepared.push(compressed);
+        } catch(error){
+            setStatus(originalStatus);
+            throw new Error(actionFailed(langIsEn() ? 'Image compression' : '图片压缩', error?.message || ''));
+        }
     }
+    setStatus(originalStatus);
     const form = new FormData();
-    files.forEach(file => form.append('files', file));
+    prepared.forEach(file => form.append('files', file));
     const response = await fetch('/api/ai/upload', {method:'POST', body:form});
     if(!response.ok) throw new Error(await responseErrorMessage(response, langIsEn() ? 'Image upload failed' : '上传素材失败'));
     const data = await response.json();
     if(!Array.isArray(data.files) || !data.files.length){
         throw new Error(langIsEn() ? 'No upload result was returned' : '上传未返回素材地址');
+    }
+    if(compressedImages.length){
+        const before = compressedImages.reduce((sum, item) => sum + item.before, 0) / 1024 / 1024;
+        const after = compressedImages.reduce((sum, item) => sum + item.after, 0) / 1024 / 1024;
+        const count = compressedImages.length;
+        showCanvasUploadNotice(langIsEn()
+            ? `Auto-optimized ${count} image${count === 1 ? '' : 's'}: ${before.toFixed(1)}MB → ${after.toFixed(1)}MB`
+            : `已自动优化 ${count} 张图片：${before.toFixed(1)}MB → ${after.toFixed(1)}MB`);
     }
     return data.files;
 }
@@ -6304,7 +6438,8 @@ function renderNode(node){
         const label = { queued:'排队中', running:'运行中', done:'完成', failed:'失败' }[node.runStatus] || '';
         return `<span class="node-run-status ${node.runStatus}"><span class="dot"></span>${escapeHtml(label)}${node._cascadeIdx?' '+node._cascadeIdx:''}</span>`;
     })() : '';
-    el.innerHTML = `<div class="node-head"><span class="node-title">${displayTitle}</span><div style="display:flex;align-items:center;gap:8px">${statusHtml}<button onclick="deleteNodeFromButton('${node.id}', event)" class="text-gray-300 hover:text-red-500"><i data-lucide="x" class="w-4 h-4"></i></button></div></div>`;
+    const costBadgeHtml = canvasNodeCostBadgeHtml(node);
+    el.innerHTML = `<div class="node-head"><span class="node-title">${displayTitle}</span><div style="display:flex;align-items:center;gap:8px">${costBadgeHtml}${statusHtml}<button onclick="deleteNodeFromButton('${node.id}', event)" class="text-gray-300 hover:text-red-500"><i data-lucide="x" class="w-4 h-4"></i></button></div></div>`;
     const body = document.createElement('div');
     body.className = 'node-body';
     if(node.type === 'image') {
@@ -9141,6 +9276,21 @@ function renderPromptPreview(container, promptInputs){
     if(!container) return;
     container.innerHTML = promptInputs.length ? `<div class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Prompts</div>${promptInputs.map(src => `<div class="text-[11px] text-slate-500 bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 line-clamp-2">${escapeHtml(src.label)}</div>`).join('')}` : '';
 }
+// 输入/参考图缩略图点击放大：复用结果图查看器 openOutputLightbox（滚轮缩放 1-6x + 拖拽平移 + 下载）。
+// 仅给“图片类”输入绑定；视频/音频输入保持原有预览行为。
+function bindCanvasInputThumbZoom(item, url){
+    if(!item || !url || isMissingAssetUrl(url)) return;
+    const original = canvasOriginalMediaUrl(url);
+    if(!original) return;
+    item.style.cursor = 'zoom-in';
+    if(!item.title) item.title = langIsEn() ? 'Click to view larger' : '点击查看大图';
+    item.onclick = e => {
+        if(internalDrag) return; // 拖拽重排过程中不触发放大
+        e.preventDefault();
+        e.stopPropagation();
+        openOutputLightbox(original, null);
+    };
+}
 function renderImageInputList(list, node, imageInputs, emptyText=null){
     if(!list) return;
     list.innerHTML = imageInputs.length ? '' : `<div class="text-[11px] text-gray-300 py-2">${escapeHtml(emptyText || tr('canvas.inputImagesEmpty'))}</div>`;
@@ -9151,6 +9301,7 @@ function renderImageInputList(list, node, imageInputs, emptyText=null){
         item.dataset.sourceId = src.id;
         const previewHtml = src.preview && !isMissingAssetUrl(src.preview) ? canvasPreviewImgHtml(src.preview, 256) : (src.preview ? missingAssetHtml(src.preview, true) : '<i data-lucide="image" class="w-6 h-6 text-slate-400"></i>');
         item.innerHTML = `<span class="input-index">${i + 1}</span>${previewHtml}<span class="input-label">${escapeHtml(src.label)}</span>`;
+        bindCanvasInputThumbZoom(item, src.preview);
         item.ondragstart = e => {
             e.stopPropagation();
             internalDrag = true;
@@ -9195,6 +9346,7 @@ function renderVideoImageInputs(list, node, imageInputs){
             </div>
             ${frameLabel ? `<div class="video-frame-label">${frameLabel}</div>` : ''}
         `;
+        if(kind === 'image') bindCanvasInputThumbZoom(item, src.preview); // 仅图片输入可放大；视频/音频保持原样
         item.ondragstart = e => { e.stopPropagation(); internalDrag = true; e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('application/x-canvas-input', src.id); };
         item.ondragend = () => { internalDrag = false; };
         item.ondragover = e => { e.preventDefault(); e.stopPropagation(); };
@@ -9390,6 +9542,7 @@ function renderComfyImages(list, node, imageInputs){
                 ? `<i data-lucide="${icon}" class="w-6 h-6 text-slate-400"></i>`
                 : (src.preview && !isMissingAssetUrl(src.preview) ? canvasPreviewImgHtml(src.preview, 256) : (src.preview ? missingAssetHtml(src.preview, true) : `<i data-lucide="${icon}" class="w-6 h-6 text-slate-400"></i>`));
         item.innerHTML = `<span class="input-index">${i + 1}</span>${previewHtml}<span class="input-label">${escapeHtml(label)}</span>`;
+        if(kind === 'image') bindCanvasInputThumbZoom(item, src.preview); // 仅图片输入可放大；视频/音频保持原样
         item.ondragstart = e => {
             e.stopPropagation();
             internalDrag = true;
@@ -10039,6 +10192,7 @@ function renderRhInputs(list, node, media){
         const item = document.createElement('div');
         item.className = 'input-item rh-input-item';
         item.innerHTML = `<span class="input-index">${i + 1}</span>${rhMediaPreviewHtml(ref, kind)}<span class="input-label">${escapeHtml(nodeTitleForMedia({mediaKind:kind}))}</span>`;
+        if(kind === 'image') bindCanvasInputThumbZoom(item, ref?.url); // 仅图片参考可放大；视频/音频保持原样
         list.appendChild(item);
     });
 }
@@ -10394,18 +10548,21 @@ async function runRhModelNode(node, opts={}){
     const prompt = media.prompt || '';
     const refs = imageRefsOnly(media.refs || []);
     if(!prompt && !refs.length){ alert(tr('canvas.needPromptOrImage')); return; }
-    if(!await confirmKieCanvasSubmission('图片生成')) return;
     const count = Math.max(1, Math.min(8, Number(node.count || 1)));
     let out = outputForNode(node, 500);
     const run = runSnapshot(node, prompt || 'Edit the reference images.', refs);
     run.taskLabel = 'RunningHub';
+    const requestSize = await generatorSizeForRun(node, refs);
     const payload = {
         prompt:prompt || 'Edit the reference images.',
         provider_id:'runninghub',
         model,
-        size:await generatorSizeForRun(node, refs),
+        resolution:canvasKieImageResolution(node.resolution),
+        aspect_ratio:canvasKieImageAspectRatio(node, requestSize),
+        size:requestSize,
         reference_images:refs.slice(0, CANVAS_REFERENCE_IMAGE_MAX)
     };
+    if(!await confirmCanvasCostSubmission('image', payload, count)) return;
     let pendingIds = [];
     const startedAt = nowMs();
     if(!opts.cascade){
@@ -10414,7 +10571,8 @@ async function runRhModelNode(node, opts={}){
         setTimeout(() => { node.running = false; refreshRunNodes(node, out); }, 2000);
     }
     try {
-        const taskInfos = await Promise.all(Array.from({length:count}, () => createCanvasImageTask(payload, {cascadeTargetId})));
+        const taskInfos = await Promise.all(Array.from({length:count}, () => createCanvasImageTask(payload, {cascadeTargetId, canvasNodeId:node.id})));
+        taskInfos.forEach(task => applyCanvasNodeBilling(node, task.task_id, task.estimated_cost, null, task.price_version));
         if(!out){
             let outputs = [];
             for(const task of taskInfos){
@@ -10912,17 +11070,20 @@ async function runGenerator(genId, opts={}){
     const prompt = sources.map(s => s.prompt).filter(Boolean).join('\n\n');
     const refs = imageRefsOnly(sources.flatMap(s => s.refs || []));
     if(!prompt && !refs.length){ alert(tr('canvas.needPromptOrImage')); return; }
-    if(!await confirmKieCanvasSubmission('图片生成')) return;
     const count = Math.max(1, Math.min(8, Number(gen.count || 1)));
     let out = outputForNode(gen, 460);
     const run = runSnapshot(gen, prompt || 'Edit the reference images.', refs);
+    const requestSize = await generatorSizeForRun(gen, refs);
     const payload = {
         prompt: prompt || 'Edit the reference images.',
         provider_id:resolveImageProviderId(gen.apiProvider || 'comfly'),
         model:resolveImageModel(gen.model),
-        size:await generatorSizeForRun(gen, refs),
+        resolution:canvasKieImageResolution(gen.resolution),
+        aspect_ratio:canvasKieImageAspectRatio(gen, requestSize),
+        size:requestSize,
         reference_images:refs.slice(0, CANVAS_REFERENCE_IMAGE_MAX)
     };
+    if(!await confirmCanvasCostSubmission('image', payload, count)) return;
     let pendingIds = [];
     const startedAt = nowMs();
     if(!opts.cascade){
@@ -10932,7 +11093,8 @@ async function runGenerator(genId, opts={}){
         setTimeout(() => { gen.running = false; refreshRunNodes(gen, out); }, 2000);
     }
     try {
-        const taskInfos = await Promise.all(Array.from({length:count}, () => createCanvasImageTask(payload, {cascadeTargetId})));
+        const taskInfos = await Promise.all(Array.from({length:count}, () => createCanvasImageTask(payload, {cascadeTargetId, canvasNodeId:gen.id})));
+        taskInfos.forEach(task => applyCanvasNodeBilling(gen, task.task_id, task.estimated_cost, null, task.price_version));
         if(!out){
             let outputs = [];
             for(const task of taskInfos){
@@ -11005,12 +11167,21 @@ async function runGeneratorLegacy(genId, opts={}){
     const prompt = sources.map(s => s.prompt).filter(Boolean).join('\n\n');
     const refs = imageRefsOnly(sources.flatMap(s => s.refs || []));
     if(!prompt && !refs.length){ alert(tr('canvas.needPromptOrImage')); return; }
-    if(!await confirmKieCanvasSubmission('图片生成')) return;
     const count = Math.max(1, Math.min(8, Number(gen.count || 1)));
     let out = outputForNode(gen, 460);
     const pendingIds = Array.from({length:count}, () => uid('p'));
     const run = runSnapshot(gen, prompt || 'Edit the reference images.', refs);
     const requestSize = await generatorSizeForRun(gen, refs);
+    const payload = {
+        prompt: prompt || 'Edit the reference images.',
+        provider_id:resolveImageProviderId(gen.apiProvider || 'comfly'),
+        model:resolveImageModel(gen.model),
+        size:requestSize,
+        reference_images:refs.slice(0, CANVAS_REFERENCE_IMAGE_MAX),
+        canvas_id:String(canvas?.id || ''),
+        canvas_node_id:String(gen.id || '')
+    };
+    if(!await confirmCanvasCostSubmission('image', payload, count)) return;
     if(out) out._pending = [...(out._pending||[]), ...pendingIds.map(id => makePendingForRun(id, run, gen, {refs, requestSize}))];
     if(!opts.cascade){
         gen.running = true;
@@ -11019,16 +11190,9 @@ async function runGeneratorLegacy(genId, opts={}){
     }
     else refreshRunNodes(gen, out);
     try {
-        const payload = {
-            prompt: prompt || 'Edit the reference images.',
-            provider_id:resolveImageProviderId(gen.apiProvider || 'comfly'),
-            model:resolveImageModel(gen.model),
-            size:requestSize,
-            reference_images:refs.slice(0, CANVAS_REFERENCE_IMAGE_MAX)
-        };
         const results = await Promise.all(Array.from({length:count}, () => fetch('/api/online-image', {
             method:'POST',
-            headers:{'Content-Type':'application/json'},
+            headers:{'Content-Type':'application/json', 'X-Canvas-Cost-Confirmed':'1'},
             body:JSON.stringify(payload)
         }).then(async r => { if(!r.ok) throw new Error(await responseErrorMessage(r, tr('canvas.generationFailed'))); return r.json(); })));
         const images = results.flatMap(result => result.images || []);
@@ -11041,6 +11205,7 @@ async function runGeneratorLegacy(genId, opts={}){
         gen.runStatus = 'done'; gen.runError = '';
         refreshRunNodes(gen, out);
         scheduleSave();
+        void loadCanvasBilling();
     } catch(err) {
         const metas = collectRunMetas(out, pendingIds);
         addGenerationLog({run, outputs:[], runMs:Math.max(...metas.map(m => m.runMs || 0), 0), error:err.message || String(err)});
@@ -11075,7 +11240,26 @@ async function runVideoNode(nodeId, opts={}){
         alert('MiniMax H3 多模态参考需要至少一项图片、视频或音频素材');
         return;
     }
-    if(!await confirmKieCanvasSubmission('视频生成')) return;
+    const payload = {
+        prompt,
+        provider_id:resolveVideoProviderId(node.apiProvider || 'comfly'),
+        model:selectedVideoModel,
+        duration:Math.max(videoModelMinDuration(selectedVideoModel), Math.min(videoModelMaxDuration(selectedVideoModel), Number(node.duration) || 5)),
+        aspect_ratio:node.aspectRatio || '16:9',
+        resolution:node.resolution || '',
+        images:refs,
+        videos:manualVideoUrlForNode(node)
+            ? [manualVideoUrlForNode(node)]
+            : videoRefs.map(ref => tempShUploadedUrlForNode(node, ref.url)),
+        audios:audioRefs.map(ref => ref.url).filter(Boolean),
+        enhance_prompt:Boolean(node.enhancePrompt),
+        enable_upsample:Boolean(node.enableUpsample),
+        watermark:Boolean(node.watermark),
+        camerafixed:Boolean(node.cameraFixed),
+        generate_audio:Boolean(node.generateAudio),
+        multimodal:Boolean(node.multimodal)
+    };
+    if(!await confirmCanvasCostSubmission('video', payload, 1)) return;
     let out = outputForNode(node, 460);
     const pendingId = uid('p');
     const run = runSnapshot(node, prompt, refs);
@@ -11083,27 +11267,9 @@ async function runVideoNode(nodeId, opts={}){
     if(!opts.cascade){ node.running = true; refreshRunNodes(node, out); }
     else refreshRunNodes(node, out);
     try {
-        const payload = {
-            prompt,
-            provider_id:resolveVideoProviderId(node.apiProvider || 'comfly'),
-            model:selectedVideoModel,
-            duration:Math.max(videoModelMinDuration(selectedVideoModel), Math.min(videoModelMaxDuration(selectedVideoModel), Number(node.duration) || 5)),
-            aspect_ratio:node.aspectRatio || '16:9',
-            resolution:node.resolution || '',
-            images:refs,
-            videos:manualVideoUrlForNode(node)
-                ? [manualVideoUrlForNode(node)]
-                : videoRefs.map(ref => tempShUploadedUrlForNode(node, ref.url)),
-            audios:audioRefs.map(ref => ref.url).filter(Boolean),
-            enhance_prompt:Boolean(node.enhancePrompt),
-            enable_upsample:Boolean(node.enableUpsample),
-            watermark:Boolean(node.watermark),
-            camerafixed:Boolean(node.cameraFixed),
-            generate_audio:Boolean(node.generateAudio),
-            multimodal:Boolean(node.multimodal)
-        };
-        const task = await createCanvasVideoTask(payload, {cascadeTargetId});
+        const task = await createCanvasVideoTask(payload, {cascadeTargetId, canvasNodeId:node.id});
         if(!task?.task_id) throw new Error(tr('canvas.videoFailed'));
+        applyCanvasNodeBilling(node, task.task_id, task.estimated_cost, null, task.price_version);
         if(out){
             const pending = pendingById(out, pendingId);
             if(!pending) throw new Error('视频任务状态已丢失');
@@ -12007,7 +12173,6 @@ async function runLLMNode(nodeId, opts={}){
         if(opts.cascade) throw new Error('LLM 缺少提示词输入');
         alert(tr('canvas.needPromptToLLM')); return;
     }
-    if(!await confirmKieCanvasSubmission('文本处理')) return;
     if(!opts.cascade){ node.running = true; refreshNodes([node.id]); }
     try {
         node.outputText = await callCanvasLLM(node, input, [], {cascadeTargetId});
@@ -12435,7 +12600,6 @@ async function runLLMChat(nodeId){
     if(!node || node.running) return;
     const message = (node.chatInput || '').trim();
     if(!message) return;
-    if(!await confirmKieCanvasSubmission('文本处理')) return;
     node.messages = node.messages || [];
     const history = node.messages.slice();
     node.messages.push({role:'user', content:message});
@@ -12610,6 +12774,54 @@ function logTaskLabel(log){
     }
     return log?.model || '-';
 }
+async function deleteCanvasLogEntry(logId, deleteMedia=false){
+    if(!canvas || !logId) return;
+    const confirmText = deleteMedia ? tr('canvas.deleteLogMediaConfirm') : tr('canvas.deleteLogConfirm');
+    if(!confirm(confirmText)) return;
+    try {
+        if(localCanvasDirty || saveTimer){
+            clearTimeout(saveTimer);
+            saveTimer = null;
+            await saveCanvas();
+        }
+        const res = await fetch(`/api/canvases/${encodeURIComponent(canvas.id)}/logs/delete`, {
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({
+                log_id:logId,
+                delete_unreferenced_media:deleteMedia,
+                reset_referencing_nodes:deleteMedia,
+                base_updated_at:Number(canvas.updated_at || lastCanvasUpdatedAt || 0)
+            })
+        });
+        const data = await res.json().catch(() => ({}));
+        const detail = typeof data.detail === 'string' ? data.detail : (data.detail?.message || '');
+        if(!res.ok) throw new Error(detail || tr('canvas.logDeleteFailed'));
+        canvas.logs = data.canvas?.logs || (canvas.logs || []).filter(item => item.id !== logId);
+        if(data.canvas?.nodes){
+            canvas.nodes = data.canvas.nodes;
+            canvas.connections = data.canvas.connections || [];
+            nodes = canvas.nodes;
+            connections = canvas.connections;
+            render();
+        }
+        canvas.updated_at = Number(data.canvas?.updated_at || canvas.updated_at || Date.now());
+        lastCanvasUpdatedAt = canvas.updated_at;
+        if(Array.isArray(data.removed_task_ids) && data.removed_task_ids.length){
+            const removed = new Set(data.removed_task_ids.map(String));
+            canvasTaskLedger = canvasTaskLedger.filter(task => !removed.has(String(task.task_id || '')));
+        }
+        renderCanvasLog();
+        const notes = [tr('canvas.logDeleted')];
+        if(data.removed_files?.length) notes.push(tr('canvas.logMediaRemoved').replace('{n}', data.removed_files.length));
+        if(data.reset_node_ids?.length) notes.push(tr('canvas.logNodesReset').replace('{n}', data.reset_node_ids.length));
+        if(data.removed_task_ids?.length) notes.push(tr('canvas.logTasksRemoved').replace('{n}', data.removed_task_ids.length));
+        if(data.skipped_referenced?.length) notes.push(tr('canvas.logMediaReferenced').replace('{n}', data.skipped_referenced.length));
+        setStatus(notes.join(' · '));
+    } catch(err) {
+        setStatus(err?.message || tr('canvas.logDeleteFailed'));
+    }
+}
 function addGenerationLog({run, outputs=[], runMs=0, error=''}) {
     if(!canvas) return;
     canvas.logs = canvas.logs || [];
@@ -12630,98 +12842,452 @@ function addGenerationLog({run, outputs=[], runMs=0, error=''}) {
     };
     canvas.logs = [entry, ...canvas.logs].slice(0, 500);
 }
+function canvasTaskState(task){
+    const state = String(task?.status || 'running').trim().toLowerCase();
+    if(['success', 'succeeded', 'completed', 'done'].includes(state)) return {key:'success', label:'成功'};
+    if(['failed', 'error'].includes(state)) return {key:'failed', label:'失败'};
+    if(['canceled', 'cancelled', 'stopped'].includes(state)) return {key:'stopped', label:'已停止'};
+    return {key:'running', label:'进行中'};
+}
+function isPendingCanvasTask(task){
+    return ['queued', 'running', 'processing', 'pending', 'submitted'].includes(String(task?.status || '').toLowerCase());
+}
+function canvasTaskHasActualCost(task){
+    return task?.actual_cost !== null && task?.actual_cost !== undefined && String(task.actual_cost).trim() !== '' && currencyNumber(task.actual_cost) !== null;
+}
+function canvasTaskMatchesLogFilter(task){
+    const mediaType = String(task?.media_type || 'image').toLowerCase();
+    const state = canvasTaskState(task).key;
+    if(canvasLogFilter === 'image') return mediaType !== 'video';
+    if(canvasLogFilter === 'video') return mediaType === 'video';
+    if(canvasLogFilter === 'error') return state === 'failed' || state === 'stopped';
+    return true;
+}
+function canvasTaskDisplayName(task){
+    const quote = task?.price_snapshot && typeof task.price_snapshot === 'object' ? task.price_snapshot : {};
+    return quote.display_name || quote.model || (String(task?.media_type || '').toLowerCase() === 'video' ? 'KIE 视频生成' : 'KIE 图片生成');
+}
+function canvasTaskTime(task){
+    const timestamp = Number(task?.updated_at || task?.created_at || 0);
+    return timestamp ? new Date(timestamp).toLocaleString('zh-CN', {month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit'}) : '时间待同步';
+}
 function renderCanvasLog(){
     const list = document.getElementById('logList') || (typeof logList !== 'undefined' ? logList : null);
-    const logs = (typeof canvas !== 'undefined' && Array.isArray(canvas?.logs)) ? canvas.logs : [];
     if(!list) return;
-    const capacity = canvasTaskLedgerMeta.capacity || {};
-    const completionLabel = canvasTaskLedgerMeta.completionMode === 'callback' ? '线上回调' : '本地轮询';
-    const taskLedger = canvasTaskLedger.length ? `<div class="log-task-ledger"><div class="log-task-ledger-title">任务队列 <span>${canvasTaskLedger.length}</span><small>${escapeHtml(`${completionLabel} · ${Number(capacity.active || 0)}/${Number(capacity.max || 10)} 在途`)}</small></div>${canvasTaskLedger.slice(0, 20).map(task => {
-        const state = String(task.status || 'running').toLowerCase();
-        const label = state === 'success' || state === 'succeeded' ? '成功' : state === 'failed' ? '失败' : state === 'canceled' || state === 'cancelled' ? '已停止' : '进行中';
-        const time = Number(task.updated_at || task.created_at || 0) ? new Date(Number(task.updated_at || task.created_at)).toLocaleString('zh-CN') : '';
-        return `<div class="log-task-row ${escapeAttr(state)}"><span class="log-chip ${state === 'failed' ? 'status-failed' : (state === 'success' || state === 'succeeded' ? 'status-ok' : '')}">${label}</span><span>${escapeHtml(task.media_type || 'image')}</span><code title="${escapeAttr(task.task_id || '')}">${escapeHtml(task.task_id || '')}</code><span>${escapeHtml(time)}</span>${task.error ? `<span class="log-task-error" title="${escapeAttr(task.error)}">${escapeHtml(task.error)}</span>` : ''}</div>`;
-    }).join('')}</div>` : '';
-    const logHtml = logs.length ? logs.map(log => {
-        const thumbs = (log.outputs || []).slice(0, 8).map(item => {
-            const url = outputUrlValue(item);
-            if(!url) return '';
-            const safe = escapeAttr(url);
-            if(isMissingAssetUrl(url)) return `<div class="missing-asset compact" data-url="${safe}"><i data-lucide="image-off" class="w-4 h-4"></i></div>`;
-            const kind = mediaKindForOutputItem(item);
-            return kind === 'video' ? canvasVideoPreviewHtml(url, 256, 'alt="output"') : canvasPreviewImgHtml(url, 256, 'alt="output"');
-        }).join('');
-        const date = new Date(log.createdAt || Date.now()).toLocaleString(window.StudioI18n?.lang() === 'en' ? 'en-US' : 'zh-CN');
-        const req = log.request || {};
-        const taskId = req.task_id || req.taskId || req.prompt_id || req.promptId || '';
-        const requestId = req.request_id || req.requestId || req.id || '';
-        const backend = req.backend || req.provider_id || req.providerId || '';
-        const workflow = req.workflow_json || req.workflow || '';
-        const taskLabel = logTaskLabel(log);
-        const idText = taskId || requestId || '';
-        const backendText = workflow || backend || '';
-        const subParts = [
-            date,
-            `${langIsEn() ? 'outputs' : '输出'} ${(log.outputs || []).length}`,
-            idText ? `ID ${idText}` : '',
-            backendText,
-        ].filter(Boolean);
-        return `<div class="log-item ${log.status === 'failed' ? 'failed' : ''}">
-            <div class="log-main">
-                <div class="log-meta">
-                    <span class="log-chip ${log.status === 'failed' ? 'status-failed' : 'status-ok'}">${escapeHtml(log.status === 'failed' ? tr('canvas.failed') : tr('canvas.success'))}</span>
-                    <span class="log-chip">${escapeHtml(log.platform || '-')}</span>
-                    ${taskLabel ? `<span class="log-chip">${escapeHtml(taskLabel)}</span>` : ''}
-                    <span class="log-chip">${escapeHtml(formatRunDuration(log.runMs || 0))}</span>
-                </div>
-                <div class="log-subline">${subParts.map(part => `<span title="${escapeAttr(part)}">${escapeHtml(part)}</span>`).join('')}</div>
-                ${log.error ? `<div class="log-error" title="${escapeAttr(log.error)}" data-error="${escapeAttr(log.error)}">${escapeHtml(log.error)}</div>` : ''}
-                <div class="log-prompt" title="${escapeAttr(log.prompt || tr('canvas.noPromptMeta'))}" data-prompt="${escapeAttr(log.prompt || '')}">${escapeHtml(log.prompt || tr('canvas.noPromptMeta'))}</div>
+    const tasks = Array.isArray(canvasTaskLedger) ? canvasTaskLedger : [];
+    const filteredTasks = tasks.filter(canvasTaskMatchesLogFilter);
+    const actualTotal = tasks.reduce((sum, task) => sum + (canvasTaskHasActualCost(task) ? (currencyNumber(task.actual_cost) || 0) : 0), 0);
+    const pendingTotal = tasks.reduce((sum, task) => sum + (isPendingCanvasTask(task) && !canvasTaskHasActualCost(task) ? (currencyNumber(task.estimated_cost) || 0) : 0), 0);
+    const activeCount = tasks.filter(isPendingCanvasTask).length;
+    const errorCount = tasks.filter(task => ['failed', 'stopped'].includes(canvasTaskState(task).key)).length;
+    const filterOptions = [
+        ['all', '全部', tasks.length],
+        ['image', '图片', tasks.filter(task => String(task.media_type || 'image').toLowerCase() !== 'video').length],
+        ['video', '视频', tasks.filter(task => String(task.media_type || '').toLowerCase() === 'video').length],
+        ['error', '异常', errorCount]
+    ];
+    const taskCards = filteredTasks.map(task => {
+        const state = canvasTaskState(task);
+        const mediaType = String(task.media_type || 'image').toLowerCase() === 'video' ? 'video' : 'image';
+        const resultUrl = String(task.result_url || '').trim();
+        const taskId = String(task.task_id || '');
+        const hasActual = canvasTaskHasActualCost(task);
+        const estimate = currencyNumber(task.estimated_cost);
+        const costLabel = hasActual
+            ? `实际 ${formatCanvasCny(task.actual_cost)}`
+            : (isPendingCanvasTask(task) && estimate !== null ? `预估 ${formatCanvasCny(estimate)}` : '待 KIE 结算');
+        const costNote = hasActual ? 'KIE 已结算' : (isPendingCanvasTask(task) ? 'KIE 结算中' : '尚未回传实际费用');
+        const thumb = resultUrl
+            ? `<button type="button" class="history-task-thumb ${mediaType}" data-url="${escapeAttr(resultUrl)}" aria-label="预览${mediaType === 'video' ? '视频' : '图片'}结果">${mediaType === 'video'
+                ? `<video src="${escapeAttr(resultUrl)}" muted playsinline preload="metadata"></video><span><i data-lucide="play" aria-hidden="true"></i></span>`
+                : `<img src="${escapeAttr(resultUrl)}" alt="${escapeAttr(canvasTaskDisplayName(task))} 结果" loading="lazy">`}</button>`
+            : `<div class="history-task-thumb placeholder ${mediaType}" aria-hidden="true"><i data-lucide="${mediaType === 'video' ? 'video' : 'image'}"></i></div>`;
+        const error = String(task.error || '').trim();
+        return `<article class="history-task-card is-${escapeAttr(state.key)}">
+            ${thumb}
+            <div class="history-task-main">
+                <div class="history-task-title-row"><strong title="${escapeAttr(canvasTaskDisplayName(task))}">${escapeHtml(canvasTaskDisplayName(task))}</strong><span class="history-status ${escapeAttr(state.key)}">${escapeHtml(state.label)}</span></div>
+                <div class="history-task-meta"><span><i data-lucide="${mediaType === 'video' ? 'video' : 'image'}" aria-hidden="true"></i>${mediaType === 'video' ? '视频生成' : '图片生成'}</span><span><i data-lucide="clock-3" aria-hidden="true"></i>${escapeHtml(canvasTaskTime(task))}</span></div>
+                <div class="history-task-id" title="${escapeAttr(taskId)}">KIE · ${escapeHtml(taskId || '任务号待同步')}</div>
+                ${error ? `<div class="history-task-error" title="${escapeAttr(error)}">${escapeHtml(error)}</div>` : ''}
             </div>
-            <div class="log-thumbs">${thumbs}</div>
-        </div>`;
-    }).join('') : `<div class="log-empty">${tr('canvas.noLogs')}</div>`;
-    list.innerHTML = taskLedger + logHtml;
-    bindCanvasPreviewImageFallbacks(list);
-    list.querySelectorAll('[data-url]').forEach(el => {
-        el.onclick = e => {
-            e.stopPropagation();
-            openOutputLightbox(el.dataset.url, null);
+            <div class="history-task-side">
+                <div class="history-task-cost"><span>${escapeHtml(costLabel)}</span><small>${escapeHtml(costNote)}</small></div>
+                <button type="button" class="history-kie-btn" data-kie-task="${escapeAttr(taskId)}" ${taskId ? '' : 'disabled'}><i data-lucide="radio-tower" aria-hidden="true"></i><span>KIE 详情</span></button>
+            </div>
+        </article>`;
+    }).join('');
+    list.innerHTML = `<section class="history-overview" aria-label="当前画布生成任务概览">
+            <div class="history-overview-head"><div><strong>当前画布任务</strong><span>${tasks.length} 个任务${activeCount ? ` · ${activeCount} 个进行中` : ''}</span></div><button type="button" class="history-refresh ${canvasTaskLedgerLoading ? 'is-loading' : ''}" data-history-refresh aria-label="刷新当前画布生成历史" ${canvasTaskLedgerLoading ? 'disabled' : ''}><i data-lucide="refresh-cw" aria-hidden="true"></i><span>${canvasTaskLedgerLoading ? '刷新中' : '刷新'}</span></button></div>
+            <div class="history-totals"><div><span>累计实际费用</span><strong>${formatCanvasCny(actualTotal)}</strong><small>以 KIE 结算为准</small></div><div class="pending"><span>待结算预估</span><strong>${formatCanvasCny(pendingTotal)}</strong><small>${pendingTotal > 0 ? '进行中任务的预估费用' : '暂无待结算任务'}</small></div></div>
+        </section>
+        <div class="history-filter" role="group" aria-label="筛选生成任务">${filterOptions.map(([key, label, count]) => `<button type="button" data-history-filter="${key}" aria-pressed="${canvasLogFilter === key}" class="${canvasLogFilter === key ? 'active' : ''}">${escapeHtml(label)}<span>${Number(count)}</span></button>`).join('')}</div>
+        <section class="history-task-list" aria-live="polite">${taskCards || `<div class="history-empty"><i data-lucide="${tasks.length ? 'filter-x' : 'sparkles'}" aria-hidden="true"></i><strong>${tasks.length ? '没有符合条件的任务' : '当前画布还没有生成任务'}</strong><span>${tasks.length ? '换一个筛选条件试试。' : '从画布中生成图片或视频后，会在这里显示实际费用和 KIE 详情。'}</span></div>`}</section>`;
+    list.querySelectorAll('[data-history-filter]').forEach(button => {
+        button.onclick = () => {
+            canvasLogFilter = button.dataset.historyFilter || 'all';
+            renderCanvasLog();
         };
     });
-    const bindCanvasLogCopy = (selector, key) => {
-        list.querySelectorAll(selector).forEach(el => {
-            el.onclick = async e => {
-                e.stopPropagation();
-                const text = el.dataset[key] || '';
-                const copied = await copyTextToClipboard(text);
-                const oldText = el.textContent;
-                el.textContent = copied ? tr('canvas.copied') : tr('canvas.copyFailed');
-                if(copied) el.classList.add('copied');
-                setTimeout(() => {
-                    el.textContent = oldText;
-                    el.classList.remove('copied');
-                }, 900);
-            };
-        });
-    };
-    bindCanvasLogCopy('[data-prompt]', 'prompt');
-    bindCanvasLogCopy('[data-error]', 'error');
+    list.querySelector('[data-history-refresh]')?.addEventListener('click', () => { void loadCanvasTaskLedger(); });
+    list.querySelectorAll('[data-url]').forEach(button => {
+        button.onclick = event => {
+            event.stopPropagation();
+            openOutputLightbox(button.dataset.url, null);
+        };
+    });
+    list.querySelectorAll('[data-kie-task]').forEach(button => {
+        button.onclick = event => {
+            event.stopPropagation();
+            void openKieDetail(button.dataset.kieTask);
+        };
+    });
     refreshIcons();
 }
+function kieFieldValue(raw, names){
+    if(!raw || typeof raw !== 'object') return undefined;
+    const exact = names.find(n => Object.prototype.hasOwnProperty.call(raw, n) && raw[n] !== '' && raw[n] != null);
+    if(exact !== undefined) return raw[exact];
+    const lower = names.map(n => String(n).toLowerCase());
+    for(const k of Object.keys(raw)){
+        if(lower.includes(String(k).toLowerCase()) && raw[k] !== '' && raw[k] != null) return raw[k];
+    }
+    return undefined;
+}
+function kieFindUrls(raw, found, seen){
+    found = found || []; seen = seen || new Set();
+    if(!raw || typeof raw !== 'object') return found;
+    if(Array.isArray(raw)){ raw.forEach(v => kieFindUrls(v, found, seen)); return found; }
+    for(const [k, v] of Object.entries(raw)){
+        if(typeof v === 'string' && /^https?:\/\//i.test(v)){
+            if(!seen.has(v)){ seen.add(v); found.push({key:k, url:v}); }
+        } else if(v && typeof v === 'object'){
+            kieFindUrls(v, found, seen);
+        }
+    }
+    return found;
+}
+function normalizeKieRaw(raw){
+    // KIE recordInfo 返回形如 {code,msg,data:{...}}，真实字段在 data 内，需解一层
+    if(raw && typeof raw === 'object' && !Array.isArray(raw) && raw.data && typeof raw.data === 'object'){
+        if('taskId' in raw.data || 'state' in raw.data || 'model' in raw.data || 'creditsConsumed' in raw.data){
+            return raw.data;
+        }
+    }
+    return raw;
+}
+function kieParseNestedStr(v){
+    if(typeof v !== 'string') return v;
+    const str = v.trim();
+    if(!str.startsWith('{') && !str.startsWith('[')) return v;
+    try { return JSON.parse(str); } catch(_) { return v; }
+}
+function formatKieTime(v){
+    if(v == null || v === '') return '';
+    let ms = Number(v);
+    if(!Number.isFinite(ms)) return String(v);
+    if(ms < 1e12) ms = ms * 1000;
+    const d = new Date(ms);
+    if(isNaN(d.getTime())) return String(v);
+    const p = n => String(n).padStart(2, '0');
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+}
+function formatKieDuration(v){
+    if(v == null || v === '') return '';
+    const n = Number(v);
+    if(!Number.isFinite(n)) return String(v);
+    return n >= 1000 ? (n / 1000).toFixed(1) + ' 秒' : n + ' 毫秒';
+}
+function renderKieDetail(raw, payload){
+    if(raw === undefined && payload && typeof payload === 'object' && 'data' in payload) raw = payload.data;
+    raw = normalizeKieRaw(raw);
+    const param = kieParseNestedStr(kieFieldValue(raw, ['param', 'params', 'request', 'input']));
+    const paramInput = (param && typeof param === 'object') ? kieParseNestedStr(param.input || param) : null;
+    const resultJson = kieParseNestedStr(kieFieldValue(raw, ['resultJson', 'result', 'output']));
+    const box = [];
+    const state = kieFieldValue(raw, ['state', 'status', 'taskState', 'jobState']);
+    const stateText = state == null ? '未知' : String(state);
+    const s = stateText.toUpperCase();
+    const stateClass = s.includes('FAIL') || s.includes('ERROR') ? 'kie-state-fail' : (s.includes('SUCC') || s === 'DONE' || s === 'FINISH') ? 'kie-state-ok' : (s.includes('CANCEL') || s.includes('STOP')) ? 'kie-state-stop' : 'kie-state-run';
+    box.push('<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap;">');
+    box.push('<span class="kie-state ' + stateClass + '">' + escapeHtml(stateText) + '</span>');
+    const model = kieFieldValue(raw, ['model', 'modelName', 'model_name']);
+    if(model) box.push('<span style="font-weight:700;font-size:14px;color:#0f172a;">' + escapeHtml(String(model)) + '</span>');
+    const idVal = kieFieldValue(raw, ['id', 'taskId', 'task_id', 'jobId']) || '';
+    if(idVal) box.push('<span title="任务ID" style="font-family:ui-monospace,monospace;font-size:11px;color:#94a3b8;margin-left:auto;">' + escapeHtml(String(idVal)) + '</span>');
+    box.push('</div>');
+    const rows = [];
+    const credits = kieFieldValue(raw, ['creditsConsumed', 'consumedCredits', 'credit', 'credits', 'consumeCredits', 'pointsConsumed', 'pointConsumed']);
+    if(credits !== undefined && credits !== '') rows.push(['积分消耗', credits + ' 积分']);
+    const cost = kieFieldValue(raw, ['cost', 'fee', 'price', 'amount', 'totalFee', 'totalCost']);
+    if(cost !== undefined && cost !== '') rows.push(['费用', String(cost)]);
+    const failCode = kieFieldValue(raw, ['failCode', 'errorCode']);
+    if(failCode) rows.push(['失败码', failCode]);
+    const failMsg = kieFieldValue(raw, ['failMsg', 'failMessage', 'message', 'failReason', 'errorMsg', 'errMsg']);
+    if(failMsg !== undefined && failMsg !== '') rows.push(['失败原因', failMsg]);
+    const costTime = kieFieldValue(raw, ['costTime', 'costMs', 'durationMs', 'elapsed', 'runMs']);
+    if(costTime !== undefined && costTime !== '') rows.push(['耗时', formatKieDuration(costTime)]);
+    const createT = kieFieldValue(raw, ['createdAt', 'createTime', 'startTime', 'create_at']);
+    if(createT) rows.push(['创建时间', formatKieTime(createT)]);
+    const completeT = kieFieldValue(raw, ['completeTime', 'updatedAt', 'finishTime', 'complete_at', 'endTime']);
+    if(completeT) rows.push(['完成时间', formatKieTime(completeT)]);
+    if(rows.length){
+        box.push('<div style="border:1px solid #eef0f3;border-radius:12px;overflow:hidden;margin-bottom:14px;">');
+        rows.forEach(function(r, i){
+            box.push('<div style="display:flex;gap:12px;padding:9px 14px;' + (i % 2 ? 'background:#f8fafc;' : '') + 'border-bottom:1px solid #f1f5f9;"><span style="flex:0 0 76px;color:#64748b;font-size:11px;font-weight:800;">' + escapeHtml(r[0]) + '</span><span style="flex:1;min-width:0;color:#0f172a;font-size:12.5px;overflow-wrap:anywhere;">' + escapeHtml(String(r[1])) + '</span></div>');
+        });
+        box.push('</div>');
+    }
+    if(paramInput && typeof paramInput === 'object'){
+        const inRows = [];
+        if(paramInput.prompt || paramInput.prompt_text) inRows.push(['提示词', paramInput.prompt || paramInput.prompt_text]);
+        if(paramInput.aspect_ratio || paramInput.ratio) inRows.push(['比例', paramInput.aspect_ratio || paramInput.ratio]);
+        if(paramInput.output_format || paramInput.format) inRows.push(['输出格式', paramInput.output_format || paramInput.format]);
+        if(paramInput.resolution) inRows.push(['分辨率', paramInput.resolution]);
+        const imgs = Array.isArray(paramInput.image_input) ? paramInput.image_input : (Array.isArray(paramInput.images) ? paramInput.images : null);
+        if(inRows.length || (imgs && imgs.length)){
+            box.push('<div style="margin:6px 0 14px;"><div style="font-size:11px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">输入参数</div>');
+            inRows.forEach(function(r){
+                box.push('<div style="display:flex;gap:12px;padding:7px 0;border-bottom:1px dashed #eef0f3;"><span style="flex:0 0 76px;color:#64748b;font-size:11px;font-weight:800;">' + escapeHtml(r[0]) + '</span><span style="flex:1;min-width:0;color:#0f172a;font-size:12.5px;overflow-wrap:anywhere;">' + escapeHtml(String(r[1])) + '</span></div>');
+            });
+            if(imgs && imgs.length){
+                box.push('<div style="display:flex;gap:12px;padding:7px 0;"><span style="flex:0 0 76px;color:#64748b;font-size:11px;font-weight:800;padding-top:2px;">输入图</span><span style="flex:1;display:flex;flex-wrap:wrap;gap:8px;">');
+                imgs.slice(0, 6).forEach(function(src){
+                    box.push('<a href="' + escapeAttr(src) + '" target="_blank" rel="noopener"><img src="' + escapeAttr(src) + '" style="width:72px;height:72px;object-fit:cover;border-radius:8px;border:1px solid #e2e8f0;" loading="lazy" alt="输入图"></a>');
+                });
+                box.push('</span></div>');
+            }
+            box.push('</div>');
+        }
+    }
+    const resultUrls = (resultJson && typeof resultJson === 'object' && Array.isArray(resultJson.resultUrls)) ? resultJson.resultUrls : (resultJson && typeof resultJson === 'object' && Array.isArray(resultJson.urls)) ? resultJson.urls : kieFindUrls(raw).map(function(u){ return u.url; });
+    if(resultUrls && resultUrls.length){
+        box.push('<div style="margin:6px 0 14px;"><div style="font-size:11px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">生成结果 (' + resultUrls.length + ')</div><div style="display:flex;flex-wrap:wrap;gap:10px;">');
+        resultUrls.slice(0, 12).forEach(function(src){
+            box.push('<a href="' + escapeAttr(src) + '" target="_blank" rel="noopener" style="display:block;width:96px;"><img src="' + escapeAttr(src) + '" style="width:96px;height:96px;object-fit:cover;border-radius:10px;border:1px solid #e2e8f0;box-shadow:0 4px 12px rgba(15,23,42,.08);" loading="lazy" alt="结果图"><div style="font-size:10px;color:#2563eb;margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:96px;">打开原图</div></a>');
+        });
+        box.push('</div></div>');
+    }
+    const rawJson = (raw && typeof raw === 'object') ? JSON.stringify(raw, null, 2) : String(raw == null ? payload : raw);
+    box.push('<details style="margin-top:8px;border-top:1px solid #eef0f3;padding-top:10px;"><summary style="cursor:pointer;color:#64748b;font-size:12px;font-weight:700;">原始报文</summary><pre style="background:#0f172a;color:#cbd5e1;padding:12px;border-radius:8px;overflow:auto;max-height:300px;font-size:11.5px;white-space:pre-wrap;word-break:break-all;margin-top:8px;">' + escapeHtml(rawJson) + '</pre></details>');
+    return box.join('');
+}
+let kieDetailReturnFocus = null;
+function closeKieDetail(){
+    const modal = document.getElementById('kieRawModal');
+    if(!modal) return;
+    modal.classList.remove('open');
+    const returnFocus = kieDetailReturnFocus;
+    kieDetailReturnFocus = null;
+    if(returnFocus && document.contains(returnFocus)) returnFocus.focus();
+}
+function openKieDetail(taskId){
+    if(!taskId) return;
+    let modal = document.getElementById('kieRawModal');
+    if(!modal){
+        modal = document.createElement('div');
+        modal.id = 'kieRawModal';
+        modal.className = 'kie-drawer-overlay';
+        modal.innerHTML = `<aside class="kie-drawer" role="dialog" aria-modal="true" aria-labelledby="kieDetailTitle">
+            <header class="kie-drawer-head"><div><span class="kie-drawer-eyebrow">KIE 原生返回</span><h2 id="kieDetailTitle">KIE 任务详情</h2></div><button type="button" class="kie-raw-close" aria-label="关闭 KIE 任务详情"><i data-lucide="x" aria-hidden="true"></i></button></header>
+            <div class="kie-raw-body" aria-live="polite"></div>
+        </aside>`;
+        document.body.appendChild(modal);
+        modal.addEventListener('click', event => { if(event.target === modal) closeKieDetail(); });
+        modal.querySelector('.kie-raw-close').addEventListener('click', closeKieDetail);
+        document.addEventListener('keydown', event => {
+            if(event.key === 'Escape' && modal.classList.contains('open')){
+                event.preventDefault();
+                closeKieDetail();
+            }
+        });
+    }
+    kieDetailReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const body = modal.querySelector('.kie-raw-body');
+    body.innerHTML = '<div class="kie-loading"><i data-lucide="loader-circle" aria-hidden="true"></i><span>正在拉取 KIE 数据…</span></div>';
+    modal.classList.add('open');
+    modal.querySelector('.kie-raw-close')?.focus();
+    refreshIcons();
+    (async () => {
+        try {
+            const res = await fetch('/api/tasks/kie-raw/' + encodeURIComponent(taskId), {cache:'no-store'});
+            let payload = null;
+            try { payload = await res.json(); } catch(_) {}
+            if(!res.ok){
+                const msg = (payload && (payload.message || payload.detail)) ? String(payload.message || payload.detail) : ('HTTP ' + res.status);
+                body.innerHTML = '<div class="kie-error"><i data-lucide="circle-alert" aria-hidden="true"></i>获取失败：' + escapeHtml(msg) + '</div>';
+                refreshIcons();
+                return;
+            }
+            let raw = payload && payload.data;
+            if(typeof raw === 'string'){ try { raw = JSON.parse(raw); } catch(_) {} }
+            body.innerHTML = renderKieDetail(raw, payload);
+        } catch(err){
+            body.innerHTML = '<div class="kie-error"><i data-lucide="circle-alert" aria-hidden="true"></i>' + escapeHtml(err && err.message ? err.message : '获取 KIE 详情失败，请检查网络') + '</div>';
+        }
+        refreshIcons();
+    })();
+}
 async function loadCanvasTaskLedger(){
+    const canvasId = String(canvas?.id || '');
+    if(!canvasId){
+        canvasTaskLedger = [];
+        renderCanvasLog();
+        return;
+    }
+    if(canvasTaskLedgerLoading) return;
+    canvasTaskLedgerLoading = true;
+    renderCanvasLog();
     try {
-        const data = await fetch('/api/canvas-tasks').then(async response => {
+        const data = await fetch(`/api/canvas-tasks?canvas_id=${encodeURIComponent(canvasId)}`).then(async response => {
             if(!response.ok) throw new Error(await response.text());
             return response.json();
         });
+        if(String(canvas?.id || '') !== canvasId) return;
         canvasTaskLedger = Array.isArray(data.tasks) ? data.tasks : [];
         canvasTaskLedgerMeta = {capacity:data.capacity || canvasTaskLedgerMeta.capacity, completionMode:data.completion_mode || 'polling'};
-        renderCanvasLog();
     } catch(error) {
-        // The local log stays usable when the backend is temporarily unavailable.
+        // Keep the last rendered task list usable when the task service is temporarily unavailable.
         console.warn('Canvas task ledger unavailable', error);
+    } finally {
+        canvasTaskLedgerLoading = false;
+        renderCanvasLog();
     }
+}
+
+function updateCanvasCostDisplay(){
+    if(!currentCanvasCost) return;
+    if(!canvas?.id){
+        currentCanvasCost.style.display = 'none';
+        return;
+    }
+    const actual = currencyNumber(canvasBillingSummary?.actual_cost) || 0;
+    const pending = currencyNumber(canvasBillingSummary?.pending_estimate) || 0;
+    currentCanvasCost.style.display = '';
+    currentCanvasCost.classList.toggle('has-pending', pending > 0);
+    currentCanvasCost.tabIndex = 0;
+    currentCanvasCost.setAttribute('role', 'button');
+    currentCanvasCost.setAttribute('aria-label', `画布费用明细，已实际消费 ${formatCanvasCny(actual)}${pending > 0 ? `，待确认预估 ${formatCanvasCny(pending)}` : ''}`);
+    currentCanvasCost.innerHTML = `<i data-lucide="wallet-cards" class="w-3 h-3" aria-hidden="true"></i><span>实际 ${formatCanvasCny(actual)}</span>${pending > 0 ? `<span class="canvas-cost-pending">待确认 ${formatCanvasCny(pending)}</span>` : ''}`;
+    currentCanvasCost.onclick = openCanvasCostDetail;
+    currentCanvasCost.onkeydown = event => {
+        if(event.key === 'Enter' || event.key === ' '){ event.preventDefault(); openCanvasCostDetail(); }
+    };
+    refreshIcons();
+}
+
+async function loadCanvasBilling(){
+    if(!canvas?.id){
+        canvasBillingSummary = {actual_cost:0, pending_estimate:0, tasks:[]};
+        updateCanvasCostDisplay();
+        return;
+    }
+    try {
+        const response = await fetch(`/api/canvas-billing?canvas_id=${encodeURIComponent(canvas.id)}`);
+        if(!response.ok) throw new Error(await response.text());
+        canvasBillingSummary = await response.json();
+        updateCanvasCostDisplay();
+    } catch(error) {
+        console.warn('Canvas billing unavailable', error);
+    }
+}
+
+function closeCanvasCostOverlay(overlay){
+    if(!overlay) return;
+    overlay.remove();
+}
+
+function openCanvasCostDetail(){
+    if(document.querySelector('.canvas-cost-overlay')) return;
+    const tasks = Array.isArray(canvasBillingSummary?.tasks) ? canvasBillingSummary.tasks : [];
+    const actual = currencyNumber(canvasBillingSummary?.actual_cost) || 0;
+    const pending = currencyNumber(canvasBillingSummary?.pending_estimate) || 0;
+    const overlay = document.createElement('div');
+    overlay.className = 'canvas-cost-overlay';
+    overlay.tabIndex = -1;
+    const deletedNode = task => task?.canvas_node_id && !nodes.some(node => String(node.id) === String(task.canvas_node_id));
+    const rows = tasks.length ? tasks.map(task => {
+        const quote = task.price_snapshot && typeof task.price_snapshot === 'object' ? task.price_snapshot : {};
+        const expected = currencyNumber(task.estimated_cost);
+        const finalCost = currencyNumber(task.actual_cost);
+        const hasActual = finalCost !== null;
+        const variance = hasActual && expected !== null ? finalCost - expected : null;
+        const varianceWarning = variance !== null && expected > 0 && Math.abs(variance / expected) >= 0.1;
+        const status = String(task.status || 'running').toLowerCase();
+        const statusLabel = status === 'succeeded' || status === 'success' ? '已完成' : status === 'failed' ? '失败' : status === 'cancelled' || status === 'canceled' ? '已停止' : '进行中';
+        const title = quote.display_name || task.media_type || 'KIE 任务';
+        return `<div class="canvas-cost-row">
+            <div class="canvas-cost-row-main"><strong>${escapeHtml(title)}</strong><span>${escapeHtml(statusLabel)} · ${escapeHtml(task.price_version || '未配置价格版本')}${deletedNode(task) ? ' · 节点已删除' : ''}</span></div>
+            <div class="canvas-cost-row-value"><b>${hasActual ? `实际 ${formatCanvasCny(finalCost)}` : (expected !== null ? `预计 ${formatCanvasCny(expected)}` : '待服务商账单')}</b>${variance !== null ? `<small class="${varianceWarning ? 'variance' : ''}">差额 ${variance >= 0 ? '+' : ''}${formatCanvasCny(variance)}</small>` : ''}</div>
+        </div>`;
+    }).join('') : '<div class="canvas-cost-empty">本画布尚未提交 KIE 生成任务。</div>';
+    overlay.innerHTML = `<section class="canvas-cost-dialog" role="dialog" aria-modal="true" aria-labelledby="canvasCostTitle">
+        <header><div><h2 id="canvasCostTitle">画布费用明细</h2><p>实际费用以 KIE 账单回传为准</p></div><button type="button" class="canvas-cost-close" data-act="close" aria-label="关闭费用明细"><i data-lucide="x" class="w-4 h-4" aria-hidden="true"></i></button></header>
+        <div class="canvas-cost-summary"><div><span>已实际消费</span><strong>${formatCanvasCny(actual)}</strong></div><div><span>待确认预估</span><strong>${formatCanvasCny(pending)}</strong></div></div>
+        <div class="canvas-cost-list">${rows}</div>
+        <footer><button type="button" class="canvas-cost-button" data-act="close">关闭</button></footer>
+    </section>`;
+    const close = () => {
+        document.removeEventListener('keydown', onKeydown);
+        closeCanvasCostOverlay(overlay);
+    };
+    overlay.addEventListener('click', event => { if(event.target === overlay) close(); });
+    overlay.querySelectorAll('[data-act="close"]').forEach(button => button.addEventListener('click', close));
+    const onKeydown = event => { if(event.key === 'Escape'){ event.preventDefault(); close(); } };
+    document.addEventListener('keydown', onKeydown);
+    document.body.appendChild(overlay);
+    overlay.querySelector('[data-act="close"]')?.focus();
+    refreshIcons();
+}
+
+async function confirmCanvasCostSubmission(mediaType, payload, quantity=1){
+    const safePayload = {...(payload || {}), canvas_id:String(canvas?.id || '')};
+    const fingerprint = JSON.stringify({mediaType, quantity, model:safePayload.model, size:safePayload.size, resolution:safePayload.resolution, duration:safePayload.duration, videos:safePayload.videos?.length || 0, images:safePayload.images?.length || 0, refs:safePayload.reference_images?.length || 0});
+    if(pendingCanvasCostConfirmations.has(fingerprint)) return pendingCanvasCostConfirmations.get(fingerprint);
+    const confirmation = (async () => {
+        let quote;
+        try {
+            const response = await fetch('/api/canvas-billing/quote', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({media_type:mediaType, payload:safePayload, quantity})});
+            if(!response.ok) throw new Error(await response.text());
+            quote = await response.json();
+        } catch(error) {
+            quote = {available:false, message:'预估暂不可用，实际以服务商账单为准', model:safePayload.model || '', quantity};
+        }
+        return new Promise(resolve => {
+            const overlay = document.createElement('div');
+            overlay.className = 'canvas-cost-overlay canvas-cost-confirm-overlay';
+            const available = Boolean(quote?.available) && currencyNumber(quote?.amount_cny) !== null;
+            const amount = available ? formatCanvasCny(quote.amount_cny) : '预估暂不可用';
+            const specName = quote?.display_name || quote?.model || 'KIE 生成';
+            const specRes = quote?.resolution;
+            const specRatio = quote?.aspect_ratio || payload?.aspect_ratio || payload?.ratio || '';
+            const specMode = quote?.input_mode;
+            const detailParts = [specName];
+            // display_name 可能已内含分辨率（如 "Nano Banana Pro · 4K"），避免与 resolution 重复显示
+            if (specRes && !specName.toLowerCase().includes(specRes.toLowerCase())) detailParts.push(specRes);
+            if (specRatio) detailParts.push(specRatio);
+            if (specMode) detailParts.push(specMode);
+            const detail = detailParts.filter(Boolean).join(' · ');
+            const finish = confirmed => { overlay.remove(); document.removeEventListener('keydown', onKeydown); resolve(confirmed); };
+            const onKeydown = event => { if(event.key === 'Escape') finish(false); };
+            overlay.innerHTML = `<section class="canvas-cost-dialog canvas-cost-confirm" role="dialog" aria-modal="true" aria-labelledby="canvasCostConfirmTitle">
+                <header><div><h2 id="canvasCostConfirmTitle">确认生成</h2><p>本次运行会向 KIE 提交付费任务</p></div><i data-lucide="wallet-cards" class="canvas-cost-dialog-icon" aria-hidden="true"></i></header>
+                <div class="canvas-cost-confirm-total"><span>预估费用</span><strong class="${available ? '' : 'muted'}">${amount}</strong></div>
+                <div class="canvas-cost-confirm-lines"><div><span>模型与规格</span><b>${escapeHtml(detail || '待服务商账单')}</b></div><div><span>生成数量</span><b>${Math.max(1, Number(quantity) || 1)} 项</b></div></div>
+                <p class="canvas-cost-confirm-hint">${escapeHtml(quote?.message || '实际费用以服务商账单为准')}</p>
+                <footer><button type="button" class="canvas-cost-button secondary" data-act="cancel">取消</button><button type="button" class="canvas-cost-button primary" data-act="confirm">确认并运行</button></footer>
+            </section>`;
+            overlay.addEventListener('click', event => { if(event.target === overlay) finish(false); });
+            overlay.querySelector('[data-act="cancel"]')?.addEventListener('click', () => finish(false));
+            overlay.querySelector('[data-act="confirm"]')?.addEventListener('click', () => finish(true));
+            document.addEventListener('keydown', onKeydown);
+            document.body.appendChild(overlay);
+            overlay.querySelector('[data-act="confirm"]')?.focus();
+            refreshIcons();
+        });
+    })();
+    pendingCanvasCostConfirmations.set(fingerprint, confirmation);
+    try { return await confirmation; } finally { pendingCanvasCostConfirmations.delete(fingerprint); }
 }
 async function importWorkflowAssetUrl(url, name='workflow'){
     if(!canvas || !url) return;
@@ -12842,14 +13408,21 @@ async function createCanvasVideoTask(payload, options={}){
     return createCanvasTask('/api/canvas-video-tasks', payload, options);
 }
 async function createCanvasTask(endpoint, payload, options={}){
+    const requestPayload = {
+        ...(payload || {}),
+        canvas_id: String(canvas?.id || payload?.canvas_id || ''),
+        canvas_node_id: String(options.canvasNodeId || payload?.canvas_node_id || '')
+    };
     return enqueueCanvasTaskSubmission(async () => {
         const res = await cascadeFetch(endpoint, {
             method:'POST',
-            headers:{'Content-Type':'application/json'},
-            body:JSON.stringify(payload)
+            headers:{'Content-Type':'application/json', 'X-Canvas-Cost-Confirmed':'1'},
+            body:JSON.stringify(requestPayload)
         }, options);
         if(!res.ok) throw new Error(await responseErrorMessage(res, tr('canvas.generationFailed')));
-        return res.json();
+        const created = await res.json();
+        void loadCanvasBilling();
+        return created;
     });
 }
 function canvasTaskMediaType(pending){
@@ -12990,7 +13563,8 @@ async function pollCanvasImageTask(taskId, options={}){
                 refreshNodes([found.out.id]);
             }
             if(data.status === 'succeeded'){
-                completeCanvasImageTask(taskId, data.result || {});
+                completeCanvasImageTask(taskId, {...(data.result || {}), cost:data.actual_cost ?? data.cost, estimated_cost:data.estimated_cost, price_version:data.price_version});
+                void loadCanvasBilling();
                 return 'succeeded';
             }
             if(data.status === 'failed'){
@@ -13023,7 +13597,8 @@ async function cancelCanvasPendingOutput(pendingId){
         if(!res.ok) throw new Error(await responseErrorMessage(res, '停止等待失败'));
         const data = await res.json();
         if(data.status === 'succeeded'){
-            completeCanvasImageTask(pending.canvasTaskId, data.result || {});
+            completeCanvasImageTask(pending.canvasTaskId, {...(data.result || {}), cost:data.actual_cost ?? data.cost, estimated_cost:data.estimated_cost, price_version:data.price_version});
+            void loadCanvasBilling();
             return;
         }
         if(data.status === 'failed'){
@@ -13076,17 +13651,20 @@ async function retryCanvasPendingOutput(pendingId){
     const out = findOutputByPendingId(pendingId);
     const pending = pendingById(out, pendingId);
     if(!out || !pending || !pending.failed || pending.retrying) return;
-    if(!await confirmKieCanvasSubmission('任务重试')) return;
+    const retryPayload = retryCanvasTaskPayload(pending);
+    if(!await confirmCanvasCostSubmission(canvasTaskMediaType(pending), retryPayload, 1)) return;
     pending.retrying = true;
     refreshNodes([out.id]);
     try {
         let task;
         if(pending.canvasTaskId){
-            const response = await fetch(`/api/canvas-tasks/${encodeURIComponent(pending.canvasTaskId)}/retry`, {method:'POST'});
+            const response = await fetch(`/api/canvas-tasks/${encodeURIComponent(pending.canvasTaskId)}/retry`, {
+                method:'POST', headers:{'X-Canvas-Cost-Confirmed':'1'}
+            });
             if(!response.ok) throw new Error(await responseErrorMessage(response, '任务重试失败'));
             task = await response.json();
         } else {
-            task = await createCanvasImageTask(retryCanvasTaskPayload(pending), {cascadeTargetId:pending.cascadeTargetId || ''});
+            task = await createCanvasImageTask(retryPayload, {cascadeTargetId:pending.cascadeTargetId || '', canvasNodeId:pending.run?.node?.id || ''});
         }
         if(!task?.task_id) throw new Error('未返回任务 ID');
         pending.canvasTaskId = task.task_id;
@@ -13106,6 +13684,8 @@ async function retryCanvasPendingOutput(pendingId){
             gen.runStatus = 'running';
             gen.runError = '';
         }
+        applyCanvasNodeBilling(gen, task.task_id, task.estimated_cost, null, task.price_version);
+        void loadCanvasBilling();
         refreshRunNodes(gen, out);
         scheduleSave();
         pollCanvasImageTask(task.task_id, {cascadeTargetId:pending.cascadeTargetId || ''});
@@ -13150,6 +13730,7 @@ function completeCanvasImageTask(taskId, result){
     appendOutputImages(out, media, meta.run?.refs?.[0], [{...meta, kind:canvasTaskMediaType(pending)}]);
     const gen = nodes.find(n => n.id === meta.run?.node?.id);
     if(gen){
+        applyCanvasNodeBilling(gen, taskId, result?.estimated_cost, result?.cost, result?.price_version);
         mergeGeneratedOutputs(gen, media, Boolean(pending.appendGenerated));
         gen.runStatus = 'done';
         gen.runError = '';
@@ -13158,6 +13739,49 @@ function completeCanvasImageTask(taskId, result){
     addGenerationLog({run:meta.run, outputs:media, runMs:meta.runMs || 0});
     refreshRunNodes(gen, out);
     scheduleSave();
+}
+
+function currencyNumber(value){
+    if(value === null || value === undefined || value === '') return null;
+    const n = Number(value);
+    return Number.isFinite(n) ? n : null;
+}
+function formatCanvasCny(value){
+    const n = currencyNumber(value);
+    return n === null ? '—' : `￥${n.toFixed(2)}`;
+}
+function applyCanvasNodeBilling(node, taskId, estimatedCost, actualCost, priceVersion){
+    if(!node || !taskId) return;
+    node.billing = node.billing || {tasks:[]};
+    const tasks = Array.isArray(node.billing.tasks) ? node.billing.tasks : (node.billing.tasks = []);
+    let entry = tasks.find(item => item && item.taskId === taskId);
+    if(!entry){
+        entry = {taskId};
+        tasks.push(entry);
+    }
+    const estimate = currencyNumber(estimatedCost);
+    const actual = currencyNumber(actualCost);
+    if(estimate !== null) entry.estimatedCost = estimate;
+    if(actual !== null) entry.actualCost = actual;
+    if(priceVersion) entry.priceVersion = priceVersion;
+    node.billing.actualCost = tasks.reduce((sum, item) => sum + (currencyNumber(item?.actualCost) || 0), 0);
+    node.billing.pendingEstimate = tasks.reduce((sum, item) => sum + (currencyNumber(item?.actualCost) === null ? (currencyNumber(item?.estimatedCost) || 0) : 0), 0);
+}
+function canvasNodeCostBadgeHtml(node){
+    const billing = node?.billing;
+    if(!billing || !Array.isArray(billing.tasks) || !billing.tasks.length) return '';
+    const actual = currencyNumber(billing.actualCost);
+    const pending = currencyNumber(billing.pendingEstimate);
+    if(actual !== null && actual > 0){
+        const estimates = billing.tasks.map(item => currencyNumber(item?.estimatedCost)).filter(value => value !== null);
+        const estimated = estimates.reduce((sum, value) => sum + value, 0);
+        const diff = estimated > 0 ? actual - estimated : 0;
+        const warning = estimated > 0 && Math.abs(diff / estimated) >= 0.1;
+        const detail = warning ? ` · 与预估${diff >= 0 ? '+' : ''}${formatCanvasCny(diff)}` : '';
+        return `<span class="node-cost-badge ${warning ? 'variance' : ''}" title="KIE 实际费用${escapeAttr(detail)}">实际 ${formatCanvasCny(actual)}${warning ? '<i data-lucide="triangle-alert" class="w-3 h-3" aria-hidden="true"></i>' : ''}</span>`;
+    }
+    if(pending !== null && pending > 0) return `<span class="node-cost-badge pending" title="任务运行中，实际费用以 KIE 账单为准">预计 ${formatCanvasCny(pending)}</span>`;
+    return '';
 }
 function failCanvasImageTask(taskId, message, taskData={}){
     const found = findPendingTask(taskId);
@@ -15666,7 +16290,7 @@ function escapeAttr(str){ return escapeHtml(str); }
 
 window.onload = async () => {
     applyTheme(localStorage.getItem('studio_theme') || localStorage.getItem(CANVAS_THEME_KEY) || 'light');
-    applyQuickToolbarState();
+    applyQuickToolbarLayout();
     if(window.StudioI18n) StudioI18n.apply();
     document.title = tr('canvas.title');
     initOutputCompareEvents();

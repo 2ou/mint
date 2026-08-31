@@ -483,7 +483,7 @@ function smartMediaPreviewUrl(itemOrUrl, size=512){
     const displayItem = typeof itemOrUrl === 'object' && itemOrUrl ? {...itemOrUrl, url:raw} : raw;
     const displayUrl = displayMediaUrl(displayItem);
     if(!raw || raw.startsWith('data:') || raw.startsWith('blob:')) return displayUrl;
-    if(!raw.startsWith('/output/') && !raw.startsWith('/assets/')) return displayUrl;
+    if(!raw.startsWith('/output/') && !raw.startsWith('/assets/') && !raw.startsWith('/ai-result/')) return displayUrl;
     if(!/\.(png|jpe?g|webp|gif|bmp|avif|tiff?|mp4|webm|mov|m4v|avi|mkv)(\?|#|$)/i.test(raw)) return displayUrl;
     const width = Math.max(64, Math.min(2048, Math.round(Number(size) || 512)));
     return `/api/media-preview?w=${width}&url=${encodeURIComponent(raw)}`;
@@ -648,7 +648,7 @@ function syncSmartSelectedImageResolution(root=null){
                 if(preview && img.getAttribute('src') !== preview) img.src = preview;
                 return;
             }
-            const target = displayMediaUrl({url:smartOriginalMediaUrl(original)});
+            const target = smartMediaPreviewUrl(original, 1600);
             if(!target) return;
             img.dataset.selectedHighResTarget = target;
             if(smartSelectedHighResLoaded.has(target)){
@@ -7457,6 +7457,59 @@ function openSmartLogLightbox(url, kind='image'){
 function smartLogPreviewNode(url, kind='image'){
     openSmartLogLightbox(url, kind);
 }
+async function deleteCanvasLogEntry(logId, deleteMedia=false){
+    if(!canvas || !canvasId || !logId) return;
+    const confirmText = deleteMedia ? tr('canvas.deleteLogMediaConfirm') : tr('canvas.deleteLogConfirm');
+    if(!confirm(confirmText)) return;
+    try {
+        if(canvasSyncInFlight){
+            await new Promise(resolve => {
+                const startedAt = Date.now();
+                const wait = () => (!canvasSyncInFlight || Date.now() - startedAt > 5000) ? resolve() : setTimeout(wait, 40);
+                wait();
+            });
+        }
+        if(saveTimer){
+            clearTimeout(saveTimer);
+            saveTimer = null;
+            await saveCanvas();
+        }
+        const res = await fetch(`/api/canvases/${encodeURIComponent(canvasId)}/logs/delete`, {
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({
+                log_id:logId,
+                delete_unreferenced_media:deleteMedia,
+                reset_referencing_nodes:deleteMedia,
+                base_updated_at:Number(canvas.updated_at || 0)
+            })
+        });
+        const data = await res.json().catch(() => ({}));
+        const detail = typeof data.detail === 'string' ? data.detail : (data.detail?.message || '');
+        if(!res.ok) throw new Error(detail || tr('canvas.logDeleteFailed'));
+        canvas.logs = data.canvas?.logs || (canvas.logs || []).filter(item => item.id !== logId);
+        if(data.canvas?.nodes){
+            canvas.nodes = data.canvas.nodes;
+            canvas.connections = data.canvas.connections || [];
+            nodes = canvas.nodes;
+            render();
+        }
+        canvas.updated_at = Number(data.canvas?.updated_at || canvas.updated_at || Date.now());
+        if(Array.isArray(data.removed_task_ids) && data.removed_task_ids.length){
+            const removed = new Set(data.removed_task_ids.map(String));
+            smartCanvasTaskLedger = smartCanvasTaskLedger.filter(task => !removed.has(String(task.task_id || '')));
+        }
+        renderSmartCanvasLog();
+        const notes = [tr('canvas.logDeleted')];
+        if(data.removed_files?.length) notes.push(tr('canvas.logMediaRemoved').replace('{n}', data.removed_files.length));
+        if(data.reset_node_ids?.length) notes.push(tr('canvas.logNodesReset').replace('{n}', data.reset_node_ids.length));
+        if(data.removed_task_ids?.length) notes.push(tr('canvas.logTasksRemoved').replace('{n}', data.removed_task_ids.length));
+        if(data.skipped_referenced?.length) notes.push(tr('canvas.logMediaReferenced').replace('{n}', data.skipped_referenced.length));
+        toast(notes.join(' · '));
+    } catch(err) {
+        toast(err?.message || tr('canvas.logDeleteFailed'));
+    }
+}
 function renderSmartCanvasLog(){
     const logs = canvas?.logs || [];
     const capacity = smartCanvasTaskLedgerMeta.capacity || {};
@@ -7465,7 +7518,7 @@ function renderSmartCanvasLog(){
         const state = String(task.status || 'running').toLowerCase();
         const label = state === 'success' || state === 'succeeded' ? '成功' : state === 'failed' ? '失败' : state === 'canceled' || state === 'cancelled' ? '已停止' : '进行中';
         const time = Number(task.updated_at || task.created_at || 0) ? new Date(Number(task.updated_at || task.created_at)).toLocaleString('zh-CN') : '';
-        return `<div class="log-task-row ${escapeAttr(state)}"><span class="log-chip ${state === 'failed' ? 'status-failed' : (state === 'success' || state === 'succeeded' ? 'status-ok' : '')}">${label}</span><span>${escapeHtml(task.media_type || 'image')}</span><code title="${escapeAttr(task.task_id || '')}">${escapeHtml(task.task_id || '')}</code><span>${escapeHtml(time)}</span>${task.error ? `<span class="log-task-error" title="${escapeAttr(task.error)}">${escapeHtml(task.error)}</span>` : ''}</div>`;
+        return `<div class="log-task-row ${escapeAttr(state)}"><span class="log-chip ${state === 'failed' ? 'status-failed' : (state === 'success' || state === 'succeeded' ? 'status-ok' : '')}">${label}</span><span>${escapeHtml(task.media_type || 'image')}</span><code title="${escapeAttr(task.task_id || '')}">${escapeHtml(task.task_id || '')}</code><span>${escapeHtml(time)}</span>${task.error ? `<span class="log-task-error" title="${escapeAttr(task.error)}">${escapeHtml(task.error)}</span>` : ''}${task.task_id ? `<button type="button" class="log-kie-btn" data-kie-task="${escapeAttr(task.task_id)}" style="border:1px solid #d6dae0;background:#fff;color:#334155;border-radius:7px;padding:2px 8px;font-size:12px;cursor:pointer;display:inline-flex;align-items:center;gap:3px;"><i data-lucide="search"></i> KIE 详情</button>` : ''}</div>`;
     }).join('')}</div>` : '';
     const logHtml = logs.length ? logs.map(log => {
         const outputs = (log.outputs || []).map(smartLogOutputItem).filter(item => item?.url);
@@ -7488,7 +7541,7 @@ function renderSmartCanvasLog(){
             taskId ? `ID ${taskId}` : '',
             backend
         ].filter(Boolean);
-        return `<div class="log-item ${log.status === 'failed' ? 'failed' : ''}">
+        return `<div class="log-item ${log.status === 'failed' ? 'failed' : ''}" data-canvas-log-id="${escapeAttr(log.id || '')}">
             <div class="log-main">
                 <div class="log-meta">
                     <span class="log-chip ${log.status === 'failed' ? 'status-failed' : 'status-ok'}">${escapeHtml(log.status === 'failed' ? tr('canvas.failed') : tr('canvas.success'))}</span>
@@ -7499,6 +7552,10 @@ function renderSmartCanvasLog(){
                 <div class="log-subline">${subParts.map(part => `<span title="${escapeAttr(part)}">${escapeHtml(part)}</span>`).join('')}</div>
                 ${log.error ? `<div class="log-error" title="${escapeAttr(log.error)}" data-error="${escapeAttr(log.error)}">${escapeHtml(log.error)}</div>` : ''}
                 <div class="log-prompt" title="${escapeAttr(log.prompt || tr('canvas.noPromptMeta'))}" data-prompt="${escapeAttr(log.prompt || '')}">${escapeHtml(log.prompt || tr('canvas.noPromptMeta'))}</div>
+                <div class="log-actions">
+                    <button type="button" data-log-delete="record"><i data-lucide="list-x"></i><span>${escapeHtml(tr('canvas.deleteLog'))}</span></button>
+                    <button type="button" class="danger" data-log-delete="media"><i data-lucide="trash-2"></i><span>${escapeHtml(tr('canvas.deleteLogAndMedia'))}</span></button>
+                </div>
             </div>
             <div class="log-thumbs">${thumbs}</div>
         </div>`;
@@ -7529,7 +7586,188 @@ function renderSmartCanvasLog(){
     };
     bindLogCopy('[data-prompt]', 'prompt');
     bindLogCopy('[data-error]', 'error');
+    smartLogList.querySelectorAll('[data-log-delete]').forEach(button => {
+        button.onclick = e => {
+            e.stopPropagation();
+            const logId = button.closest('[data-canvas-log-id]')?.dataset.canvasLogId || '';
+            void deleteCanvasLogEntry(logId, button.dataset.logDelete === 'media');
+        };
+    });
+    smartLogList.querySelectorAll('[data-kie-task]').forEach(button => {
+        button.onclick = e => {
+            e.stopPropagation();
+            void openKieDetail(button.dataset.kieTask);
+        };
+    });
     refreshIcons();
+}
+function kieFieldValue(raw, names){
+    if(!raw || typeof raw !== 'object') return undefined;
+    const exact = names.find(n => Object.prototype.hasOwnProperty.call(raw, n) && raw[n] !== '' && raw[n] != null);
+    if(exact !== undefined) return raw[exact];
+    const lower = names.map(n => String(n).toLowerCase());
+    for(const k of Object.keys(raw)){
+        if(lower.includes(String(k).toLowerCase()) && raw[k] !== '' && raw[k] != null) return raw[k];
+    }
+    return undefined;
+}
+function kieFindUrls(raw, found, seen){
+    found = found || []; seen = seen || new Set();
+    if(!raw || typeof raw !== 'object') return found;
+    if(Array.isArray(raw)){ raw.forEach(v => kieFindUrls(v, found, seen)); return found; }
+    for(const [k, v] of Object.entries(raw)){
+        if(typeof v === 'string' && /^https?:\/\//i.test(v)){
+            if(!seen.has(v)){ seen.add(v); found.push({key:k, url:v}); }
+        } else if(v && typeof v === 'object'){
+            kieFindUrls(v, found, seen);
+        }
+    }
+    return found;
+}
+function normalizeKieRaw(raw){
+    // KIE recordInfo 返回形如 {code,msg,data:{...}}，真实字段在 data 内，需解一层
+    if(raw && typeof raw === 'object' && !Array.isArray(raw) && raw.data && typeof raw.data === 'object'){
+        if('taskId' in raw.data || 'state' in raw.data || 'model' in raw.data || 'creditsConsumed' in raw.data){
+            return raw.data;
+        }
+    }
+    return raw;
+}
+function kieParseNestedStr(v){
+    if(typeof v !== 'string') return v;
+    const str = v.trim();
+    if(!str.startsWith('{') && !str.startsWith('[')) return v;
+    try { return JSON.parse(str); } catch(_) { return v; }
+}
+function formatKieTime(v){
+    if(v == null || v === '') return '';
+    let ms = Number(v);
+    if(!Number.isFinite(ms)) return String(v);
+    if(ms < 1e12) ms = ms * 1000;
+    const d = new Date(ms);
+    if(isNaN(d.getTime())) return String(v);
+    const p = n => String(n).padStart(2, '0');
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+}
+function formatKieDuration(v){
+    if(v == null || v === '') return '';
+    const n = Number(v);
+    if(!Number.isFinite(n)) return String(v);
+    return n >= 1000 ? (n / 1000).toFixed(1) + ' 秒' : n + ' 毫秒';
+}
+function renderKieDetail(raw, payload){
+    if(raw === undefined && payload && typeof payload === 'object' && 'data' in payload) raw = payload.data;
+    raw = normalizeKieRaw(raw);
+    const param = kieParseNestedStr(kieFieldValue(raw, ['param', 'params', 'request', 'input']));
+    const paramInput = (param && typeof param === 'object') ? kieParseNestedStr(param.input || param) : null;
+    const resultJson = kieParseNestedStr(kieFieldValue(raw, ['resultJson', 'result', 'output']));
+    const box = [];
+    const state = kieFieldValue(raw, ['state', 'status', 'taskState', 'jobState']);
+    const stateText = state == null ? '未知' : String(state);
+    const s = stateText.toUpperCase();
+    const stateClass = s.includes('FAIL') || s.includes('ERROR') ? 'kie-state-fail' : (s.includes('SUCC') || s === 'DONE' || s === 'FINISH') ? 'kie-state-ok' : (s.includes('CANCEL') || s.includes('STOP')) ? 'kie-state-stop' : 'kie-state-run';
+    box.push('<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap;">');
+    box.push('<span class="kie-state ' + stateClass + '">' + escapeHtml(stateText) + '</span>');
+    const model = kieFieldValue(raw, ['model', 'modelName', 'model_name']);
+    if(model) box.push('<span style="font-weight:700;font-size:14px;color:#0f172a;">' + escapeHtml(String(model)) + '</span>');
+    const idVal = kieFieldValue(raw, ['id', 'taskId', 'task_id', 'jobId']) || '';
+    if(idVal) box.push('<span title="任务ID" style="font-family:ui-monospace,monospace;font-size:11px;color:#94a3b8;margin-left:auto;">' + escapeHtml(String(idVal)) + '</span>');
+    box.push('</div>');
+    const rows = [];
+    const credits = kieFieldValue(raw, ['creditsConsumed', 'consumedCredits', 'credit', 'credits', 'consumeCredits', 'pointsConsumed', 'pointConsumed']);
+    if(credits !== undefined && credits !== '') rows.push(['积分消耗', credits + ' 积分']);
+    const cost = kieFieldValue(raw, ['cost', 'fee', 'price', 'amount', 'totalFee', 'totalCost']);
+    if(cost !== undefined && cost !== '') rows.push(['费用', String(cost)]);
+    const failCode = kieFieldValue(raw, ['failCode', 'errorCode']);
+    if(failCode) rows.push(['失败码', failCode]);
+    const failMsg = kieFieldValue(raw, ['failMsg', 'failMessage', 'message', 'failReason', 'errorMsg', 'errMsg']);
+    if(failMsg !== undefined && failMsg !== '') rows.push(['失败原因', failMsg]);
+    const costTime = kieFieldValue(raw, ['costTime', 'costMs', 'durationMs', 'elapsed', 'runMs']);
+    if(costTime !== undefined && costTime !== '') rows.push(['耗时', formatKieDuration(costTime)]);
+    const createT = kieFieldValue(raw, ['createdAt', 'createTime', 'startTime', 'create_at']);
+    if(createT) rows.push(['创建时间', formatKieTime(createT)]);
+    const completeT = kieFieldValue(raw, ['completeTime', 'updatedAt', 'finishTime', 'complete_at', 'endTime']);
+    if(completeT) rows.push(['完成时间', formatKieTime(completeT)]);
+    if(rows.length){
+        box.push('<div style="border:1px solid #eef0f3;border-radius:12px;overflow:hidden;margin-bottom:14px;">');
+        rows.forEach(function(r, i){
+            box.push('<div style="display:flex;gap:12px;padding:9px 14px;' + (i % 2 ? 'background:#f8fafc;' : '') + 'border-bottom:1px solid #f1f5f9;"><span style="flex:0 0 76px;color:#64748b;font-size:11px;font-weight:800;">' + escapeHtml(r[0]) + '</span><span style="flex:1;min-width:0;color:#0f172a;font-size:12.5px;overflow-wrap:anywhere;">' + escapeHtml(String(r[1])) + '</span></div>');
+        });
+        box.push('</div>');
+    }
+    if(paramInput && typeof paramInput === 'object'){
+        const inRows = [];
+        if(paramInput.prompt || paramInput.prompt_text) inRows.push(['提示词', paramInput.prompt || paramInput.prompt_text]);
+        if(paramInput.aspect_ratio || paramInput.ratio) inRows.push(['比例', paramInput.aspect_ratio || paramInput.ratio]);
+        if(paramInput.output_format || paramInput.format) inRows.push(['输出格式', paramInput.output_format || paramInput.format]);
+        if(paramInput.resolution) inRows.push(['分辨率', paramInput.resolution]);
+        const imgs = Array.isArray(paramInput.image_input) ? paramInput.image_input : (Array.isArray(paramInput.images) ? paramInput.images : null);
+        if(inRows.length || (imgs && imgs.length)){
+            box.push('<div style="margin:6px 0 14px;"><div style="font-size:11px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">输入参数</div>');
+            inRows.forEach(function(r){
+                box.push('<div style="display:flex;gap:12px;padding:7px 0;border-bottom:1px dashed #eef0f3;"><span style="flex:0 0 76px;color:#64748b;font-size:11px;font-weight:800;">' + escapeHtml(r[0]) + '</span><span style="flex:1;min-width:0;color:#0f172a;font-size:12.5px;overflow-wrap:anywhere;">' + escapeHtml(String(r[1])) + '</span></div>');
+            });
+            if(imgs && imgs.length){
+                box.push('<div style="display:flex;gap:12px;padding:7px 0;"><span style="flex:0 0 76px;color:#64748b;font-size:11px;font-weight:800;padding-top:2px;">输入图</span><span style="flex:1;display:flex;flex-wrap:wrap;gap:8px;">');
+                imgs.slice(0, 6).forEach(function(src){
+                    box.push('<a href="' + escapeAttr(src) + '" target="_blank" rel="noopener"><img src="' + escapeAttr(src) + '" style="width:72px;height:72px;object-fit:cover;border-radius:8px;border:1px solid #e2e8f0;" loading="lazy" alt="输入图"></a>');
+                });
+                box.push('</span></div>');
+            }
+            box.push('</div>');
+        }
+    }
+    const resultUrls = (resultJson && typeof resultJson === 'object' && Array.isArray(resultJson.resultUrls)) ? resultJson.resultUrls : (resultJson && typeof resultJson === 'object' && Array.isArray(resultJson.urls)) ? resultJson.urls : kieFindUrls(raw).map(function(u){ return u.url; });
+    if(resultUrls && resultUrls.length){
+        box.push('<div style="margin:6px 0 14px;"><div style="font-size:11px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">生成结果 (' + resultUrls.length + ')</div><div style="display:flex;flex-wrap:wrap;gap:10px;">');
+        resultUrls.slice(0, 12).forEach(function(src){
+            box.push('<a href="' + escapeAttr(src) + '" target="_blank" rel="noopener" style="display:block;width:96px;"><img src="' + escapeAttr(src) + '" style="width:96px;height:96px;object-fit:cover;border-radius:10px;border:1px solid #e2e8f0;box-shadow:0 4px 12px rgba(15,23,42,.08);" loading="lazy" alt="结果图"><div style="font-size:10px;color:#2563eb;margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:96px;">打开原图</div></a>');
+        });
+        box.push('</div></div>');
+    }
+    const rawJson = (raw && typeof raw === 'object') ? JSON.stringify(raw, null, 2) : String(raw == null ? payload : raw);
+    box.push('<details style="margin-top:8px;border-top:1px solid #eef0f3;padding-top:10px;"><summary style="cursor:pointer;color:#64748b;font-size:12px;font-weight:700;">原始报文</summary><pre style="background:#0f172a;color:#cbd5e1;padding:12px;border-radius:8px;overflow:auto;max-height:300px;font-size:11.5px;white-space:pre-wrap;word-break:break-all;margin-top:8px;">' + escapeHtml(rawJson) + '</pre></details>');
+    return box.join('');
+}
+function openKieDetail(taskId){
+    if(!taskId) return;
+    let modal = document.getElementById('kieRawModal');
+    if(!modal){
+        const style = document.createElement('style');
+        style.textContent = '.kie-state{display:inline-block;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:600;}.kie-state-ok{background:#dcfce7;color:#166534;}.kie-state-fail{background:#fee2e2;color:#991b1b;}.kie-state-stop{background:#fef3c7;color:#92400e;}.kie-state-run{background:#e0f2fe;color:#075985;}.kie-task-id{margin-left:8px;font-family:monospace;font-size:12px;color:#475569;cursor:pointer;}.kie-detail-head{display:flex;align-items:center;margin-bottom:12px;}.kie-detail-rows{margin:6px 0 10px;}.kie-row{display:flex;gap:10px;padding:5px 0;border-bottom:1px dashed #eef0f3;}.kie-row-label{flex:0 0 84px;color:#64748b;}.kie-row-val{color:#1f2937;word-break:break-all;}.kie-detail-urls{margin:8px 0;}.kie-url{display:block;color:#2563eb;word-break:break-all;margin:3px 0;}.kie-raw-detail{margin-top:10px;border-top:1px solid #eef0f3;padding-top:8px;}.kie-raw-pre{background:#0f172a;color:#cbd5e1;padding:12px;border-radius:8px;overflow:auto;max-height:300px;font-size:12px;white-space:pre-wrap;word-break:break-all;margin-top:6px;}';
+        document.head.appendChild(style);
+        modal = document.createElement('div');
+        modal.id = 'kieRawModal';
+        modal.style.cssText = 'position:fixed;inset:0;z-index:9999;display:none;align-items:center;justify-content:center;background:rgba(15,23,42,.5);padding:24px;';
+        modal.innerHTML = '<div style="width:min(640px,92vw);max-height:86vh;display:flex;flex-direction:column;background:#fff;color:#1f2937;border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,.25);overflow:hidden;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;">'
+            + '<div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid #eef0f3;"><span style="font-weight:600;font-size:15px;">📡 KIE 厂商原生返回</span><button type="button" class="kie-raw-close" style="border:0;background:#f1f3f5;color:#475569;border-radius:8px;width:30px;height:30px;cursor:pointer;font-size:15px;">✕</button></div>'
+            + '<div class="kie-raw-body" style="padding:16px 18px;overflow:auto;font-size:13.5px;line-height:1.6;"></div>'
+            + '</div>';
+        document.body.appendChild(modal);
+        modal.addEventListener('click', e => { if(e.target === modal) modal.style.display = 'none'; });
+        modal.querySelector('.kie-raw-close').addEventListener('click', () => { modal.style.display = 'none'; });
+        document.addEventListener('keydown', e => { if(e.key === 'Escape' && modal.style.display === 'flex') modal.style.display = 'none'; });
+    }
+    const body = modal.querySelector('.kie-raw-body');
+    body.innerHTML = '<div style="color:#64748b;">正在拉取 KIE 数据…</div>';
+    modal.style.display = 'flex';
+    (async () => {
+        try {
+            const res = await fetch('/api/tasks/kie-raw/' + encodeURIComponent(taskId), {cache:'no-store'});
+            let payload = null;
+            try { payload = await res.json(); } catch(_) {}
+            if(!res.ok){
+                const msg = (payload && (payload.message || payload.detail)) ? String(payload.message || payload.detail) : ('HTTP ' + res.status);
+                body.innerHTML = '<div style="color:#dc2626;">❌ 获取失败：' + escapeHtml(msg) + '</div>';
+                return;
+            }
+            let raw = payload && payload.data;
+            if(typeof raw === 'string'){ try { raw = JSON.parse(raw); } catch(_) {} }
+            body.innerHTML = renderKieDetail(raw, payload);
+        } catch(err){
+            body.innerHTML = '<div style="color:#dc2626;">❌ ' + escapeHtml(err && err.message ? err.message : '获取 KIE 详情失败，请检查网络') + '</div>';
+        }
+    })();
 }
 async function loadSmartCanvasTaskLedger(){
     try {
@@ -8051,19 +8289,119 @@ function runCostPillHtml(node){
     if(!txt) return '';
     return `<span class="run-cost-pill" title="本次生成费用（KIE 真实计费）">${txt}</span>`;
 }
-// 画布累计生成费用：汇总所有计费节点的 node.cost，写入顶栏
+// 画布累计生成费用：汇总所有计费节点的 node.cost，写入顶栏横幅
+function resetNodeCost(node){
+    if(!node) return;
+    node.cost = 0;
+    node.costRounds = [];
+    node.costCountedTasks = [];
+}
+function currentCanvasCostTotal(){
+    return nodes.reduce((s,n)=>{ const c=Number(n.cost); return s + (Number.isFinite(c)&&c>0?c:0); },0);
+}
 function updateCanvasCostDisplay(){
     const el = document.getElementById('currentCanvasCost');
     if(!el) return;
-    let total = 0, counted = 0;
-    nodes.forEach(n => {
-        const c = Number(n.cost);
-        if(Number.isFinite(c) && c > 0){ total += c; counted += 1; }
-    });
-    if(counted === 0){ el.style.display = 'none'; el.textContent = ''; return; }
+    if(!nodes || nodes.length === 0){ el.style.display = 'none'; return; }
     el.style.display = '';
-    el.textContent = '¥' + total.toFixed(2);
-    el.title = `本画布累计生成费用 ¥${total.toFixed(2)}（${counted} 个计费节点）`;
+    el.classList.add('current-canvas-cost');
+    const total = currentCanvasCostTotal();
+    const counted = nodes.filter(n => { const c = Number(n.cost); return Number.isFinite(c) && c > 0; }).length;
+    if(total > 0){
+        el.innerHTML = `<span class="cost-banner-label">💰 计费总览</span><span class="cost-banner-amount">¥${total.toFixed(2)}</span><span class="cost-banner-hint">查看明细</span>`;
+        el.title = `本画布累计生成费用 ¥${total.toFixed(2)}（${counted} 个计费节点），点击查看费用明细`;
+    } else {
+        el.innerHTML = `<span class="cost-banner-label">💰 计费总览</span><span class="cost-banner-amount cost-banner-amount--muted">以 KIE 账单为准</span>`;
+        el.title = `本画布暂未产生生成费用，实际以 KIE 账单为准，点击查看明细`;
+    }
+    el.onclick = openCanvasCostDetail;
+}
+// 提交前费用确认弹窗（原生实现，对齐视频生成风格）
+function smartCostConfirm(currentTotal){
+    return new Promise((resolve) => {
+        const overlay = document.createElement('div');
+        overlay.className = 'smart-modal-overlay';
+        const totalText = (Number(currentTotal) > 0) ? `¥${Number(currentTotal).toFixed(2)}` : '以 KIE 账单为准';
+        overlay.innerHTML = `
+            <div class="smart-modal smart-confirm" role="dialog" aria-modal="true">
+                <div class="smart-modal-title">⚠️ 提交确认</div>
+                <div class="smart-modal-body">
+                    本次画布运行将产生费用，实际以 <b>KIE 账单</b> 为准。<br/>
+                    当前画布累计已产生 <span class="smart-cost-amount">${totalText}</span>，是否确认继续运行？
+                </div>
+                <div class="smart-modal-actions">
+                    <button type="button" class="smart-btn smart-btn--ghost" data-act="cancel">取消</button>
+                    <button type="button" class="smart-btn smart-btn--primary" data-act="ok">确认运行</button>
+                </div>
+            </div>`;
+        document.body.appendChild(overlay);
+        const close = (val) => {
+            document.removeEventListener('keydown', onKey);
+            overlay.remove();
+            resolve(val);
+        };
+        const onKey = (ev) => { if(ev.key === 'Escape') close(false); };
+        overlay.addEventListener('click', (e) => {
+            if(e.target === overlay) return close(false);
+            const actEl = e.target.closest('[data-act]');
+            const act = actEl && actEl.dataset.act;
+            if(act === 'cancel') return close(false);
+            if(act === 'ok') return close(true);
+        });
+        document.addEventListener('keydown', onKey);
+        const okBtn = overlay.querySelector('[data-act="ok"]');
+        if(okBtn) okBtn.focus();
+    });
+}
+// 画布费用明细面板（原生 Modal）
+function openCanvasCostDetail(){
+    const billing = nodes.filter(n => { const c = Number(n.cost); return Number.isFinite(c) && c > 0; });
+    const total = billing.reduce((s,n)=> s + Number(n.cost), 0);
+    const typeName = (t) => ({'smart-image':'图片节点','smart-prompt':'提示词节点','smart-loop':'循环节点','smart-generator':'KIE 生成','smart-video':'视频节点','smart-output':'输出节点','smart-llm':'LLM 节点','smart-group':'分组节点'}[t] || (t||'节点'));
+    const overlay = document.createElement('div');
+    overlay.className = 'smart-modal-overlay';
+    const rows = billing.length ? billing.map((n, i) => {
+        const rounds = Array.isArray(n.costRounds) ? n.costRounds : [];
+        const roundHtml = rounds.length > 1
+            ? `<div class="cost-rounds" data-rounds="${i}">${rounds.map((r, ri) => `<span class="cost-round">第${ri+1}轮 ¥${Number(r).toFixed(2)}</span>`).join('')}</div>`
+            : '';
+        const toggle = rounds.length > 1 ? `<span class="cost-row-toggle" data-toggle="${i}">▸ 展开 ${rounds.length} 轮</span>` : '';
+        return `<div class="cost-row">
+            <div class="cost-row-head">
+                <span class="cost-row-type">${escapeHtml(typeName(n.type))}</span>
+                <span class="cost-row-title">${escapeHtml(n.title || n.type || '未命名')}</span>
+                <span class="cost-row-amount">¥${Number(n.cost).toFixed(2)}</span>
+            </div>
+            ${roundHtml}${toggle}
+        </div>`;
+    }).join('') : `<div class="cost-empty">本画布暂未产生生成费用，实际以 KIE 账单为准。</div>`;
+    overlay.innerHTML = `
+        <div class="smart-modal smart-detail" role="dialog" aria-modal="true">
+            <div class="smart-modal-title">💰 画布费用明细<span class="smart-modal-close" data-act="close">×</span></div>
+            <div class="smart-modal-body smart-detail-body">${rows}</div>
+            <div class="smart-modal-footer">
+                <span class="cost-detail-total">合计 <span class="smart-cost-amount">¥${total.toFixed(2)}</span></span>
+                <button type="button" class="smart-btn smart-btn--ghost" data-act="close">关闭</button>
+            </div>
+        </div>`;
+    document.body.appendChild(overlay);
+    const close = () => overlay.remove();
+    overlay.addEventListener('click', (e) => {
+        if(e.target === overlay) return close();
+        const actEl = e.target.closest('[data-act]');
+        const act = actEl && actEl.dataset.act;
+        if(act === 'close') return close();
+        const tg = e.target.closest('[data-toggle]');
+        if(tg){
+            const idx = tg.dataset.toggle;
+            const box = overlay.querySelector('.cost-rounds[data-rounds="'+idx+'"]');
+            if(box){
+                const hidden = box.style.display !== 'flex';
+                box.style.display = hidden ? 'flex' : 'none';
+                tg.textContent = hidden ? '▾ 收起' : '▸ 展开 '+box.children.length+' 轮';
+            }
+        }
+    });
 }
 function hideRunTimerForNode(node){
     if(!node || node.runTimerHidden || node.pending || node.running || node.jimengPending || !node.runFinishedAt) return false;
@@ -12226,6 +12564,94 @@ function renderInputPromptPreview(node){
         ? `<div class="input-prompt-preview-label">${escapeHtml(tr('smart.inputUpstream'))}</div><div class="input-prompt-preview-text">${escapeHtml(text)}</div>`
         : '';
 }
+// 手动参考图（素材库选入、无 nodeId）点击放大：自含缩放查看器（滚轮缩放 1-6x + 拖拽平移 + 下载），
+// 与结果图查看体验对齐。带 nodeId 的上游参考图仍走 openImagePreview。
+function openSmartUrlZoomLightbox(url, name=''){
+    if(!url) return;
+    let box = document.getElementById('smartUrlZoomLightbox');
+    if(!box){
+        box = document.createElement('div');
+        box.id = 'smartUrlZoomLightbox';
+        box.className = 'smart-url-zoom-lightbox';
+        box.innerHTML = `<style>
+.smart-url-zoom-lightbox{position:fixed;inset:0;z-index:9999;display:none;align-items:center;justify-content:center;background:rgba(15,23,42,.86);}
+.smart-url-zoom-lightbox.open{display:flex;}
+.smart-url-zoom-lightbox .sz-stage{position:relative;width:100%;height:100%;overflow:hidden;display:flex;align-items:center;justify-content:center;cursor:zoom-in;}
+.smart-url-zoom-lightbox.zoomed .sz-stage{cursor:grab;}
+.smart-url-zoom-lightbox.panning .sz-stage{cursor:grabbing;}
+.smart-url-zoom-lightbox img{max-width:92vw;max-height:92vh;transform-origin:0 0;user-select:none;-webkit-user-drag:none;border-radius:8px;box-shadow:0 18px 48px rgba(0,0,0,.45);}
+.smart-url-zoom-lightbox .sz-close,.smart-url-zoom-lightbox .sz-download{position:absolute;top:18px;width:38px;height:38px;border-radius:999px;border:0;background:rgba(255,255,255,.16);color:#fff;font-size:20px;line-height:38px;text-align:center;cursor:pointer;backdrop-filter:blur(6px);}
+.smart-url-zoom-lightbox .sz-close{right:18px;}
+.smart-url-zoom-lightbox .sz-download{right:66px;font-size:16px;}
+.smart-url-zoom-lightbox .sz-close:hover,.smart-url-zoom-lightbox .sz-download:hover{background:rgba(255,255,255,.28);}
+</style><button class="sz-download" type="button" title="下载">⤓</button><button class="sz-close" type="button" title="关闭">✕</button><div class="sz-stage"><img alt="preview" draggable="false"></div>`;
+        document.body.appendChild(box);
+        const img = box.querySelector('img');
+        const stage = box.querySelector('.sz-stage');
+        let zoom = 1, pan = {x:0, y:0}, drag = null;
+        const applyZoom = () => {
+            box.classList.toggle('zoomed', zoom > 1.001);
+            img.style.transform = `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`;
+        };
+        box._resetZoom = () => { zoom = 1; pan = {x:0, y:0}; drag = null; box.classList.remove('panning'); applyZoom(); };
+        stage.addEventListener('wheel', e => {
+            e.preventDefault();
+            const rect = stage.getBoundingClientRect();
+            const lx = e.clientX - rect.left, ly = e.clientY - rect.top;
+            const before = {x:(lx - pan.x) / zoom, y:(ly - pan.y) / zoom};
+            const next = Math.max(1, Math.min(6, zoom * (e.deltaY > 0 ? .9 : 1.1)));
+            zoom = next;
+            pan = next <= 1.001 ? {x:0, y:0} : {x:lx - before.x * next, y:ly - before.y * next};
+            applyZoom();
+        }, {passive:false});
+        stage.addEventListener('mousedown', e => {
+            if(e.button !== 0 || zoom <= 1.001) return;
+            drag = {sx:e.clientX, sy:e.clientY, ox:pan.x, oy:pan.y};
+            box.classList.add('panning');
+            e.preventDefault();
+        });
+        window.addEventListener('mousemove', e => {
+            if(!drag) return;
+            pan = {x:drag.ox + e.clientX - drag.sx, y:drag.oy + e.clientY - drag.sy};
+            applyZoom();
+        });
+        window.addEventListener('mouseup', () => { drag = null; box.classList.remove('panning'); });
+        stage.addEventListener('click', e => { if(e.target === stage) closeSmartUrlZoomLightbox(); });
+        box.querySelector('.sz-close').addEventListener('click', closeSmartUrlZoomLightbox);
+        box.querySelector('.sz-download').addEventListener('click', () => {
+            const link = document.createElement('a');
+            link.href = img.dataset.downloadUrl || img.src;
+            link.download = img.dataset.downloadName || 'image';
+            link.target = '_blank';
+            link.rel = 'noopener';
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+        });
+    }
+    const img = box.querySelector('img');
+    box._resetZoom?.();
+    const fileName = name || String(url).split('/').pop() || 'image';
+    img.dataset.downloadUrl = /^https?:/i.test(url)
+        ? `/api/download-output?url=${encodeURIComponent(url)}&name=${encodeURIComponent(fileName)}`
+        : url;
+    img.dataset.downloadName = fileName;
+    img.src = url;
+    box.classList.add('open');
+    document.addEventListener('keydown', escCloseSmartUrlZoom);
+}
+function escCloseSmartUrlZoom(e){
+    if(e.key === 'Escape') closeSmartUrlZoomLightbox();
+}
+function closeSmartUrlZoomLightbox(){
+    const box = document.getElementById('smartUrlZoomLightbox');
+    if(!box) return;
+    box.classList.remove('open');
+    box._resetZoom?.();
+    const img = box.querySelector('img');
+    if(img) img.src = '';
+    document.removeEventListener('keydown', escCloseSmartUrlZoom);
+}
 function renderInputThumbsRow(node){
     if(!inputThumbsRow) return;
     syncJimengModelPillForRefs();
@@ -12306,9 +12732,23 @@ function bindInputThumbsDrag(node, items, manualRefKeys=new Set()){
         const canReorderManual = items.length > 1 && manualRefKeys.has(key);
         const canReorderSource = items.length > 1 && Boolean(item?.nodeId);
         el.draggable = canReorderManual || canReorderSource;
+        if(mediaKindForItem(item) === 'image') el.style.cursor = 'zoom-in';
+        let lastDragEnd = 0;
         el.addEventListener('click', e => {
             e.preventDefault();
             e.stopPropagation();
+            if(Date.now() - lastDragEnd < 250) return; // 刚完成拖拽重排，不误判为点击
+            if(mediaKindForItem(item) !== 'image') return; // 仅图片输入可放大；视频/音频保持原样
+            const url = item?.originalLocalUrl || item?.url || el.dataset.url || item?.preview || '';
+            const nodeId = item?.nodeId || el.dataset.nodeId || '';
+            const idx = Number.isFinite(Number(item?.imageIndex)) ? Number(item.imageIndex) : -1;
+            // 上游参考图：与结果图同一查看器（滚轮缩放 + 拖动平移）。若上游 images[idx] 已被清理导致
+            // openImageEditor 静默 return（弹窗没打开），回退到按 URL 的缩放查看器，避免点了没反应。
+            if(nodeId && idx >= 0){
+                openImagePreview(nodeId, idx);
+                if(typeof imageEditModal !== 'undefined' && imageEditModal?.classList?.contains('open')) return;
+            }
+            if(url) openSmartUrlZoomLightbox(url, item?.name || '');
         });
         if(!el.draggable) return;
         el.addEventListener('dragstart', e => {
@@ -12731,11 +13171,104 @@ function setSmartDropCopyEffect(e, includeAsset=false){
         e.dataTransfer.dropEffect = 'copy';
     }
 }
+const SMART_IMAGE_UPLOAD_MAX_BYTES = 10 * 1024 * 1024;
+const SMART_IMAGE_MAX_EDGE = 6000;
+const SMART_IMAGE_COMPRESS_QUALITIES = [0.92, 0.85, 0.78, 0.7, 0.62, 0.5];
+const SMART_IMAGE_COMPRESS_MIN_SCALE = 0.18;
+function smartLangIsEn(){ return window.StudioI18n?.lang?.() === 'en'; }
+function smartDecodeImageFile(file){
+    return new Promise((resolve, reject) => {
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+        img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+        img.onerror = () => { URL.revokeObjectURL(url); reject(new Error(smartLangIsEn() ? 'Image decoding failed' : '图片解析失败')); };
+        img.src = url;
+    });
+}
+function smartDrawImageFilled(img, scale){
+    const w = Math.max(1, Math.round((img.naturalWidth || 1) * scale));
+    const h = Math.max(1, Math.round((img.naturalHeight || 1) * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff'; // JPEG 无透明通道，先铺白底，避免 PNG 透明区变黑
+    ctx.fillRect(0, 0, w, h);
+    ctx.drawImage(img, 0, 0, w, h);
+    return canvas;
+}
+function smartEncodeJpeg(canvas, quality){
+    return new Promise(resolve => canvas.toBlob(blob => resolve(blob), 'image/jpeg', quality));
+}
+function smartCompressedFileName(name){
+    const base = String(name || '').replace(/\.[^./\\]+$/, '').trim();
+    return `${base || 'image'}.jpg`;
+}
+// 动图/矢量图压成静态 JPEG 会静默丢失动画，宁可原样上传
+function smartSkipImageCompression(file){
+    const type = String(file?.type || '').toLowerCase();
+    const name = String(file?.name || '').toLowerCase();
+    return type === 'image/gif' || type === 'image/svg+xml' || /\.(gif|svg)(\?|$)/.test(name);
+}
+async function compressSmartOversizedImage(file, maxBytes){
+    const img = await smartDecodeImageFile(file);
+    const edge = Math.max(img.naturalWidth || 1, img.naturalHeight || 1);
+    const fit = edge > SMART_IMAGE_MAX_EDGE ? SMART_IMAGE_MAX_EDGE / edge : 1;
+    let best = null;
+    const encode = async (scale, quality) => {
+        const blob = await smartEncodeJpeg(smartDrawImageFilled(img, scale), quality);
+        if(!blob) return null;
+        if(!best || blob.size < best.size) best = blob;
+        return blob;
+    };
+    const pack = blob => new File([blob], smartCompressedFileName(file.name), {type:'image/jpeg', lastModified:Date.now()});
+    // 第一轮：保留原始像素，只降质量，绝大多数图在这里命中、画质损失最小
+    for(const quality of SMART_IMAGE_COMPRESS_QUALITIES){
+        const blob = await encode(fit, quality);
+        if(blob && blob.size <= maxBytes) return pack(blob);
+    }
+    // 第二轮：按实测体积反推需要的缩放比，逐级下探
+    const ratio = Math.sqrt(maxBytes / Math.max(best ? best.size : maxBytes, 1)) * 0.92;
+    let scale = Math.min(0.95, Math.max(0.25, ratio));
+    while(scale > SMART_IMAGE_COMPRESS_MIN_SCALE){
+        for(const quality of [0.85, 0.72, 0.6]){
+            const blob = await encode(scale * fit, quality);
+            if(blob && blob.size <= maxBytes) return pack(blob);
+        }
+        scale *= 0.7;
+    }
+    if(best && best.size < Number(file.size || 0)) return pack(best);
+    throw new Error(smartLangIsEn() ? `Image still exceeds ${Math.round(maxBytes / 1024 / 1024)}MB after compression` : `图片压缩后仍超过 ${Math.round(maxBytes / 1024 / 1024)}MB`);
+}
 async function uploadFiles(files){
     const supported = [...(files || [])].filter(isSupportedUploadFile).slice(0, SMART_UPLOAD_MAX);
     if(!supported.length) return [];
+    // 超过 10MB 的图片前端自动压缩，避免后端/KIE 直接拒收（视频、音频不做处理）
+    const prepared = [];
+    for(const file of supported){
+        const size = Number(file.size || 0);
+        if(size <= SMART_IMAGE_UPLOAD_MAX_BYTES || mediaKindForFile(file) !== 'image'){
+            prepared.push(file);
+            continue;
+        }
+        if(smartSkipImageCompression(file)){
+            console.warn(`[smart-canvas] skip auto-compression for ${file.name} (animated/vector image)`);
+            prepared.push(file);
+            continue;
+        }
+        try {
+            toast((smartLangIsEn() ? 'Compressing ' : '正在压缩 ') + (file.name || 'image') + '…');
+            const compressed = await compressSmartOversizedImage(file, SMART_IMAGE_UPLOAD_MAX_BYTES);
+            if(compressed.size < size){
+                console.info(`[smart-canvas] auto-compressed image: ${(size / 1024 / 1024).toFixed(2)}MB -> ${(compressed.size / 1024 / 1024).toFixed(2)}MB`);
+            }
+            prepared.push(compressed);
+        } catch(error){
+            throw new Error((smartLangIsEn() ? 'Image compression failed' : '图片压缩失败') + `：${error?.message || ''}`);
+        }
+    }
     const form = new FormData();
-    supported.forEach(file => form.append('files', file, file.name || 'media'));
+    prepared.forEach(file => form.append('files', file, file.name || 'media'));
     const data = await fetch('/api/ai/upload', {method:'POST', body:form}).then(async r => {
         if(!r.ok) throw new Error((await r.text()) || tr('smart.toastUploadFail'));
         return r.json();
@@ -12816,6 +13349,25 @@ function sizeForRun(sourceSettings=settings){
         ? defaultSmartApiResolution(sourceSettings.model)
         : '1k';
     return apiImageSize(sourceSettings.ratio || 'square', sourceSettings.resolution || fallbackResolution, sourceSettings.customRatio || '', sourceSettings.customSize || '') || '1024x1024';
+}
+function smartKieImageResolution(value){
+    const resolution = String(value || '').trim().toUpperCase();
+    return ['1K', '2K', '4K'].includes(resolution) ? resolution : '';
+}
+const SMART_KIE_ASPECT_RATIO_BY_PRESET = Object.freeze({
+    square:'1:1', portrait:'2:3', portrait43:'3:4', landscape43:'4:3',
+    landscape:'3:2', story:'9:16', wide:'16:9', ultrawide:'21:9', ultratall:'9:21'
+});
+function smartAspectRatioFromSize(sizeValue){
+    const size = parseSizeValue(sizeValue);
+    if(!size?.width || !size?.height) return '';
+    const gcd = (a, b) => { while(b){ const next = b; b = a % b; a = next; } return Math.max(1, Math.abs(a)); };
+    const divisor = gcd(Number(size.width), Number(size.height));
+    return `${Number(size.width) / divisor}:${Number(size.height) / divisor}`;
+}
+function smartKieImageAspectRatio(sourceSettings, sizeValue){
+    return SMART_KIE_ASPECT_RATIO_BY_PRESET[String(sourceSettings?.ratio || '')]
+        || smartAspectRatioFromSize(sizeValue);
 }
 function expectedOutputSize(){
     if(settings.engine === 'comfy'){
@@ -15031,9 +15583,13 @@ async function runSmartCascadeRoundsWithLimit(roundIndexes, limit, runner, runSt
 async function runSmartCascade(targetNode=null){
     const tail = targetNode || selectedNode();
     if(!canRunSmartCascade(tail)){ toast('请选择链路结尾图片节点'); return; }
+    const costTotalBefore = nodes.reduce((s,n)=>{ const c=Number(n.cost); return s + (Number.isFinite(c)&&c>0?c:0); },0);
+    if(!(await smartCostConfirm(costTotalBefore))) return;
     savePromptDraftForCurrent();
     const graph = smartCascadeGraphForTail(tail);
     const chain = graph.path;
+    const costResetIds = new Set([tail.id, ...(chain||[]).map(n=>n.id)]);
+    costResetIds.forEach(id => { const n = nodes.find(x=>x.id===id); if(n) resetNodeCost(n); });
     const loop = resolveSmartCascadeLoop(tail.id);
     const loopId = loop?.node?.id || '';
     if(loopId && smartCascadeIsLoopRunning(loopId)){ requestSmartCascadeStop(loopId); return; }
@@ -15255,6 +15811,7 @@ async function runGeneration(){
     const prompt = request.prompt.trim();
     if(!node) return;
     if(smartNodeInFlight(node)) return;
+    resetNodeCost(node);
     const refs = request.refs;
     const previousSettings = cloneSmartSettings(settings);
     const runSettings = smartSettingsForNode(node);
@@ -15538,7 +16095,11 @@ function drainSmartTaskSubmissionQueue(){
 async function runApiGeneration(prompt, refs, runSettings=settings){
     if(!runSettings.provider_id || !runSettings.model) throw new Error(tr('smart.errNoApiModel'));
     const count = Math.max(1, Math.min(8, Number(runSettings.count || 1)));
-    const payload = {prompt, provider_id:runSettings.provider_id, model:runSettings.model, size:sizeForRun(runSettings), n:1, reference_images:imageRefsOnly(refs).slice(0, SMART_REFERENCE_IMAGE_MAX)};
+    // 比例兜底：若当前模型/分辨率推导出 'auto'（KIE 不支持），改为具体尺寸 1024x1024，
+    // 让后端能从 WxH 推导出合法比例（1:1），避免 "aspect_ratio is not within the range of allowed"。对齐批量换色路径。
+    const rawSize = sizeForRun(runSettings);
+    const safeSize = rawSize === 'auto' ? '1024x1024' : rawSize;
+    const payload = {prompt, provider_id:runSettings.provider_id, model:runSettings.model, resolution:smartKieImageResolution(runSettings.resolution), aspect_ratio:smartKieImageAspectRatio(runSettings, safeSize), size:safeSize, n:1, reference_images:imageRefsOnly(refs).slice(0, SMART_REFERENCE_IMAGE_MAX)};
     const tasks = await Promise.all(Array.from({length:count}, () => enqueueSmartTaskSubmission(() => fetch('/api/canvas-image-tasks', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)}).then(async r => {
         if(!r.ok) throw new Error(await r.text());
         return r.json();
@@ -16240,10 +16801,19 @@ async function pollSmartCanvasTask(taskId, kind='image'){
 }
 function finalizeSmartPendingTask(node, taskId, images, kind='image', cost){
     if(!node || !taskId) return;
-    // 保存 KIE 真实费用（单次生成的计费），供节点计费徽标与画布累计计费使用
+    // 累计 KIE 真实费用（每轮生成计费累加），并保留逐轮明细 costRounds；
+    // 用 costCountedTasks 防止同一任务重复计入（失败重试不会重复扣费）
     if(cost != null && cost !== '' && cost !== undefined){
         const c = Number(cost);
-        if(Number.isFinite(c)) node.cost = c;
+        if(Number.isFinite(c)){
+            node.costRounds = node.costRounds || [];
+            node.costCountedTasks = node.costCountedTasks || [];
+            if(!node.costCountedTasks.includes(taskId)){
+                node.costCountedTasks.push(taskId);
+                node.cost = (Number(node.cost) || 0) + c;
+                node.costRounds.push(c);
+            }
+        }
     }
     node.pendingTasks = smartPendingTasks(node).filter(task => task.taskId !== taskId);
     node.pending = Math.max(0, Number(node.pending || 0) - 1);

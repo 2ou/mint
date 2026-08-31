@@ -13,6 +13,7 @@ import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.LocalDateTime;
+import java.math.BigDecimal;
 
 @Data
 @Entity
@@ -48,6 +49,28 @@ public class CanvasTask {
 
     @Column(length = 100)
     private String shopName;
+
+    /** The canvas project that submitted this task. Kept after node/media deletion for audit. */
+    @Column(name = "canvas_id", length = 32)
+    private String canvasId;
+
+    @Column(name = "canvas_node_id", length = 96)
+    private String canvasNodeId;
+
+    /** Immutable quote captured when the task is submitted. */
+    @Column(name = "estimated_cost", precision = 12, scale = 4)
+    private BigDecimal estimatedCost;
+
+    /** Provider-confirmed amount. Null means the provider has not returned billing data yet. */
+    @Column(name = "actual_cost", precision = 12, scale = 4)
+    private BigDecimal actualCost;
+
+    @Column(name = "price_version", length = 64)
+    private String priceVersion;
+
+    @Lob
+    @Column(name = "price_snapshot_json", columnDefinition = "longtext")
+    private String priceSnapshotJson;
 
     @Lob
     @Column(columnDefinition = "longtext")

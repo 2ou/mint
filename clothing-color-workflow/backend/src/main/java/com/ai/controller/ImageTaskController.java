@@ -7,6 +7,7 @@ import com.ai.enums.TaskStatus;
 import com.ai.repository.ImageTaskRepository;
 import com.ai.repository.UserSessionRepository;
 import com.ai.service.ImageTaskService;
+import com.ai.service.ModelPricingService;
 import com.ai.service.OssService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
@@ -20,6 +21,7 @@ import java.net.URLEncoder;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 @RestController
@@ -32,6 +34,7 @@ public class ImageTaskController {
     private final ImageTaskRepository imageTaskRepository;
     private final UserSessionRepository userSessionRepository;
     private final ImageTaskService imageTaskService;
+    private final ModelPricingService modelPricingService;
     // 🔴 新增：注入 KieClientService
     private final com.ai.service.KieClientService kieClientService;
 
@@ -42,6 +45,11 @@ public class ImageTaskController {
     public ApiResponse<List<TaskCreateResponse>> create(@RequestBody BatchTaskRequest request,
                                                         jakarta.servlet.http.HttpServletRequest httpServletRequest) {
         List<TaskCreateResponse> responses = new ArrayList<>();
+
+        Map<String, Object> pricePayload = new LinkedHashMap<>();
+        pricePayload.put("model", request.getModel());
+        pricePayload.put("resolution", request.getResolution());
+        BigDecimal serverCost = modelPricingService.quote("image", pricePayload, 1).amountCny();
 
         // 🔴 1. 确保从拦截器放入 Request 域的属性被正确取出
         String operator = (String) httpServletRequest.getAttribute("operator");
@@ -62,12 +70,29 @@ public class ImageTaskController {
                         request.getTaskType(),
                         operator,
                         shopName,
-                        request.getCost()
+                        serverCost
                 );
                 responses.add(response);
             }
         }
         return ApiResponse.ok("ok", responses);
+    }
+
+    /** Shared quote endpoint for batch recolour, scene generation and video tools. */
+    @PostMapping("/model-pricing/quote")
+    public Map<String, Object> quoteModelPricing(@RequestBody Map<String, Object> request) {
+        String mediaType = String.valueOf(request.getOrDefault("media_type", "image"));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> payload = request.get("payload") instanceof Map<?, ?> map
+                ? (Map<String, Object>) map
+                : request;
+        int quantity;
+        try {
+            quantity = Math.max(1, Integer.parseInt(String.valueOf(request.getOrDefault("quantity", 1))));
+        } catch (Exception ignored) {
+            quantity = 1;
+        }
+        return modelPricingService.quote(mediaType, payload, quantity).toMap();
     }
 
     /**
@@ -214,7 +239,10 @@ public class ImageTaskController {
         task.setModel(req.getModel());
 
         // 🔴 1. 保存预估费用
-        task.setCost(req.getCost());
+        Map<String, Object> pricePayload = new LinkedHashMap<>();
+        if (req.getInput() != null) pricePayload.putAll(req.getInput());
+        pricePayload.put("model", req.getModel());
+        task.setCost(modelPricingService.quote("video", pricePayload, 1).amountCny());
 
         // 🔴 2. 直接使用前端拆分好的标准链接，无需再到 input 里面去复杂判断捞取
         task.setInputImageUrl(req.getInputImageUrl());

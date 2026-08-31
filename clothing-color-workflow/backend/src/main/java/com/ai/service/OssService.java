@@ -23,6 +23,9 @@ public interface OssService {
     // 同名重载：指定子目录（canvas / aplus / tasks / models ...），便于各模块结果分区存放
     String downloadResultToLocal(String subDir, String taskId, String resultUrl);
 
+    // 画布按店铺分区：在子目录下再嵌套一层店铺名文件夹（中文安全清洗，避免撞名）
+    String downloadResultToLocal(String subDir, String shopName, String taskId, String resultUrl);
+
     // 把本地落盘的绝对路径转成前端可访问的服务 URL（/ai-result/** 由 WebMvcConfig 静态映射）；不在 localSaveRoot 之下返回 null
     String localServingUrl(String absolutePath);
 

@@ -17,6 +17,7 @@ import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.math.BigDecimal;
 
@@ -37,6 +38,22 @@ public class KieClientServiceImpl implements KieClientService {
     private final AppProperties appProperties;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    // KIE 仅接受显式合法画面比例；'auto' 及任何非法值一律兜底为 "1:1"，否则创建任务会直接报
+    // "aspect_ratio is not within the range of allowed"。批量换色等老路径始终传具体比例，本兜底与之对齐。
+    private static final Set<String> KIE_ALLOWED_ASPECT_RATIOS = Set.of(
+            "1:1", "16:9", "9:16", "4:3", "3:4", "4:5", "5:4", "3:2", "2:3", "21:9", "9:21");
+
+    private String normalizeAspectRatio(String aspectRatio) {
+        if (aspectRatio == null || aspectRatio.trim().isEmpty()) {
+            return "1:1";
+        }
+        String ar = aspectRatio.trim();
+        if (KIE_ALLOWED_ASPECT_RATIOS.contains(ar)) {
+            return ar;
+        }
+        return "1:1";
+    }
+
     public KieClientServiceImpl(AppProperties appProperties) {
         this.appProperties = appProperties;
     }
@@ -46,89 +63,92 @@ public class KieClientServiceImpl implements KieClientService {
      */
     @Override
     public String createTask(String spu, String prompt, String resolution, String aspectRatio, String model, String inputUrl, String colorUrl, String callBackUrl) {
+        String url = appProperties.getKie().getBaseUrl() + "/jobs/createTask";
+        ObjectNode rootNode = objectMapper.createObjectNode();
+        rootNode.put("model", model);
+        if (callBackUrl != null && !callBackUrl.isBlank()) {
+            rootNode.put("callBackUrl", callBackUrl.trim());
+        }
+
+        ObjectNode inputNode = objectMapper.createObjectNode();
+        inputNode.put("prompt", prompt);
+        ArrayNode imageArray = objectMapper.createArrayNode();
+        appendImageUrls(imageArray, inputUrl);
+        appendImageUrls(imageArray, colorUrl);
+        if ("gpt-image-2-image-to-image".equals(model)) {
+            inputNode.set("input_urls", imageArray);
+        } else {
+            inputNode.set("image_input", imageArray);
+        }
+        String normalizedAspectRatio = normalizeAspectRatio(aspectRatio);
+        String normalizedResolution = resolution != null && !resolution.trim().isEmpty() ? resolution.trim() : "2K";
+        inputNode.put("aspect_ratio", normalizedAspectRatio);
+        inputNode.put("resolution", normalizedResolution);
+        inputNode.put("output_format", "png");
+        rootNode.set("input", inputNode);
+
+        final String jsonBody;
         try {
-            String url = appProperties.getKie().getBaseUrl() + "/jobs/createTask";
+            jsonBody = objectMapper.writeValueAsString(rootNode);
+        } catch (IOException e) {
+            throw new RuntimeException("KIE 请求参数序列化失败: " + e.getMessage(), e);
+        }
 
-            ObjectNode rootNode = objectMapper.createObjectNode();
-            rootNode.put("model", model);
-
-            // 回调地址：有值则传，无值则不传（走轮询）
-            if (callBackUrl != null && !callBackUrl.isBlank()) {
-                rootNode.put("callBackUrl", callBackUrl.trim());
-            }
-
-            ObjectNode inputNode = objectMapper.createObjectNode();
-            inputNode.put("prompt", prompt);
-
-            ArrayNode imageArray = objectMapper.createArrayNode();
-
-            // 1. 处理原图 (支持逗号分隔的多图)
-            if (inputUrl != null && !inputUrl.trim().isEmpty()) {
-                String[] urls = inputUrl.split(",");
-                for (String u : urls) {
-                    if (!u.trim().isEmpty()) {
-                        imageArray.add(u.trim());
-                    }
-                }
-            }
-
-            // 2. 处理颜色图/参考图
-            if (colorUrl != null && !colorUrl.trim().isEmpty()) {
-                String[] urls = colorUrl.split(",");
-                for (String u : urls) {
-                    if (!u.trim().isEmpty()) {
-                        imageArray.add(u.trim());
-                    }
-                }
-            }
-
-            if ("gpt-image-2-image-to-image".equals(model)) {
-                inputNode.set("input_urls", imageArray);
-            } else {
-                inputNode.set("image_input", imageArray);
-            }
-            // 🔴 修复：使用动态传入的画面比例，如果为空则兜底使用 "auto"
-            if (aspectRatio != null && !aspectRatio.trim().isEmpty()) {
-                inputNode.put("aspect_ratio", aspectRatio.trim());
-            } else {
-                inputNode.put("aspect_ratio", "auto");
-            }
-
-            // 🔴 修复：防空兜底，确保 resolution 也有值
-            if (resolution != null && !resolution.trim().isEmpty()) {
-                inputNode.put("resolution", resolution.trim());
-            } else {
-                inputNode.put("resolution", "2K");
-            }
-
-            inputNode.put("output_format", "png");
-
-            rootNode.set("input", inputNode);
-
-            String jsonBody = objectMapper.writeValueAsString(rootNode);
-
+        RuntimeException lastError = null;
+        // KIE may return HTTP 200 with business code 500 and no taskId. In that
+        // case the task was not accepted, so retrying the same request is safe.
+        for (int attempt = 1; attempt <= 3; attempt++) {
             RequestBody body = RequestBody.create(jsonBody, MediaType.parse("application/json"));
             Request request = new Request.Builder()
                     .url(url)
                     .addHeader("Authorization", "Bearer " + appProperties.getKie().getApiKey())
                     .post(body)
                     .build();
-
             try (Response response = httpClient.newCall(request).execute()) {
-                String responseBody = response.body().string();
+                String responseBody = response.body() == null ? "" : response.body().string();
                 if (!response.isSuccessful()) {
-                    throw new RuntimeException("KIE 创建任务失败: HTTP " + response.code() + " " + responseBody);
-                }
-
-                JsonNode node = objectMapper.readTree(responseBody);
-                if (node.has("data") && node.get("data").has("taskId")) {
-                    return node.get("data").get("taskId").asText();
+                    lastError = new RuntimeException("KIE 图片任务创建失败：HTTP " + response.code() + "，" + responseBody);
+                    if (response.code() < 500 || attempt == 3) throw lastError;
+                    log.warn("KIE 图片任务创建返回 HTTP {}，准备第 {}/3 次重试。model={}, resolution={}, aspectRatio={}, refs={}",
+                            response.code(), attempt + 1, model, normalizedResolution, normalizedAspectRatio, imageArray.size());
                 } else {
-                    throw new RuntimeException("找不到 taskId: " + responseBody);
+                    JsonNode root = objectMapper.readTree(responseBody);
+                    int code = root.has("code") ? root.path("code").asInt(200) : 200;
+                    String message = root.path("msg").asText("");
+                    JsonNode data = root.path("data");
+                    if (code == 200 && data.hasNonNull("taskId")) {
+                        return data.path("taskId").asText();
+                    }
+
+                    String detail = !message.isBlank() ? message : responseBody;
+                    lastError = new RuntimeException("KIE 图片任务未受理（业务码 " + code + "）：" + detail);
+                    if (code < 500 || attempt == 3) throw lastError;
+                    log.warn("KIE 图片任务返回业务码 {}，准备第 {}/3 次重试。model={}, resolution={}, aspectRatio={}, refs={}, response={}",
+                            code, attempt + 1, model, normalizedResolution, normalizedAspectRatio, imageArray.size(), responseBody);
                 }
+            } catch (IOException e) {
+                lastError = new RuntimeException("KIE 图片任务网络请求异常: " + e.getMessage(), e);
+                if (attempt == 3) throw lastError;
+                log.warn("KIE 图片任务网络异常，准备第 {}/3 次重试。model={}, error={}", attempt + 1, model, e.getMessage());
             }
-        } catch (IOException e) {
-            throw new RuntimeException("KIE 网络请求异常: " + e.getMessage(), e);
+            pauseBeforeRetry(attempt);
+        }
+        throw lastError == null ? new RuntimeException("KIE 图片任务创建失败") : lastError;
+    }
+
+    private void appendImageUrls(ArrayNode imageArray, String csvUrls) {
+        if (csvUrls == null || csvUrls.trim().isEmpty()) return;
+        for (String url : csvUrls.split(",")) {
+            if (!url.trim().isEmpty()) imageArray.add(url.trim());
+        }
+    }
+
+    private void pauseBeforeRetry(int attempt) {
+        try {
+            Thread.sleep(500L * attempt);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("KIE 图片任务重试被中断", e);
         }
     }
 
@@ -208,7 +228,7 @@ public class KieClientServiceImpl implements KieClientService {
      */
     private BigDecimal extractCost(com.fasterxml.jackson.databind.JsonNode data) {
         if (data == null || data.isNull()) return null;
-        String[] keys = {"cost", "fee", "amount", "price", "estimatedCost", "totalFee", "costAmount", "charge", "expenses", "totalCost", "costFee"};
+        String[] keys = {"cost", "fee", "amount", "price", "estimatedCost", "totalFee", "costAmount", "charge", "expenses", "totalCost", "costFee", "creditsConsumed", "consumedCredits", "credit", "credits", "consumeCredits", "pointsConsumed", "pointConsumed"};
         for (String k : keys) {
             JsonNode n = data.get(k);
             if (n != null && !n.isNull()) {

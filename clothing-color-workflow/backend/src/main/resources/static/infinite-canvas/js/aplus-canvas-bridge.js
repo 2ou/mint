@@ -279,6 +279,8 @@
                 conversionPayload: {
                     prompt,
                     reference_images: [source.url],
+                    resolution: text(resolution).toUpperCase(),
+                    aspect_ratio: '4:3',
                     size: mobileSize(resolution),
                     model: source.aplus?.model || source.model || 'nano-banana-pro'
                 }

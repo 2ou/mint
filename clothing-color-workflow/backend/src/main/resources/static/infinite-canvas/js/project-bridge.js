@@ -107,6 +107,9 @@
         var url = typeof input === 'string' ? input : (input && input.url) || '';
         try {
             var pathname = new URL(url, window.location.origin).pathname;
+            // Text tools are not in the first priced scope.  Do not make a
+            // generic paid-operation dialog appear for a free canvas action.
+            if (pathname.indexOf('/chat/') !== -1 || pathname === '/api/canvas-llm') return false;
             if (/^\/api\/canvas-tasks\/[^/]+\/retry$/.test(pathname)) return true;
             return KIE_SUBMISSION_PATHS.indexOf(pathname) !== -1;
         } catch (error) {
@@ -225,7 +228,7 @@
         if (!rawFetch || rawFetch.__aiProjectKieConfirmationPatched) return;
 
         var patched = function (input, init) {
-            if (!isKieSubmissionRequest(input, init)) return rawFetch(input, init);
+            if (!isKieSubmissionRequest(input, init) || hasCanvasCostConfirmation(input, init)) return rawFetch(input, init);
             return confirmKieSubmission({type: kieSubmissionType(input)}).then(function (approved) {
                 if (approved) return rawFetch(input, init);
                 var error = new Error('已取消 Kie 提交');
@@ -357,15 +360,48 @@
     }
 
     function goTemplateLibrary() {
-        window.location.href = '/ai-canvas-templates.html';
+        var target = '/ai-canvas-templates.html';
+        try {
+            if (window.top && window.top !== window) {
+                window.top.location.assign(target);
+                return;
+            }
+        } catch (error) {
+            // 跨窗口访问受限时退回当前窗口，避免入口完全失效。
+        }
+        window.location.assign(target);
     }
 
-    function appendButton(parent, className, text, onClick) {
+    // Canvas image/video nodes first obtain a server-side price quote and show
+    // their own detailed confirmation.  This marker prevents the legacy
+    // catch-all confirmation below from opening a second dialog.
+    function hasCanvasCostConfirmation(input, init) {
+        try {
+            var headers = new Headers((init && init.headers) || (input instanceof Request ? input.headers : undefined));
+            return headers.get('X-Canvas-Cost-Confirmed') === '1';
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function appendButton(parent, className, text, onClick, options) {
         if (!parent || parent.querySelector('[data-ai-project-template-action="' + text + '"]')) return;
         var button = document.createElement('button');
         button.type = 'button';
         button.className = className;
-        button.textContent = text;
+        if (options && options.icon) {
+            var icon = document.createElement('i');
+            icon.setAttribute('data-lucide', options.icon);
+            icon.setAttribute('aria-hidden', 'true');
+            var label = document.createElement('span');
+            label.textContent = text;
+            button.appendChild(icon);
+            button.appendChild(label);
+        } else {
+            button.textContent = text;
+        }
+        button.title = options && options.title ? options.title : text;
+        button.setAttribute('aria-label', options && options.ariaLabel ? options.ariaLabel : text);
         button.setAttribute('data-ai-project-template-action', text);
         button.addEventListener('click', function (event) {
             event.preventDefault();
@@ -373,6 +409,10 @@
             onClick();
         });
         parent.appendChild(button);
+        if (options && options.icon && window.lucide && typeof window.lucide.createIcons === 'function') {
+            window.lucide.createIcons();
+        }
+        return button;
     }
 
     function injectTemplateActions() {
@@ -388,7 +428,11 @@
 
         var listActions = document.querySelector('.ws-topbar-right');
         if (listActions) {
-            appendButton(listActions, 'ws-icon-btn', '模板库', goTemplateLibrary);
+            appendButton(listActions, 'ws-template-btn', '模板库', goTemplateLibrary, {
+                icon: 'library',
+                title: '打开模板库',
+                ariaLabel: '打开模板库'
+            });
         }
     }
 

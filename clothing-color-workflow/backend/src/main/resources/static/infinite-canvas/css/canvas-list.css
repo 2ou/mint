@@ -70,7 +70,7 @@ html[data-studio-scale="off"].studio-scale-managed .workspace {
 .ws-side-title { font-size:15px; font-weight:850; letter-spacing:0; color:var(--text); }
 .ws-side-add { width:32px; height:32px; border-radius:8px; display:flex; align-items:center; justify-content:center; color:var(--muted); background:var(--panel-solid); border:1px solid var(--line); transition:all .15s var(--ease); cursor:pointer; }
 .ws-side-add:hover { color:var(--text); border-color:var(--line-2); background:var(--soft); box-shadow:0 6px 14px var(--shadow); }
-.ws-side-add:focus-visible,.ws-icon-btn:focus-visible,.ws-primary-btn:focus-visible,.ws-paste-btn:focus-visible,.ws-trash-act:focus-visible,.ws-pop-item:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.ws-side-add:focus-visible,.ws-icon-btn:focus-visible,.ws-primary-btn:focus-visible,.ws-paste-btn:focus-visible,.ws-template-btn:focus-visible,.ws-trash-act:focus-visible,.ws-pop-item:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 
 .ws-newproj-row { display:none; align-items:center; gap:4px; margin:0 12px 8px; padding:4px; border:1px solid var(--line); border-radius:8px; background:var(--card-solid); box-shadow:0 8px 18px var(--shadow); }
 .ws-newproj-row.active { display:flex; }
@@ -128,6 +128,11 @@ html[data-studio-scale="off"].studio-scale-managed .workspace {
 .ws-topbar-right { display:flex; align-items:center; gap:8px; flex:0 0 auto; }
 .ws-icon-btn { width:36px; height:36px; border-radius:8px; display:flex; align-items:center; justify-content:center; color:var(--muted); background:var(--card-solid); border:1px solid var(--line); cursor:pointer; transition:all .15s var(--ease); }
 .ws-icon-btn:hover { color:var(--text); border-color:var(--line-2); background:var(--soft); box-shadow:0 6px 14px var(--shadow); }
+.ws-template-btn { height:36px; padding:0 12px; border-radius:8px; display:inline-flex; align-items:center; justify-content:center; gap:7px; color:var(--text); background:var(--card-solid); border:1px solid var(--line); cursor:pointer; font-size:12px; font-weight:800; white-space:nowrap; transition:background .15s var(--ease), border-color .15s var(--ease), color .15s var(--ease), box-shadow .15s var(--ease), transform .15s var(--ease); }
+.ws-template-btn:hover { color:var(--text); border-color:var(--line-2); background:var(--soft); box-shadow:0 6px 14px var(--shadow); transform:translateY(-1px); }
+.ws-template-btn i,.ws-template-btn svg { width:16px; height:16px; flex:0 0 auto; stroke:currentColor; }
+.theme-dark .ws-template-btn { color:var(--text); background:var(--card-solid); border-color:var(--line); }
+.theme-dark .ws-template-btn:hover { border-color:var(--line-2); background:var(--soft); }
 .ws-primary-btn { height:36px; padding:0 14px; border-radius:8px; display:inline-flex; align-items:center; justify-content:center; gap:7px; background:var(--strong); color:var(--strong-text); border:none; cursor:pointer; font-size:12px; font-weight:850; box-shadow:0 8px 18px var(--shadow); }
 .ws-primary-btn:hover { transform:translateY(-1px); box-shadow:0 12px 24px var(--shadow-strong); }
 /* 粘贴到此项目：剪切后才出现的强调按钮，固定高对比色避免主题变量冲淡文字。 */
@@ -287,6 +292,8 @@ html[data-studio-scale="off"].studio-scale-managed .workspace {
     .ws-board-empty .ws-primary-btn span { display:inline; }
     .ws-primary-btn { padding:0 12px; }
     .ws-paste-btn span { display:none; }
+    .ws-template-btn span { display:none; }
+    .ws-template-btn { width:36px; padding:0; }
     .ws-card { width:230px; height:146px; padding:12px; gap:10px; }
     .ws-card-top { gap:6px; min-height:26px; }
     .ws-card-kind { height:20px; max-width:calc(100% - 32px); padding:0 7px; font-size:9.5px; }
@@ -348,9 +355,17 @@ html[data-studio-scale="off"].studio-scale-managed .ws-paste-btn span {
         flex-wrap:nowrap;
     }
     html[data-studio-scale="off"].studio-scale-managed .ws-topbar-right .ws-icon-btn,
-    html[data-studio-scale="off"].studio-scale-managed .ws-topbar-right .ws-primary-btn {
+    html[data-studio-scale="off"].studio-scale-managed .ws-topbar-right .ws-primary-btn,
+    html[data-studio-scale="off"].studio-scale-managed .ws-topbar-right .ws-template-btn {
         display:inline-flex;
         visibility:visible;
         opacity:1;
     }
+}
+@media (max-width:760px) {
+    html[data-studio-scale="off"].studio-scale-managed .ws-template-btn span { display:none; }
+    .ws-topbar-right .ws-icon-btn,
+    .ws-topbar-right .ws-primary-btn,
+    .ws-topbar-right .ws-paste-btn,
+    .ws-topbar-right .ws-template-btn { width:44px; min-width:44px; height:44px; padding:0; }
 }

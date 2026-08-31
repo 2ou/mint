@@ -18,6 +18,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.ZoneId;
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -38,6 +39,7 @@ public class CanvasTaskService {
     private final OssService ossService;
     private final AppProperties appProperties;
     private final Environment environment;
+    private final ModelPricingService modelPricingService;
 
     @Transactional
     public void recordCreated(String taskId, String mediaType, String operator, String shopName) {
@@ -59,6 +61,16 @@ public class CanvasTaskService {
         }
         task.setOperator(operator);
         task.setShopName(shopName);
+        if (requestPayload != null) {
+            String canvasId = requestPayload.get("canvas_id") == null ? "" : String.valueOf(requestPayload.get("canvas_id")).trim();
+            task.setCanvasId(blankToNull(canvasId));
+            String canvasNodeId = requestPayload.get("canvas_node_id") == null ? "" : String.valueOf(requestPayload.get("canvas_node_id")).trim();
+            task.setCanvasNodeId(blankToNull(canvasNodeId));
+            ModelPricingService.PriceQuote quote = modelPricingService.quote(task.getMediaType(), requestPayload, 1);
+            task.setEstimatedCost(quote.amountCny());
+            task.setPriceVersion(blankToNull(quote.versionCode()));
+            task.setPriceSnapshotJson(modelPricingService.quoteSnapshotJson(quote));
+        }
         if (requestPayload != null && !requestPayload.isEmpty()) {
             try {
                 task.setRequestPayloadJson(objectMapper.writeValueAsString(requestPayload));
@@ -96,6 +108,18 @@ public class CanvasTaskService {
     @Transactional(readOnly = true)
     public Optional<KieTaskResult> findResult(String taskId) {
         return canvasTaskRepository.findByTaskId(taskId).map(this::toResult);
+    }
+
+    @Transactional(readOnly = true)
+    public Map<String, Object> billingFields(String taskId) {
+        return canvasTaskRepository.findByTaskId(taskId).map(task -> {
+            Map<String, Object> fields = new LinkedHashMap<>();
+            fields.put("estimated_cost", task.getEstimatedCost());
+            fields.put("actual_cost", task.getActualCost());
+            fields.put("price_version", task.getPriceVersion() == null ? "" : task.getPriceVersion());
+            fields.put("price_snapshot", readJson(task.getPriceSnapshotJson()));
+            return fields;
+        }).orElse(Map.of());
     }
 
     /**
@@ -156,8 +180,16 @@ public class CanvasTaskService {
      */
     @Transactional(readOnly = true)
     public List<Map<String, Object>> recentTasks(String operator, String shopName) {
+        return recentTasks(operator, shopName, "");
+    }
+
+    @Transactional(readOnly = true)
+    public List<Map<String, Object>> recentTasks(String operator, String shopName, String canvasId) {
         List<Map<String, Object>> tasks = new ArrayList<>();
-        for (CanvasTask task : canvasTaskRepository.findTop100ByShopNameAndOperatorOrderByUpdatedAtDesc(shopName, operator)) {
+        List<CanvasTask> rows = canvasId == null || canvasId.isBlank()
+                ? canvasTaskRepository.findTop100ByShopNameAndOperatorOrderByUpdatedAtDesc(shopName, operator)
+                : canvasTaskRepository.findTop100ByShopNameAndOperatorAndCanvasIdOrderByUpdatedAtDesc(shopName, operator, canvasId);
+        for (CanvasTask task : rows) {
             String status = normalizeStatus(task.getStatus(), task.getResultUrl());
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("task_id", task.getTaskId());
@@ -168,11 +200,40 @@ public class CanvasTaskService {
             item.put("error", task.getErrorMessage() == null ? "" : task.getErrorMessage());
             item.put("terminal", isTerminalStatus(status));
             item.put("retryable", "FAILED".equals(status) && task.getRequestPayloadJson() != null && !task.getRequestPayloadJson().isBlank());
+            item.put("canvas_id", task.getCanvasId() == null ? "" : task.getCanvasId());
+            item.put("canvas_node_id", task.getCanvasNodeId() == null ? "" : task.getCanvasNodeId());
+            item.put("estimated_cost", task.getEstimatedCost());
+            item.put("actual_cost", task.getActualCost());
+            item.put("price_version", task.getPriceVersion() == null ? "" : task.getPriceVersion());
+            item.put("price_snapshot", readJson(task.getPriceSnapshotJson()));
             item.put("created_at", task.getCreatedAt() == null ? 0L : task.getCreatedAt().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli());
             item.put("updated_at", task.getUpdatedAt() == null ? 0L : task.getUpdatedAt().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli());
             tasks.add(item);
         }
         return tasks;
+    }
+
+    @Transactional(readOnly = true)
+    public Map<String, Object> billingSummary(String operator, String shopName, String canvasId) {
+        List<Map<String, Object>> tasks = recentTasks(operator, shopName, canvasId);
+        BigDecimal actual = BigDecimal.ZERO;
+        BigDecimal pendingEstimate = BigDecimal.ZERO;
+        for (Map<String, Object> task : tasks) {
+            BigDecimal actualCost = decimal(task.get("actual_cost"));
+            BigDecimal estimatedCost = decimal(task.get("estimated_cost"));
+            if (actualCost != null) {
+                actual = actual.add(actualCost);
+            } else if ("running".equalsIgnoreCase(String.valueOf(task.get("status")))
+                    || "queued".equalsIgnoreCase(String.valueOf(task.get("status")))) {
+                pendingEstimate = pendingEstimate.add(estimatedCost == null ? BigDecimal.ZERO : estimatedCost);
+            }
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("canvas_id", canvasId == null ? "" : canvasId);
+        result.put("actual_cost", actual.setScale(4, java.math.RoundingMode.HALF_UP));
+        result.put("pending_estimate", pendingEstimate.setScale(4, java.math.RoundingMode.HALF_UP));
+        result.put("tasks", tasks);
+        return result;
     }
 
     /**
@@ -223,11 +284,21 @@ public class CanvasTaskService {
 
     private void applyResult(CanvasTask task, KieTaskResult result, String callbackPayloadJson) {
         if ("CANCELED".equalsIgnoreCase(task.getStatus())) {
+            // Stopping only removes the task from the canvas waiting queue. KIE
+            // may still settle a charge afterwards, which must remain auditable.
+            if (result.getCost() != null && result.getCost().signum() != 0) {
+                task.setActualCost(modelPricingService.kieCreditsToCny(result.getCost(), task.getPriceVersion()));
+            }
+            if (callbackPayloadJson != null) task.setCallbackPayloadJson(callbackPayloadJson);
+            canvasTaskRepository.save(task);
             return;
         }
         task.setStatus(normalizeStatus(result.getStatus(), result.getResultUrl()));
         task.setResultUrl(blankToNull(result.getResultUrl()));
         task.setErrorMessage(blankToNull(result.getErrorMessage()));
+        if (result.getCost() != null && result.getCost().signum() != 0) {
+            task.setActualCost(modelPricingService.kieCreditsToCny(result.getCost(), task.getPriceVersion()));
+        }
         if (callbackPayloadJson != null) {
             task.setCallbackPayloadJson(callbackPayloadJson);
         }
@@ -329,7 +400,9 @@ public class CanvasTaskService {
             task.setLocalPath(null);
         }
         try {
-            String localPath = ossService.downloadResultToLocal(task.getTaskId(), task.getResultUrl());
+            // 画布按店铺分区落盘：店铺名为空时回退到“未知店铺”，与前端默认一致
+            String shopName = (task.getShopName() == null || task.getShopName().isBlank()) ? "未知店铺" : task.getShopName();
+            String localPath = ossService.downloadResultToLocal("canvas", shopName, task.getTaskId(), task.getResultUrl());
             if (localPath != null && !localPath.isBlank()) {
                 task.setLocalPath(localPath);
                 log.info("[AI Canvas] result cached for LAN access: taskId={}, path={}", task.getTaskId(), localPath);
@@ -351,6 +424,7 @@ public class CanvasTaskService {
                 .success("SUCCESS".equals(status))
                 .resultUrl(task.getResultUrl())
                 .errorMessage(task.getErrorMessage())
+                .cost(task.getActualCost())
                 .localPath(task.getLocalPath())
                 .build();
     }
@@ -390,6 +464,7 @@ public class CanvasTaskService {
         String errorMessage = "FAILED".equals(status)
                 ? firstNonBlank(textAt(root, "data", "failMsg"), textAt(root, "failMsg"), textAt(root, "error"), textAt(root, "message"), textAt(root, "msg"))
                 : "";
+        BigDecimal cost = extractCost(root);
         return KieTaskResult.builder()
                 .taskId(taskId)
                 .status(status)
@@ -397,7 +472,44 @@ public class CanvasTaskService {
                 .success("SUCCESS".equals(status))
                 .resultUrl(resultUrl)
                 .errorMessage(errorMessage)
+                .cost(cost)
                 .build();
+    }
+
+    private BigDecimal extractCost(JsonNode root) {
+        if (root == null || root.isNull()) return null;
+        for (String key : List.of("cost", "fee", "amount", "price", "estimatedCost", "totalFee", "costAmount", "charge", "expenses", "totalCost", "costFee", "creditsConsumed", "consumedCredits", "credit", "credits", "consumeCredits", "pointsConsumed", "pointConsumed")) {
+            JsonNode node = root.path("data").path(key);
+            if (node.isMissingNode() || node.isNull()) node = root.path(key);
+            if (node.isMissingNode() || node.isNull()) continue;
+            if (node.isNumber()) return node.decimalValue();
+            try {
+                String value = node.asText().replaceAll("[^0-9.\\-]", "");
+                if (!value.isBlank()) return new BigDecimal(value);
+            } catch (Exception ignored) {
+                // Continue checking the compatibility field names.
+            }
+        }
+        return null;
+    }
+
+    private Map<String, Object> readJson(String json) {
+        if (json == null || json.isBlank()) return Map.of();
+        try {
+            return objectMapper.readValue(json, new TypeReference<>() {});
+        } catch (Exception ignored) {
+            return Map.of();
+        }
+    }
+
+    private BigDecimal decimal(Object value) {
+        if (value == null) return null;
+        if (value instanceof BigDecimal decimal) return decimal;
+        try {
+            return new BigDecimal(String.valueOf(value));
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     private String extractTaskId(Map<String, Object> payload) {

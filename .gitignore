@@ -27,6 +27,8 @@ build/
 out/
 production/
 test/
+!/clothing-color-workflow/backend/src/test/
+!/clothing-color-workflow/backend/src/test/**
 # Maven 本地仓库和包装器
 .mvn/
 mvnw

@@ -239,7 +239,7 @@
 </div>
 
 <script>
-    const {createApp, ref, reactive, computed} = Vue;
+    const {createApp, ref, reactive, computed, watch} = Vue;
     createApp({
         setup() {
             const form = reactive({ spu: '', model: 'nano-banana-pro', resolution: '4K', aspect_ratio: 'auto', modelRole: '图中模特' });
@@ -279,16 +279,19 @@
                 return tasks.value.reduce((sum, task) => sum + task.count, 0);
             });
 
-            const pricePerImage = computed(() => {
-                if (form.model === 'nano-banana-pro') {
-                    return form.resolution === '4K' ? 0.44 : 0.25;
-                } else if (form.model === 'gpt-image-2-image-to-image') {
-                    if (form.resolution === '4K') return 0.25;
-                    if (form.resolution === '2K') return 0.16;
-                    return 0.09;
+            const quotedUnitPrice = ref(null);
+            const refreshPriceQuote = async () => {
+                try {
+                    const response = await axios.post('/api/tasks/model-pricing/quote', {
+                        media_type: 'image', payload: {model: form.model, resolution: form.resolution}, quantity: 1
+                    });
+                    quotedUnitPrice.value = response.data?.available ? Number(response.data.amount_cny) : null;
+                } catch (error) {
+                    quotedUnitPrice.value = null;
                 }
-                return 0;
-            });
+            };
+            watch(() => [form.model, form.resolution], refreshPriceQuote, {immediate: true});
+            const pricePerImage = computed(() => Number(quotedUnitPrice.value || 0));
 
             const estimatedCost = computed(() => {
                 return (pricePerImage.value * totalTasksCount.value).toFixed(2);
