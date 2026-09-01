@@ -248,7 +248,7 @@ public class ImageTaskController {
         task.setInputImageUrl(req.getInputImageUrl());
         task.setColorImageUrl(req.getColorImageUrl());
 
-        // 🔴 3. 提取 Prompt (完美兼容 HappyHorse、Seedance、Kling单/多镜头)
+        // 🔴 3. 提取 Prompt (完美兼容 Seedance、Kling单/多镜头；HappyHorse 已下线下不接)
         if (req.getInput() != null) {
             Map<String, Object> input = req.getInput();
             if (input.get("prompt") != null) {

@@ -56,6 +56,7 @@ public class ModelPricingService {
         // Existing bulk-colour and scene prices.
         rules.add(rule(version, "image", "nano-banana-pro", "4K", "", "PER_IMAGE", "0.4400", 100, "Nano Banana Pro · 4K"));
         rules.add(rule(version, "image", "nano-banana-pro", "", "", "PER_IMAGE", "0.2500", 10, "Nano Banana Pro"));
+        rules.add(rule(version, "image", "nano-banana-2", "", "", "PER_IMAGE", "0.2500", 10, "Nano Banana 2"));
         rules.add(rule(version, "image", "gpt-image-2-image-to-image", "4K", "", "PER_IMAGE", "0.4400", 100, "GPT Image 2 · 4K"));
         rules.add(rule(version, "image", "gpt-image-2-image-to-image", "2K", "", "PER_IMAGE", "0.2500", 100, "GPT Image 2 · 2K"));
         rules.add(rule(version, "image", "gpt-image-2-image-to-image", "1K", "", "PER_IMAGE", "0.0900", 100, "GPT Image 2 · 1K"));
