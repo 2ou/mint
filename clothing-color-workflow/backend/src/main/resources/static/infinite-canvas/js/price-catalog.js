@@ -22,9 +22,31 @@
     function mediaLabel(mediaType) {
         return String(mediaType).toLowerCase() === 'video' ? '视频模型' : '图片模型';
     }
+    // 官方顺序：对齐本系统 listKieModels 的接入清单 (PROJECT_IMAGE_MODELS + PROJECT_VIDEO_MODELS)。
+    // 清单外的模型（如 nano-banana-2 / kling-* / seedance-2-mini）统一置底，方便与 KIE 官网价目表逐行对比。
+    const OFFICIAL_MODEL_ORDER = [
+        'nano-banana-pro',
+        'gpt-image-2-image-to-image',
+        'bytedance/seedance-2-5',
+        'bytedance/seedance-2',
+        'minimax-h3/text-to-video',
+        'minimax-h3/image-to-video',
+        'minimax-h3/reference-to-video'
+    ];
+    function officialRank(model) {
+        const idx = OFFICIAL_MODEL_ORDER.indexOf(String(model || '').trim());
+        return idx >= 0 ? idx : 9999;
+    }
     function rulesForActiveMedia() {
         return state.rules.map(function (rule, index) { return {rule: rule, index: index}; })
-            .filter(function (entry) { return String(entry.rule.media_type || '').toLowerCase() === state.mediaType; });
+            .filter(function (entry) { return String(entry.rule.media_type || '').toLowerCase() === state.mediaType; })
+            .sort(function (a, b) {
+                const ra = officialRank(a.rule.model), rb = officialRank(b.rule.model);
+                if (ra !== rb) return ra - rb;
+                const pa = Number(a.rule.priority || 0), pb = Number(b.rule.priority || 0);
+                if (pa !== pb) return pb - pa;
+                return Number(a.rule.id || 0) - Number(b.rule.id || 0);
+            });
     }
     function countRules(mediaType) {
         return state.rules.filter(function (rule) {
