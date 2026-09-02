@@ -241,9 +241,18 @@
         root.id = 'priceCatalogOverlay';
         root.className = 'price-catalog-overlay';
         // 若页面存在可见的全局侧边栏（菜单栏），让遮罩从侧边栏右侧起，避免盖住菜单
-        const sidebarEl = document.querySelector('.sidebar-global');
-        if (sidebarEl && sidebarEl.getBoundingClientRect().width > 0) {
-            root.classList.add('price-catalog-overlay--with-sidebar');
+        const applySidebarOffset = function () {
+            const sidebarEl = document.querySelector('.sidebar-global');
+            if (sidebarEl && sidebarEl.getBoundingClientRect().width > 0) {
+                root.classList.add('price-catalog-overlay--with-sidebar');
+                return true;
+            }
+            return false;
+        };
+        if (!applySidebarOffset()) {
+            // 侧栏可能尚未由 sidebar.js 注入完成（时序竞态），下一帧/短延时再补，避免遮罩盖住菜单
+            requestAnimationFrame(applySidebarOffset);
+            setTimeout(applySidebarOffset, 150);
         }
         document.body.appendChild(root);
         load();
