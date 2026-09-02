@@ -250,9 +250,15 @@
             return false;
         };
         if (!applySidebarOffset()) {
-            // 侧栏可能尚未由 sidebar.js 注入完成（时序竞态），下一帧/短延时再补，避免遮罩盖住菜单
+            // 侧栏可能尚未由 sidebar.js 注入完成（时序竞态 / auth 异步），用 rAF + 短延时 + MutationObserver 兜底，
+            // 确保侧栏一旦出现在 DOM 且可见，遮罩立即让出左侧，避免盖住菜单
             requestAnimationFrame(applySidebarOffset);
             setTimeout(applySidebarOffset, 150);
+            if (typeof MutationObserver !== 'undefined') {
+                var mo = new MutationObserver(function () { if (applySidebarOffset()) mo.disconnect(); });
+                mo.observe(document.body, { childList: true, subtree: true });
+                setTimeout(function () { mo.disconnect(); }, 3000);
+            }
         }
         document.body.appendChild(root);
         load();
