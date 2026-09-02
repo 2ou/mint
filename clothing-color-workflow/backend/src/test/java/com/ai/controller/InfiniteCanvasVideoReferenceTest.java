@@ -7,6 +7,7 @@ import com.ai.service.CanvasTaskService;
 import com.ai.service.KieClientService;
 import com.ai.service.ModelPricingService;
 import com.ai.service.OssService;
+import com.ai.service.Seedance25VideoRequestService;
 import com.ai.service.TextModelService;
 import com.aliyun.oss.OSS;
 import com.aliyun.oss.model.ObjectMetadata;
@@ -78,6 +79,7 @@ class InfiniteCanvasVideoReferenceTest {
                 mock(CanvasTaskService.class),
                 mock(KieClientService.class),
                 mock(ModelPricingService.class),
+                mock(Seedance25VideoRequestService.class),
                 mock(TextModelService.class),
                 ossService,
                 properties,

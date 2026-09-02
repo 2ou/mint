@@ -344,6 +344,8 @@ let settings = {
     videoWatermark:false,
     videoCameraFixed:false,
     videoGenerateAudio:false,
+    videoSeedance25Mode:'text',
+    videoReturnLastFrame:true,
     videoMultimodal:true,
     _videoMultimodalUserSet:false,
     videoUseFrameRoles:false,
@@ -2808,6 +2810,9 @@ const DEFAULT_VIDEO_MODELS = [
 function isKieSeedanceVideoModel(model){
     return model === KIE_SEEDANCE_2_5_MODEL || model === KIE_SEEDANCE_2_MODEL;
 }
+function isSeedance25VideoModel(model){
+    return model === KIE_SEEDANCE_2_5_MODEL;
+}
 function isMiniMaxH3VideoModel(model){
     return model === KIE_MINIMAX_H3_TEXT_MODEL
         || model === KIE_MINIMAX_H3_IMAGE_MODEL
@@ -2828,6 +2833,7 @@ function videoModelMaxDuration(model){
     return 60;
 }
 function videoModelMinDuration(model){
+    if(model === KIE_SEEDANCE_2_5_MODEL) return 4;
     return isMiniMaxH3VideoModel(model) ? 5 : 1;
 }
 function normalizeKieSeedanceVideoSettings(target=settings){
@@ -2836,7 +2842,15 @@ function normalizeKieSeedanceVideoSettings(target=settings){
     target.videoDuration = Math.max(videoModelMinDuration(target.videoModel), Math.min(maxDuration, Number(target.videoDuration) || 5));
     if(isKieSeedanceVideoModel(target.videoModel)){
         if(!['480p','720p','1080p'].includes(target.videoResolution)) target.videoResolution = '720p';
-        if(!['16:9','4:3','1:1','3:4','9:16','21:9','adaptive'].includes(target.videoAspect)) target.videoAspect = '16:9';
+        const ratios = isSeedance25VideoModel(target.videoModel)
+            ? ['16:9','4:3','1:1','3:4','9:16','21:9']
+            : ['16:9','4:3','1:1','3:4','9:16','21:9','adaptive'];
+        if(!ratios.includes(target.videoAspect)) target.videoAspect = '16:9';
+        if(isSeedance25VideoModel(target.videoModel)){
+            const legacyMode = target.videoMultimodal ? 'multimodal' : target.videoUseFrameRoles ? 'first_last_frame' : 'text';
+            if(!['text','first_frame','first_last_frame','multimodal'].includes(target.videoSeedance25Mode)) target.videoSeedance25Mode = legacyMode;
+            if(typeof target.videoReturnLastFrame !== 'boolean') target.videoReturnLastFrame = true;
+        }
     } else {
         target.videoResolution = '';
         const allowed = target.videoModel === KIE_MINIMAX_H3_REFERENCE_MODEL
@@ -2912,7 +2926,9 @@ function renderVideoAspectControl(){
         ['16:9','16:9'], ['9:16','9:16'], ['1:1','1:1'], ['4:3','4:3'], ['3:4','3:4'],
         ['21:9','21:9'], ['9:21','9:21'], ['keep_ratio', tr('smart.videoAspectKeep')], ['adaptive', tr('smart.videoAspectAdaptive')]
     ];
-    const options = isKieSeedanceVideoModel(settings.videoModel)
+    const options = isSeedance25VideoModel(settings.videoModel)
+        ? allOptions.filter(([value]) => !['9:21','keep_ratio','adaptive'].includes(value))
+        : isKieSeedanceVideoModel(settings.videoModel)
         ? allOptions.filter(([value]) => !['9:21','keep_ratio'].includes(value))
         : settings.videoModel === KIE_MINIMAX_H3_REFERENCE_MODEL
             ? allOptions.filter(([value]) => ['16:9','9:16','1:1','adaptive'].includes(value))
@@ -2928,6 +2944,24 @@ function renderVideoAspectControl(){
             <div class="ratio-grid">
                 ${options.map(([v,l]) => `<button type="button" class="ratio-option ${v === value ? 'active' : ''}" data-smart-param="videoAspect" data-smart-value="${escapeHtml(v)}"><span class="ratio-icon ${videoAspectIconClass(v)}"></span><span>${escapeHtml(l)}</span></button>`).join('')}
             </div>
+        </div>
+    </div>`;
+}
+function renderSeedance25ModeControl(){
+    const mode = settings.videoSeedance25Mode || 'text';
+    const labels = {text:'文生视频', first_frame:'首帧图', first_last_frame:'首尾帧', multimodal:'多模态参考'};
+    const helper = {
+        text:'只发送提示词，已连接素材会保留但不会随本次请求发送。',
+        first_frame:'只取第一张图片作为首帧，不能混用其他图片、视频或音频。',
+        first_last_frame:'只取前两张图片作为首帧和尾帧，不能混用多模态素材。',
+        multimodal:'发送所有图片、视频和音频参考，不能混用首帧或尾帧。'
+    };
+    return `<div class="smart-control seedance25-mode-control">
+        <button class="smart-pill" type="button"><i data-lucide="sliders-horizontal"></i><span>${escapeHtml(labels[mode] || labels.text)}</span><i data-lucide="chevron-down" class="pill-caret"></i></button>
+        <div class="smart-popover compact-popover">
+            <div class="smart-popover-title">Seedance 2.5 输入模式</div>
+            <div class="model-list">${Object.entries(labels).map(([value,label]) => `<button type="button" class="direct-option ${mode === value ? 'active' : ''}" data-smart-param="videoSeedance25Mode" data-smart-value="${value}"><span>${escapeHtml(label)}</span></button>`).join('')}</div>
+            <div class="muted-note">${escapeHtml(helper[mode] || helper.text)}</div>
         </div>
     </div>`;
 }
@@ -3154,6 +3188,7 @@ function renderApiVideoParams(){
     if(!settings.videoModel || !models.includes(settings.videoModel)) settings.videoModel = models[0] || KIE_SEEDANCE_2_5_MODEL;
     normalizeKieSeedanceVideoSettings(settings);
     const isMiniMaxH3 = isMiniMaxH3VideoModel(settings.videoModel);
+    const isSeedance25 = isSeedance25VideoModel(settings.videoModel);
     const showAspectControl = settings.videoModel !== KIE_MINIMAX_H3_IMAGE_MODEL;
     dynamicParams.innerHTML = `
         ${renderVideoProviderControl(providers)}
@@ -3161,13 +3196,14 @@ function renderApiVideoParams(){
         ${isMiniMaxH3 ? '' : renderVideoResolutionControl()}
         ${showAspectControl ? renderVideoAspectControl() : ''}
         ${renderVideoDurationControl()}
-        ${isMiniMaxH3 ? '' : renderVideoToggleControl('videoEnhancePrompt', tr('smart.videoEnhancePrompt'))}
-        ${isMiniMaxH3 ? '' : renderVideoToggleControl('videoEnableUpsample', tr('smart.videoUpsample'))}
-        ${isMiniMaxH3 ? '' : renderVideoToggleControl('videoGenerateAudio', tr('smart.videoGenerateAudio'))}
-        ${isMiniMaxH3 ? '' : renderVideoToggleControl('videoCameraFixed', tr('smart.videoCameraFixed'))}
-        ${isMiniMaxH3 ? '' : renderVideoToggleControl('videoWatermark', tr('smart.videoWatermark'))}
-        ${isMiniMaxH3 ? '' : renderVideoToggleControl('videoMultimodal', tr('smart.videoMultimodal'))}
-        ${isMiniMaxH3 ? '' : renderVideoToggleControl('videoUseFrameRoles', tr('smart.videoUseFrameRoles'))}
+        ${isSeedance25 ? renderSeedance25ModeControl() : ''}
+        ${isSeedance25 ? renderVideoToggleControl('videoGenerateAudio', tr('smart.videoGenerateAudio')) : isMiniMaxH3 ? '' : renderVideoToggleControl('videoEnhancePrompt', tr('smart.videoEnhancePrompt'))}
+        ${isSeedance25 ? renderVideoToggleControl('videoReturnLastFrame', '返回尾帧') : isMiniMaxH3 ? '' : renderVideoToggleControl('videoEnableUpsample', tr('smart.videoUpsample'))}
+        ${isSeedance25 || isMiniMaxH3 ? '' : renderVideoToggleControl('videoGenerateAudio', tr('smart.videoGenerateAudio'))}
+        ${isSeedance25 || isMiniMaxH3 ? '' : renderVideoToggleControl('videoCameraFixed', tr('smart.videoCameraFixed'))}
+        ${isSeedance25 || isMiniMaxH3 ? '' : renderVideoToggleControl('videoWatermark', tr('smart.videoWatermark'))}
+        ${isSeedance25 || isMiniMaxH3 ? '' : renderVideoToggleControl('videoMultimodal', tr('smart.videoMultimodal'))}
+        ${isSeedance25 || isMiniMaxH3 ? '' : renderVideoToggleControl('videoUseFrameRoles', tr('smart.videoUseFrameRoles'))}
         ${settings.videoProvider === 'jimeng' ? '' : renderVideoTrustedAssetControl()}
     `;
 }
@@ -16169,7 +16205,7 @@ async function submitApiVideoGeneration(prompt, refs, runSettings=settings){
         };
         const refImages = imageRefsOnly(uploadedRefs).map((ref, i) => {
             const item = {url:effUrl(ref), name:ref.name || `图${i + 1}`};
-            if(runSettings.videoUseFrameRoles){
+            if(!isSeedance25VideoModel(runSettings.videoModel) && runSettings.videoUseFrameRoles){
                 if(i === 0) item.role = 'first_frame';
                 else if(i === 1) item.role = 'last_frame';
             }
@@ -16186,24 +16222,54 @@ async function submitApiVideoGeneration(prompt, refs, runSettings=settings){
         if(selectedVideoModel === KIE_MINIMAX_H3_REFERENCE_MODEL && !refImages.length && !refVideos.length && !refAudios.length){
             throw new Error('MiniMax H3 多模态参考需要至少一项图片、视频或音频素材');
         }
-        const payload = {
-            prompt,
-            provider_id: runSettings.videoProvider || 'comfly',
-            model: selectedVideoModel,
-            duration: Math.max(videoModelMinDuration(selectedVideoModel), Math.min(videoModelMaxDuration(selectedVideoModel), Number(runSettings.videoDuration) || 5)),
-            aspect_ratio: runSettings.videoAspect || '16:9',
-            resolution: runSettings.videoResolution || '',
-            images: refImages,
-            videos: refVideos,
-            audios: refAudios,
-            enhance_prompt: Boolean(runSettings.videoEnhancePrompt),
-            enable_upsample: Boolean(runSettings.videoEnableUpsample),
-            watermark: Boolean(runSettings.videoWatermark),
-            camerafixed: Boolean(runSettings.videoCameraFixed),
-            generate_audio: Boolean(runSettings.videoGenerateAudio),
-            multimodal: Boolean(runSettings.videoMultimodal),
-            trusted_asset: useAssetUris
-        };
+        let payload;
+        if(isSeedance25VideoModel(selectedVideoModel)){
+            const mode = runSettings.videoSeedance25Mode || 'text';
+            payload = {
+                prompt,
+                provider_id: runSettings.videoProvider || 'comfly',
+                model:selectedVideoModel,
+                seedance_mode:mode,
+                duration:Math.max(4, Math.min(30, Number(runSettings.videoDuration) || 4)),
+                aspect_ratio:runSettings.videoAspect || '16:9',
+                resolution:runSettings.videoResolution || '720p',
+                generate_audio:Boolean(runSettings.videoGenerateAudio),
+                return_last_frame:runSettings.videoReturnLastFrame !== false,
+                trusted_asset:useAssetUris
+            };
+            if(mode === 'first_frame') {
+                if(!refImages.length) throw new Error('Seedance 2.5 首帧模式需要一张图片');
+                payload.first_frame_url = refImages[0].url;
+            } else if(mode === 'first_last_frame') {
+                if(refImages.length < 2) throw new Error('Seedance 2.5 首尾帧模式需要两张图片');
+                payload.first_frame_url = refImages[0].url;
+                payload.last_frame_url = refImages[1].url;
+            } else if(mode === 'multimodal') {
+                if(!refImages.length && !refVideos.length && !refAudios.length) throw new Error('Seedance 2.5 多模态模式至少需要一项图片、视频或音频素材');
+                if(refImages.length) payload.images = refImages;
+                if(refVideos.length) payload.videos = refVideos;
+                if(refAudios.length) payload.audios = refAudios;
+            }
+        } else {
+            payload = {
+                prompt,
+                provider_id: runSettings.videoProvider || 'comfly',
+                model: selectedVideoModel,
+                duration: Math.max(videoModelMinDuration(selectedVideoModel), Math.min(videoModelMaxDuration(selectedVideoModel), Number(runSettings.videoDuration) || 5)),
+                aspect_ratio: runSettings.videoAspect || '16:9',
+                resolution: runSettings.videoResolution || '',
+                images: refImages,
+                videos: refVideos,
+                audios: refAudios,
+                enhance_prompt: Boolean(runSettings.videoEnhancePrompt),
+                enable_upsample: Boolean(runSettings.videoEnableUpsample),
+                watermark: Boolean(runSettings.videoWatermark),
+                camerafixed: Boolean(runSettings.videoCameraFixed),
+                generate_audio: Boolean(runSettings.videoGenerateAudio),
+                multimodal: Boolean(runSettings.videoMultimodal),
+                trusted_asset: useAssetUris
+            };
+        }
         const result = await enqueueSmartTaskSubmission(() => fetch('/api/canvas-video-tasks', {
             method:'POST',
             headers:{'Content-Type':'application/json'},

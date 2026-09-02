@@ -9,6 +9,7 @@ import com.ai.service.CanvasTaskService;
 import com.ai.service.KieClientService;
 import com.ai.service.ModelPricingService;
 import com.ai.service.OssService;
+import com.ai.service.Seedance25VideoRequestService;
 import com.ai.service.TextModelService;
 import com.ai.service.impl.KieGptModels;
 import com.aliyun.oss.model.ObjectMetadata;
@@ -128,6 +129,7 @@ public class InfiniteCanvasController {
     private final CanvasTaskService canvasTaskService;
     private final KieClientService kieClientService;
     private final ModelPricingService modelPricingService;
+    private final Seedance25VideoRequestService seedance25VideoRequestService;
     private final TextModelService textModelService;
     private final OssService ossService;
     private final AppProperties appProperties;
@@ -732,8 +734,10 @@ public class InfiniteCanvasController {
         String operator = currentOperator(request);
         String shopName = currentShopName(request);
         canvasTaskService.requireSubmissionCapacity(operator, shopName);
-        String prompt = firstNonBlank(textValue(payload.get("prompt")), "Generate a video.");
         String model = normalizeVideoModel(textValue(payload.get("model")));
+        String prompt = SEEDANCE_2_5_MODEL.equals(model)
+                ? textValue(payload.get("prompt"))
+                : firstNonBlank(textValue(payload.get("prompt")), "Generate a video.");
         Map<String, Object> input = videoInput(payload, prompt, model);
         KieTaskResult created = kieClientService.createVideoTask(model, input);
         String taskId = created.getTaskId();
@@ -2431,7 +2435,8 @@ public class InfiniteCanvasController {
         body.put("task_id", taskId);
         body.put("media_type", mediaType);
         String servingUrl = canvasTaskService.resultServingUrl(result);
-        boolean persistedResultReady = servingUrl != null && !servingUrl.isBlank();
+        List<String> servingUrls = canvasTaskService.resultServingUrls(taskId);
+        boolean persistedResultReady = !servingUrls.isEmpty();
         boolean waitingForLocalCache = "succeeded".equals(status)
                 && result.getResultUrl() != null
                 && !result.getResultUrl().isBlank()
@@ -2447,7 +2452,7 @@ public class InfiniteCanvasController {
         body.put("error", waitingForLocalCache ? "正在保存生成结果..." : firstNonBlank(result.getErrorMessage(), ""));
         if ("succeeded".equals(status) && result.getResultUrl() != null && !result.getResultUrl().isBlank()) {
             // 优先使用本地落盘结果（仅本地，不上 OSS），避免 KIE 远程链接过期导致裂图
-            body.put("result", Map.of(mediaType.equals("video") ? "videos" : "images", List.of(servingUrl), "url", servingUrl));
+            body.put("result", Map.of(mediaType.equals("video") ? "videos" : "images", servingUrls, "url", servingUrl));
         } else {
             body.put("result", Map.of(mediaType.equals("video") ? "videos" : "images", List.of()));
         }
@@ -2856,6 +2861,13 @@ public class InfiniteCanvasController {
 
     private Map<String, Object> videoInput(Map<String, Object> payload, String prompt, String model) {
         if (isMiniMaxH3VideoModel(model)) return miniMaxH3VideoInput(payload, prompt, model);
+        if (SEEDANCE_2_5_MODEL.equals(model)) {
+            Map<String, Object> source = new LinkedHashMap<>(payload == null ? Map.of() : payload);
+            source.put("prompt", prompt);
+            // Infinite Canvas returns a final-frame output by default. The
+            // normalizer also removes all unsupported legacy parameters.
+            return seedance25VideoRequestService.normalize(source, true);
+        }
         Map<String, Object> input = new LinkedHashMap<>();
         input.put("prompt", prompt);
         input.put("duration", seedanceDuration(payload.get("duration"), model));
@@ -2864,11 +2876,6 @@ public class InfiniteCanvasController {
         input.put("generate_audio", boolValue(payload.get("generate_audio")));
         input.put("return_last_frame", false);
         input.put("web_search", false);
-        if (SEEDANCE_2_5_MODEL.equals(model)) {
-            input.put("output_format", "mp4");
-            input.put("nsfw_checker", true);
-        }
-
         List<VideoImageReference> images = videoImageReferences(payload.get("images"));
         List<String> videos = mediaUrls(payload.get("videos")).stream().map(this::normalizeInputUrl).toList();
         List<String> audios = mediaUrls(payload.get("audios")).stream().map(this::normalizeInputUrl).toList();

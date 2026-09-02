@@ -17,6 +17,7 @@ import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.util.Map;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.math.BigDecimal;
@@ -193,8 +194,11 @@ public class KieClientServiceImpl implements KieClientService {
                     resultBuilder.success(true);
                     resultBuilder.status("SUCCESS"); // 🔴 修复1：覆盖原有的状态，统一为大写 SUCCESS
 
-                    // 解析图片 URL
-                    resultBuilder.resultUrl(parseUrlFromData(dataNode));
+                    // Seedance 2.5 may return both the generated video and a
+                    // requested final frame. Preserve the complete ordered list.
+                    List<String> resultUrls = parseUrlsFromData(dataNode);
+                    resultBuilder.resultUrls(resultUrls);
+                    resultBuilder.resultUrl(resultUrls.isEmpty() ? null : resultUrls.get(0));
 
                     // 解析 KIE 真实费用（兼容多种字段名，取第一个非空数值；data 内取不到再查 root）
                     BigDecimal cost = extractCost(dataNode);
@@ -250,11 +254,17 @@ public class KieClientServiceImpl implements KieClientService {
      * 按照 KIE 官方最新文档规范提取结果链接
      */
     private String parseUrlFromData(com.fasterxml.jackson.databind.JsonNode data) {
-        if (data == null || data.isEmpty()) return null;
+        List<String> urls = parseUrlsFromData(data);
+        return urls.isEmpty() ? null : urls.get(0);
+    }
+
+    private List<String> parseUrlsFromData(com.fasterxml.jackson.databind.JsonNode data) {
+        java.util.LinkedHashSet<String> urls = new java.util.LinkedHashSet<>();
+        if (data == null || data.isEmpty()) return List.of();
 
         // 兼容 data 是对象或数组的情况
         com.fasterxml.jackson.databind.JsonNode resultObj = data.isObject() ? data : data.get(0);
-        if (resultObj == null) return null;
+        if (resultObj == null) return List.of();
 
         // 🔴 严格按照官方标准：解析 resultJson 字段
         if (resultObj.has("resultJson") && !resultObj.get("resultJson").isNull()) {
@@ -265,23 +275,30 @@ public class KieClientServiceImpl implements KieClientService {
                 // 2. 将字符串反序列化为 JSON 树
                 com.fasterxml.jackson.databind.JsonNode innerNode = new com.fasterxml.jackson.databind.ObjectMapper().readTree(innerJsonStr);
 
-                // 3. 严格提取 resultUrls 数组中的第一个链接（无论是图片还是视频）
-                if (innerNode.has("resultUrls") && innerNode.get("resultUrls").isArray() && innerNode.get("resultUrls").size() > 0) {
-                    return innerNode.get("resultUrls").get(0).asText();
-                }
+                collectResultUrls(innerNode, urls);
             } catch (Exception e) {
                 log.warn("❌ 解析 KIE 标准 resultJson 格式失败: {}", e.getMessage());
             }
         }
 
-        // ================= 兜底防御区 =================
-        // 虽然官方说统一了，但以防万一某些老模型没迁移完，保留几个最基础的兜底
-        if (resultObj.has("video_url") && !resultObj.get("video_url").isNull()) return resultObj.get("video_url").asText();
-        if (resultObj.has("imageUrl") && !resultObj.get("imageUrl").isNull()) return resultObj.get("imageUrl").asText();
-        if (resultObj.has("url") && !resultObj.get("url").isNull()) return resultObj.get("url").asText();
-        // ==============================================
+        collectResultUrls(resultObj, urls);
+        return List.copyOf(urls);
+    }
 
-        return null;
+    private void collectResultUrls(com.fasterxml.jackson.databind.JsonNode node, java.util.LinkedHashSet<String> urls) {
+        if (node == null || node.isNull()) return;
+        if (node.isTextual()) {
+            String value = node.asText();
+            if (value.startsWith("http://") || value.startsWith("https://")) urls.add(value);
+            return;
+        }
+        if (node.isArray()) {
+            node.forEach(item -> collectResultUrls(item, urls));
+            return;
+        }
+        for (String key : List.of("resultUrls", "urls", "lastFrameUrl", "last_frame_url", "video_url", "videoUrl", "image_url", "imageUrl", "url")) {
+            if (node.has(key)) collectResultUrls(node.get(key), urls);
+        }
     }
 
     @Override

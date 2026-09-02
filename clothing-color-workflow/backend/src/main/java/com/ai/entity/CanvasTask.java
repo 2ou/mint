@@ -38,8 +38,18 @@ public class CanvasTask {
     @Column(length = 1024)
     private String resultUrl;
 
+    /** Provider output URLs in their original order (video first, then final frame when requested). */
+    @Lob
+    @Column(name = "result_urls_json", columnDefinition = "longtext")
+    private String resultUrlsJson;
+
     @Column(length = 1024)
     private String localPath; // AI 画布结果本地落盘绝对路径（仅本地，不上 OSS）
+
+    /** Local cached paths matching resultUrlsJson; used by dev/LAN without exposing temporary KIE URLs. */
+    @Lob
+    @Column(name = "local_paths_json", columnDefinition = "longtext")
+    private String localPathsJson;
 
     @Column(length = 1024)
     private String errorMessage;

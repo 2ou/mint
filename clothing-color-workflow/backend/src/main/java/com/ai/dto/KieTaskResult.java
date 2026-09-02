@@ -5,6 +5,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import java.math.BigDecimal;
+import java.util.List;
 
 @Data
 @Builder
@@ -16,6 +17,8 @@ public class KieTaskResult {
     private String status;
     private String taskId;
     private String resultUrl;
+    /** All provider output URLs, for example Seedance's video plus requested final frame. */
+    private List<String> resultUrls;
     private String errorMessage;
     private Long completeTime; // 🔴 对应 KIE 返回的 completeTime
     private BigDecimal cost; // KIE 返回的真实费用，用于画布计费显示（可为 null）

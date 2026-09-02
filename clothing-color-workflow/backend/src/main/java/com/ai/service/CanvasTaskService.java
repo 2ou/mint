@@ -22,10 +22,12 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Objects;
+import java.util.Set;
 
 @Slf4j
 @Service
@@ -197,6 +199,7 @@ public class CanvasTaskService {
             item.put("media_type", task.getMediaType());
             String resultUrl = resultServingUrl(task);
             item.put("result_url", resultUrl);
+            item.put("result_urls", resultServingUrls(task));
             item.put("error", task.getErrorMessage() == null ? "" : task.getErrorMessage());
             item.put("terminal", isTerminalStatus(status));
             item.put("retryable", "FAILED".equals(status) && task.getRequestPayloadJson() != null && !task.getRequestPayloadJson().isBlank());
@@ -295,6 +298,8 @@ public class CanvasTaskService {
         }
         task.setStatus(normalizeStatus(result.getStatus(), result.getResultUrl()));
         task.setResultUrl(blankToNull(result.getResultUrl()));
+        List<String> providerUrls = normalizedResultUrls(result.getResultUrls(), result.getResultUrl());
+        task.setResultUrlsJson(writeJson(providerUrls));
         task.setErrorMessage(blankToNull(result.getErrorMessage()));
         if (result.getCost() != null && result.getCost().signum() != 0) {
             task.setActualCost(modelPricingService.kieCreditsToCny(result.getCost(), task.getPriceVersion()));
@@ -316,10 +321,37 @@ public class CanvasTaskService {
                 && !task.getResultUrl().isBlank();
     }
 
-    private boolean hasUsableLocalResult(CanvasTask task) {
-        if (task == null || task.getLocalPath() == null || task.getLocalPath().isBlank()) return false;
-        File localFile = new File(task.getLocalPath());
-        return localFile.isFile() && localFile.length() > 0 && localServingUrl(task.getLocalPath()) != null;
+    private boolean isUsableLocalPath(String localPath) {
+        if (localPath == null || localPath.isBlank()) return false;
+        File localFile = new File(localPath);
+        return localFile.isFile() && localFile.length() > 0 && localServingUrl(localPath) != null;
+    }
+
+    private List<String> normalizedResultUrls(List<String> urls, String fallback) {
+        LinkedHashSet<String> values = new LinkedHashSet<>();
+        if (urls != null) urls.stream().filter(Objects::nonNull).map(String::trim).filter(value -> !value.isBlank()).forEach(values::add);
+        if (values.isEmpty() && fallback != null && !fallback.isBlank()) values.add(fallback.trim());
+        return new ArrayList<>(values);
+    }
+
+    private List<String> readUrlList(String json, String fallback) {
+        if (json != null && !json.isBlank()) {
+            try {
+                List<String> values = objectMapper.readValue(json, new TypeReference<>() {});
+                return normalizedResultUrls(values, fallback);
+            } catch (Exception ignored) {
+                // Older rows do not have the JSON column; retain their primary URL/path.
+            }
+        }
+        return normalizedResultUrls(List.of(), fallback);
+    }
+
+    private String writeJson(List<String> values) {
+        try {
+            return objectMapper.writeValueAsString(values == null ? List.of() : values);
+        } catch (Exception exception) {
+            throw new IllegalStateException("无法保存画布多结果媒体", exception);
+        }
     }
 
     public String resultServingUrl(KieTaskResult result) {
@@ -332,22 +364,40 @@ public class CanvasTaskService {
         return localFile.isFile() && localFile.length() > 0 ? localServingUrl(result.getLocalPath()) : null;
     }
 
+    @Transactional(readOnly = true)
+    public List<String> resultServingUrls(String taskId) {
+        if (taskId == null || taskId.isBlank()) return List.of();
+        return canvasTaskRepository.findByTaskId(taskId).map(this::resultServingUrls).orElse(List.of());
+    }
+
     public String resultStorageMode() {
         return usesPermanentOssStorage() ? "permanent-oss" : "local-cache";
     }
 
     private String resultServingUrl(CanvasTask task) {
-        if (task == null) return "";
+        return resultServingUrls(task).stream().findFirst().orElse("");
+    }
+
+    private List<String> resultServingUrls(CanvasTask task) {
+        if (task == null) return List.of();
         if (usesPermanentOssStorage()) {
-            return isPermanentOssUrl(task.getResultUrl()) ? task.getResultUrl() : "";
+            return readUrlList(task.getResultUrlsJson(), task.getResultUrl()).stream()
+                    .filter(this::isPermanentOssUrl)
+                    .toList();
         }
-        return hasUsableLocalResult(task) ? localServingUrl(task.getLocalPath()) : "";
+        return readUrlList(task.getLocalPathsJson(), task.getLocalPath()).stream()
+                .map(this::localServingUrl)
+                .filter(Objects::nonNull)
+                .toList();
     }
 
     private boolean hasPersistedResult(CanvasTask task) {
-        return usesPermanentOssStorage()
-                ? isPermanentOssUrl(task == null ? null : task.getResultUrl())
-                : hasUsableLocalResult(task);
+        if (task == null) return false;
+        List<String> expected = readUrlList(task.getResultUrlsJson(), task.getResultUrl());
+        if (expected.isEmpty()) return false;
+        if (usesPermanentOssStorage()) return expected.stream().allMatch(this::isPermanentOssUrl);
+        List<String> localPaths = readUrlList(task.getLocalPathsJson(), task.getLocalPath());
+        return localPaths.size() == expected.size() && localPaths.stream().allMatch(this::isUsableLocalPath);
     }
 
     private boolean usesPermanentOssStorage() {
@@ -371,16 +421,25 @@ public class CanvasTaskService {
     }
 
     private void cacheResultPermanently(CanvasTask task) {
-        if (!isSuccessfulResult(task) || isPermanentOssUrl(task.getResultUrl())) return;
+        if (!isSuccessfulResult(task) || hasPersistedResult(task)) return;
         try {
-            String transferResult = ossService.uploadResultToOss("canvas", task.getResultUrl(), task.getId(), true);
-            String permanentUrl = extractOssUrl(transferResult);
-            if (isPermanentOssUrl(permanentUrl)) {
-                task.setResultUrl(permanentUrl);
+            List<String> permanentUrls = new ArrayList<>();
+            for (String providerUrl : readUrlList(task.getResultUrlsJson(), task.getResultUrl())) {
+                String permanentUrl = isPermanentOssUrl(providerUrl)
+                        ? providerUrl
+                        : extractOssUrl(ossService.uploadResultToOss("canvas", providerUrl, task.getId(), true));
+                if (!isPermanentOssUrl(permanentUrl)) {
+                    log.warn("[AI Canvas] permanent OSS result is pending retry: taskId={}", task.getTaskId());
+                    return;
+                }
+                permanentUrls.add(permanentUrl);
+            }
+            if (!permanentUrls.isEmpty()) {
+                task.setResultUrl(permanentUrls.get(0));
+                task.setResultUrlsJson(writeJson(permanentUrls));
                 task.setLocalPath(null);
+                task.setLocalPathsJson(null);
                 log.info("[AI Canvas] result promoted to permanent OSS: taskId={}", task.getTaskId());
-            } else {
-                log.warn("[AI Canvas] permanent OSS result is pending retry: taskId={}", task.getTaskId());
             }
         } catch (Exception storageEx) {
             log.warn("[AI Canvas] permanent OSS storage failed; it will retry before serving: taskId={}, error={}", task.getTaskId(), storageEx.getMessage());
@@ -394,7 +453,7 @@ public class CanvasTaskService {
     }
 
     private void cacheResultLocally(CanvasTask task) {
-        if (!isSuccessfulResult(task) || hasUsableLocalResult(task)) return;
+        if (!isSuccessfulResult(task) || hasPersistedResult(task)) return;
         if (task.getLocalPath() != null && !task.getLocalPath().isBlank()) {
             log.warn("[AI Canvas] local result is missing; downloading again: taskId={}, path={}", task.getTaskId(), task.getLocalPath());
             task.setLocalPath(null);
@@ -402,12 +461,20 @@ public class CanvasTaskService {
         try {
             // 画布按店铺分区落盘：店铺名为空时回退到“未知店铺”，与前端默认一致
             String shopName = (task.getShopName() == null || task.getShopName().isBlank()) ? "未知店铺" : task.getShopName();
-            String localPath = ossService.downloadResultToLocal("canvas", shopName, task.getTaskId(), task.getResultUrl());
-            if (localPath != null && !localPath.isBlank()) {
-                task.setLocalPath(localPath);
-                log.info("[AI Canvas] result cached for LAN access: taskId={}, path={}", task.getTaskId(), localPath);
-            } else {
-                log.warn("[AI Canvas] local result download is pending retry: taskId={}", task.getTaskId());
+            List<String> localPaths = new ArrayList<>();
+            List<String> providerUrls = readUrlList(task.getResultUrlsJson(), task.getResultUrl());
+            for (int index = 0; index < providerUrls.size(); index += 1) {
+                String localPath = ossService.downloadResultToLocal("canvas", shopName, task.getTaskId() + "_" + (index + 1), providerUrls.get(index));
+                if (localPath == null || localPath.isBlank()) {
+                    log.warn("[AI Canvas] local result download is pending retry: taskId={}", task.getTaskId());
+                    return;
+                }
+                localPaths.add(localPath);
+            }
+            if (!localPaths.isEmpty()) {
+                task.setLocalPath(localPaths.get(0));
+                task.setLocalPathsJson(writeJson(localPaths));
+                log.info("[AI Canvas] result cached for LAN access: taskId={}, path={}", task.getTaskId(), localPaths.get(0));
             }
         } catch (Exception dlEx) {
             log.warn("[AI Canvas] local result download failed; it will retry before serving: taskId={}, error={}", task.getTaskId(), dlEx.getMessage());
@@ -423,6 +490,7 @@ public class CanvasTaskService {
                 .finished(finished)
                 .success("SUCCESS".equals(status))
                 .resultUrl(task.getResultUrl())
+                .resultUrls(readUrlList(task.getResultUrlsJson(), task.getResultUrl()))
                 .errorMessage(task.getErrorMessage())
                 .cost(task.getActualCost())
                 .localPath(task.getLocalPath())
@@ -452,6 +520,10 @@ public class CanvasTaskService {
     private KieTaskResult parseCallback(Map<String, Object> payload, String taskId) {
         JsonNode root = objectMapper.valueToTree(payload == null ? Map.of() : payload);
         String resultUrl = extractUrl(root);
+        LinkedHashSet<String> orderedUrls = new LinkedHashSet<>();
+        if (!resultUrl.isBlank()) orderedUrls.add(resultUrl);
+        orderedUrls.addAll(extractUrls(root));
+        List<String> resultUrls = new ArrayList<>(orderedUrls);
         String rawStatus = firstNonBlank(
                 textAt(root, "data", "state"),
                 textAt(root, "data", "status"),
@@ -471,6 +543,7 @@ public class CanvasTaskService {
                 .finished("SUCCESS".equals(status) || "FAILED".equals(status))
                 .success("SUCCESS".equals(status))
                 .resultUrl(resultUrl)
+                .resultUrls(resultUrls)
                 .errorMessage(errorMessage)
                 .cost(cost)
                 .build();
@@ -560,6 +633,41 @@ public class CanvasTaskService {
             return node.asText();
         }
         return "";
+    }
+
+    private List<String> extractUrls(JsonNode node) {
+        LinkedHashSet<String> urls = new LinkedHashSet<>();
+        collectResultUrls(node, urls);
+        return new ArrayList<>(urls);
+    }
+
+    private void collectResultUrls(JsonNode node, LinkedHashSet<String> urls) {
+        if (node == null || node.isNull()) return;
+        if (node.isTextual()) {
+            if (looksLikeUrl(node.asText())) urls.add(node.asText());
+            return;
+        }
+        if (node.isArray()) {
+            node.forEach(item -> collectResultUrls(item, urls));
+            return;
+        }
+        if (!node.isObject()) return;
+        JsonNode resultJson = node.get("resultJson");
+        if (resultJson != null && !resultJson.isNull()) {
+            try {
+                collectResultUrls(resultJson.isTextual() ? objectMapper.readTree(resultJson.asText()) : resultJson, urls);
+            } catch (Exception ignored) {
+                // Keep extracting the regular result fields below.
+            }
+        }
+        for (String key : List.of("resultUrls", "urls", "lastFrameUrl", "last_frame_url", "videoUrl", "video_url", "imageUrl", "image_url", "url", "output")) {
+            if (node.has(key)) collectResultUrls(node.get(key), urls);
+        }
+        node.fields().forEachRemaining(entry -> {
+            if (!"resultJson".equals(entry.getKey()) && !Set.of("resultUrls", "urls", "lastFrameUrl", "last_frame_url", "videoUrl", "video_url", "imageUrl", "image_url", "url", "output").contains(entry.getKey())) {
+                collectResultUrls(entry.getValue(), urls);
+            }
+        });
     }
 
     private String extractResultJson(JsonNode node) {

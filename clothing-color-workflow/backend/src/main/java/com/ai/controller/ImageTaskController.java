@@ -9,6 +9,7 @@ import com.ai.repository.UserSessionRepository;
 import com.ai.service.ImageTaskService;
 import com.ai.service.ModelPricingService;
 import com.ai.service.OssService;
+import com.ai.service.Seedance25VideoRequestService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -35,6 +36,7 @@ public class ImageTaskController {
     private final UserSessionRepository userSessionRepository;
     private final ImageTaskService imageTaskService;
     private final ModelPricingService modelPricingService;
+    private final Seedance25VideoRequestService seedance25VideoRequestService;
     // 🔴 新增：注入 KieClientService
     private final com.ai.service.KieClientService kieClientService;
 
@@ -232,6 +234,15 @@ public class ImageTaskController {
         SysUser user = userSessionRepository.findUserByToken(token);
         if (user == null) {
             return ApiResponse.fail("未登录或 Token 已失效");
+        }
+
+        if (Seedance25VideoRequestService.MODEL.equals(req.getModel())) {
+            try {
+                // 独立视频页默认不返回尾帧；前端可显式开启。
+                req.setInput(seedance25VideoRequestService.normalize(req.getInput(), false));
+            } catch (IllegalArgumentException exception) {
+                return ApiResponse.fail(exception.getMessage());
+            }
         }
 
         ImageTask task = new ImageTask();

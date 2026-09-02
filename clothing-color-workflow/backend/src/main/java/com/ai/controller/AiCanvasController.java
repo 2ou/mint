@@ -14,6 +14,7 @@ import com.ai.repository.CanvasTemplateRepository;
 import com.ai.service.CanvasTaskService;
 import com.ai.service.KieClientService;
 import com.ai.service.OssService;
+import com.ai.service.Seedance25VideoRequestService;
 import com.ai.service.impl.KieGptModels;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -75,6 +76,7 @@ public class AiCanvasController {
     private final CanvasTaskService canvasTaskService;
     private final KieClientService kieClientService;
     private final OssService ossService;
+    private final Seedance25VideoRequestService seedance25VideoRequestService;
     private final AppProperties appProperties;
     private final ObjectMapper objectMapper;
 
@@ -573,6 +575,10 @@ public class AiCanvasController {
     }
 
     private Map<String, Object> seedanceVideoInput(Map<String, Object> payload, String model) {
+        if (SEEDANCE_2_5_MODEL.equals(model)) {
+            // 画布默认请求尾帧，让后续节点可以继续衔接该帧。
+            return seedance25VideoRequestService.normalize(payload, true);
+        }
         Map<String, Object> input = new LinkedHashMap<>();
         input.put("prompt", textValue(payload.get("prompt")));
         input.put("duration", seedanceDuration(payload.get("duration"), model));
@@ -581,11 +587,6 @@ public class AiCanvasController {
         input.put("generate_audio", boolValue(payload.get("generate_audio")));
         input.put("return_last_frame", boolValue(payload.get("return_last_frame")));
         input.put("web_search", boolValue(payload.get("web_search")));
-        if (SEEDANCE_2_5_MODEL.equals(model)) {
-            input.put("output_format", "mov".equalsIgnoreCase(textValue(payload.get("output_format"))) ? "mov" : "mp4");
-            input.put("nsfw_checker", !payload.containsKey("nsfw_checker") || boolValue(payload.get("nsfw_checker")));
-        }
-
         List<String> firstFrames = mergeUrlInputs(payload.get("first_frame_url"), payload.get("firstFrameUrl"));
         List<String> lastFrames = mergeUrlInputs(payload.get("last_frame_url"), payload.get("lastFrameUrl"));
         List<String> referenceImages = normalizeUrlInputs(payload.get("reference_image_urls"));

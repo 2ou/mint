@@ -31,6 +31,11 @@
         .mention-item { padding: 8px 12px; cursor: pointer; font-size: 13px; }
         .mention-item:hover { background: #f5f7fa; color: #673ab7; font-weight: bold; }
         .mention-title { padding: 8px 12px; font-size: 12px; color: #909399; background: #fafafa; border-bottom: 1px solid #ebeef5; font-weight: bold; }
+        .seedance25-empty-state { margin: 0 0 20px; padding: 16px 18px; border: 1px dashed #c4b5fd; border-radius: 8px; background: #faf7ff; color: #5b21b6; font-size: 13px; line-height: 1.6; }
+        .seedance25-upload-label { margin: 0 0 9px; color: #303133; font-size: 13px; font-weight: 700; }
+        .seedance25-upload-label span { color: #f56c6c; font-weight: 600; }
+        .seedance25-upload-label em { color: #909399; font-size: 12px; font-style: normal; font-weight: 400; }
+        .seedance25-helper { margin-left: 10px; color: #909399; font-size: 12px; }
     </style>
 </head>
 <body>
@@ -557,7 +562,124 @@
                 </el-row>
             </div>
 
-            <div v-if="isSeedanceStandard">
+            <div v-if="isSeedance25">
+                <div class="app-section-title">2. Seedance 2.5 输入与生成参数</div>
+                <el-alert type="info" :closable="false" style="margin-bottom:16px;" title="每次仅使用一种输入模式。切换模式会保留已上传素材，但提交时只传递当前模式允许的字段。"></el-alert>
+                <el-form label-width="112px">
+                    <el-form-item label="输入模式">
+                        <el-radio-group v-model="form.see25Mode">
+                            <el-radio-button label="text">文生视频</el-radio-button>
+                            <el-radio-button label="first_frame">首帧图</el-radio-button>
+                            <el-radio-button label="first_last_frame">首尾帧</el-radio-button>
+                            <el-radio-button label="multimodal">多模态参考</el-radio-button>
+                        </el-radio-group>
+                    </el-form-item>
+                </el-form>
+
+                <div v-if="form.see25Mode === 'text'" class="seedance25-empty-state">
+                    仅根据提示词生成视频，不会传递任何已连接或已上传的参考素材。
+                </div>
+                <el-row v-else-if="form.see25Mode === 'first_frame'" :gutter="20" style="margin-bottom:20px;">
+                    <el-col :span="8">
+                        <div class="seedance25-upload-label">首帧图 <span>必填</span></div>
+                        <div class="upload-box" :class="{'is-dragover': drag.seeFirstImg}"
+                             @click="triggerUpload('seeFirstImg', seedance25ImageAccept)"
+                             @dragover.prevent="drag.seeFirstImg = true" @dragleave.prevent="drag.seeFirstImg = false"
+                             @drop.prevent="e => handleDrop(e, 'seeFirstImg', seedance25ImageAccept)">
+                            <img v-if="form.seeFirstImg || form.workflowImageUrl" :src="form.seeFirstImg || form.workflowImageUrl" class="media-preview">
+                            <div v-else>点击或拖入首帧图</div>
+                            <div v-if="form.seeFirstImg" class="remove-btn" @click.stop="form.seeFirstImg=''; filesToUpload.seeFirstImg=null">X</div>
+                        </div>
+                    </el-col>
+                </el-row>
+                <el-row v-else-if="form.see25Mode === 'first_last_frame'" :gutter="20" style="margin-bottom:20px;">
+                    <el-col :span="8">
+                        <div class="seedance25-upload-label">首帧图 <span>必填</span></div>
+                        <div class="upload-box" :class="{'is-dragover': drag.seeFirstImg}"
+                             @click="triggerUpload('seeFirstImg', seedance25ImageAccept)"
+                             @dragover.prevent="drag.seeFirstImg = true" @dragleave.prevent="drag.seeFirstImg = false"
+                             @drop.prevent="e => handleDrop(e, 'seeFirstImg', seedance25ImageAccept)">
+                            <img v-if="form.seeFirstImg || form.workflowImageUrl" :src="form.seeFirstImg || form.workflowImageUrl" class="media-preview">
+                            <div v-else>点击或拖入首帧图</div>
+                            <div v-if="form.seeFirstImg" class="remove-btn" @click.stop="form.seeFirstImg=''; filesToUpload.seeFirstImg=null">X</div>
+                        </div>
+                    </el-col>
+                    <el-col :span="8">
+                        <div class="seedance25-upload-label">尾帧图 <span>必填</span></div>
+                        <div class="upload-box" :class="{'is-dragover': drag.seeLastImg}"
+                             @click="triggerUpload('seeLastImg', seedance25ImageAccept)"
+                             @dragover.prevent="drag.seeLastImg = true" @dragleave.prevent="drag.seeLastImg = false"
+                             @drop.prevent="e => handleDrop(e, 'seeLastImg', seedance25ImageAccept)">
+                            <img v-if="form.seeLastImg" :src="form.seeLastImg" class="media-preview">
+                            <div v-else>点击或拖入尾帧图</div>
+                            <div v-if="form.seeLastImg" class="remove-btn" @click.stop="form.seeLastImg=''; filesToUpload.seeLastImg=null">X</div>
+                        </div>
+                    </el-col>
+                </el-row>
+                <div v-else class="seedance25-multimodal" style="margin-bottom:20px;">
+                    <div class="seedance25-upload-label">图片、视频或音频参考 <span>至少一项</span></div>
+                    <div class="seedance-drop-zone" :class="{'is-dragover': drag.seeImages}"
+                         @dragover.prevent="drag.seeImages = true" @dragleave.prevent="drag.seeImages = false"
+                         @drop.prevent="e => handleDrop(e, 'seeImages', seedance25ImageAccept, true)">
+                        <div v-for="(imgUrl, index) in form.seeImages" :key="index" class="ref-img-card">
+                            <img :src="imgUrl" style="height:100%;border-radius:8px;" />
+                            <div class="remove-btn" @click="removeSeeImage(index)">X</div>
+                        </div>
+                        <div class="upload-box" style="width:110px;height:140px;border-color:#dcdfe6;background:#fff;" @click="triggerUpload('seeImages', seedance25ImageAccept, true)">
+                            <div style="font-size:24px;margin-bottom:5px;">＋</div><div style="font-size:12px;font-weight:bold;padding:0 5px;">添加图片（最多30张）</div>
+                        </div>
+                    </div>
+                    <el-row :gutter="20" style="margin-top:14px;">
+                        <el-col :span="8">
+                            <div class="seedance25-upload-label">参考视频 <em>可选，MP4 / MOV，≤200MB</em></div>
+                            <div class="upload-box" :class="{'is-dragover': drag.seeVid}"
+                                 @click="triggerUpload('seeVid', seedance25VideoAccept)"
+                                 @dragover.prevent="drag.seeVid = true" @dragleave.prevent="drag.seeVid = false"
+                                 @drop.prevent="e => handleDrop(e, 'seeVid', seedance25VideoAccept)">
+                                <video v-if="form.seeVid" :src="form.seeVid" class="media-preview" autoplay muted loop @loadedmetadata="handleSeedanceVideoLoaded"></video>
+                                <div v-else>添加参考视频</div>
+                                <div v-if="form.seeVid" class="remove-btn" @click.stop="form.seeVid='';form.seeVidDuration=0;filesToUpload.seeVid=null">X</div>
+                            </div>
+                        </el-col>
+                        <el-col :span="8">
+                            <div class="seedance25-upload-label">参考音频 <em>可选，WAV / MP3，≤15MB</em></div>
+                            <div class="upload-box" :class="{'is-dragover': drag.seeAudioRef}"
+                                 @click="triggerUpload('seeAudioRef', seedance25AudioAccept)"
+                                 @dragover.prevent="drag.seeAudioRef = true" @dragleave.prevent="drag.seeAudioRef = false"
+                                 @drop.prevent="e => handleDrop(e, 'seeAudioRef', seedance25AudioAccept)">
+                                <audio v-if="form.seeAudioRef" :src="form.seeAudioRef" controls style="max-width:90%;" @loadedmetadata="handleSeedanceAudioLoaded"></audio>
+                                <div v-else>添加参考音频</div>
+                                <div v-if="form.seeAudioRef" class="remove-btn" @click.stop="form.seeAudioRef='';form.seeAudioRefDuration=0;filesToUpload.seeAudioRef=null">X</div>
+                            </div>
+                        </el-col>
+                    </el-row>
+                </div>
+
+                <el-row :gutter="20">
+                    <el-col :span="16">
+                        <el-form label-width="112px">
+                            <el-form-item label="画面比例">
+                                <el-select v-model="form.seeRatio" style="width:100%;">
+                                    <el-option label="16:9（横屏）" value="16:9"></el-option><el-option label="9:16（竖屏）" value="9:16"></el-option>
+                                    <el-option label="1:1（正方形）" value="1:1"></el-option><el-option label="4:3（横屏）" value="4:3"></el-option>
+                                    <el-option label="3:4（竖屏）" value="3:4"></el-option><el-option label="21:9（超宽屏）" value="21:9"></el-option>
+                                </el-select>
+                            </el-form-item>
+                            <el-form-item label="视频时长" required>
+                                <el-input-number v-model="form.seeDuration" :min="4" :max="30" :precision="0" style="width:100%;"></el-input-number>
+                                <span class="seedance25-helper">4–30 秒，整数必填</span>
+                            </el-form-item>
+                            <el-form-item label="分辨率">
+                                <el-select v-model="form.seeRes" style="width:150px;margin-right:15px;"><el-option label="480p" value="480p"></el-option><el-option label="720p" value="720p"></el-option><el-option label="1080p" value="1080p"></el-option></el-select>
+                                <el-switch v-model="form.seeAudio" active-text="生成音频"></el-switch>
+                                <el-switch v-model="form.see25ReturnLastFrame" active-text="返回尾帧" style="margin-left:20px;"></el-switch>
+                            </el-form-item>
+                        </el-form>
+                    </el-col>
+                </el-row>
+            </div>
+
+            <div v-else-if="isSeedanceStandard">
                 <div class="app-section-title">2. 字节 {{ form.model === 'bytedance/seedance-2-5' ? 'Seedance 2.5' : 'Seedance 2.0' }} 强控参数</div>
 
                 <el-row :gutter="20" style="margin-bottom: 20px;">
@@ -669,8 +791,8 @@
                 klingAudio: false,
                 klingTurboImg: '', klingTurboPrompt: '', klingTurboRes: '720p', klingTurboDuration: 5,
                 h3Mode: 'text', h3FirstFrame: '', h3LastFrame: '', h3ReferenceImages: [], h3ReferenceVideo: '', h3ReferenceVideoDuration: 0, h3ReferenceAudio: '', h3AspectRatio: '16:9', h3Duration: 6,
-                seeImages: [], seeVid: '', seeVidDuration: 0, seeRatio: '16:9', seeRes: '720p', seeDuration: 15, seeAudio: true,
-                seeFirstImg: '', seeLastImg: '',
+                seeImages: [], seeVid: '', seeVidDuration: 0, seeAudioRef: '', seeAudioRefDuration: 0, seeRatio: '16:9', seeRes: '720p', seeDuration: 15, seeAudio: false,
+                seeFirstImg: '', seeLastImg: '', see25Mode: 'text', see25ReturnLastFrame: false,
                 miniFirstImg: '', miniLastImg: '', miniImages: [], miniVid: '',
                 miniRatio: '16:9', miniRes: '720p', miniDuration: 5, miniAudio: false,
                 workflowImageUrl: ''
@@ -693,7 +815,7 @@
                 klingFirstImg: null, klingLastImg: null, klingMultiImage: null,
                 klingTurboImg: null,
                 h3FirstFrame: null, h3LastFrame: null, h3ReferenceImages: [], h3ReferenceVideo: null, h3ReferenceAudio: null,
-                seeImages: [], seeVid: null,
+                seeImages: [], seeVid: null, seeAudioRef: null,
                 seeFirstImg: null, seeLastImg: null,
                 miniFirstImg: null, miniLastImg: null, miniImages: [], miniVid: null
             });
@@ -703,7 +825,7 @@
                 klingFirstImg: false, klingLastImg: false, klingMultiImage: false,
                 klingTurboImg: false,
                 h3FirstFrame: false, h3LastFrame: false, h3ReferenceImages: false, h3ReferenceVideo: false, h3ReferenceAudio: false,
-                seeImages: false, seeVid: false,
+                seeImages: false, seeVid: false, seeAudioRef: false,
                 seeFirstImg: false, seeLastImg: false,
                 miniFirstImg: false, miniLastImg: false, miniImages: false, miniVid: false
             });
@@ -718,6 +840,10 @@
             const isSeedanceStandard = computed(() =>
                 form.model === 'bytedance/seedance-2-5' || form.model === 'bytedance/seedance-2'
             );
+            const isSeedance25 = computed(() => form.model === 'bytedance/seedance-2-5');
+            const seedance25ImageAccept = 'image/jpeg,image/png,image/webp,image/bmp,image/tiff,image/gif';
+            const seedance25VideoAccept = 'video/mp4,video/quicktime';
+            const seedance25AudioAccept = 'audio/wav,audio/x-wav,audio/mpeg,audio/mp3';
             const isMiniMaxH3 = computed(() => form.model === 'minimax-h3');
             const h3TargetModel = computed(() => ({
                 text: 'minimax-h3/text-to-video',
@@ -743,6 +869,22 @@
                 }
                 if (form.model === 'bytedance/seedance-2-mini') {
                     return {model, payload:{duration: form.miniDuration, resolution: form.miniRes, generate_audio: form.miniAudio, reference_video_urls: filesToUpload.miniVid ? ['pending'] : []}};
+                }
+                if (isSeedance25.value) {
+                    const payload = {
+                        duration: form.seeDuration,
+                        resolution: form.seeRes,
+                        aspect_ratio: form.seeRatio,
+                        generate_audio: form.seeAudio,
+                        return_last_frame: form.see25ReturnLastFrame,
+                        seedance_mode: form.see25Mode
+                    };
+                    if (form.see25Mode === 'multimodal') {
+                        payload.reference_image_urls = filesToUpload.seeImages.length ? ['pending'] : [];
+                        payload.reference_video_urls = filesToUpload.seeVid ? ['pending'] : [];
+                        payload.reference_audio_urls = filesToUpload.seeAudioRef ? ['pending'] : [];
+                    }
+                    return {model, payload};
                 }
                 return {model, payload:{duration: form.seeDuration, resolution: form.seeRes, generate_audio: form.seeAudio, reference_video_urls: filesToUpload.seeVid ? ['pending'] : []}};
             };
@@ -777,7 +919,7 @@
             });
             const seedance25Quote = computed(() => {
                 if (form.model !== 'bytedance/seedance-2-5') return null;
-                const hasVideoInput = Boolean(filesToUpload.seeVid);
+                const hasVideoInput = form.see25Mode === 'multimodal' && Boolean(filesToUpload.seeVid);
                 const creditsPerSecond = form.seeRes === '1080p'
                     ? (hasVideoInput ? 68.5 : 114)
                     : form.seeRes === '480p'
@@ -859,7 +1001,7 @@
                     form.h3AspectRatio = '16:9';
                 }
             });
-            watch(() => [form.model, form.motionMode, form.motionVidDuration, form.klingShotMode, form.klingDuration, form.klingMode, form.klingAudio, form.klingTurboRes, form.klingTurboDuration, form.h3Mode, form.h3Duration, form.seeRes, form.seeDuration, form.seeAudio, form.miniRes, form.miniDuration, form.miniAudio, Boolean(filesToUpload.motionVid), Boolean(filesToUpload.seeVid), Boolean(filesToUpload.miniVid), Boolean(filesToUpload.h3ReferenceVideo)], refreshServerQuotedCost, {immediate:true});
+            watch(() => [form.model, form.motionMode, form.motionVidDuration, form.klingShotMode, form.klingDuration, form.klingMode, form.klingAudio, form.klingTurboRes, form.klingTurboDuration, form.h3Mode, form.h3Duration, form.see25Mode, form.see25ReturnLastFrame, form.seeRes, form.seeDuration, form.seeAudio, form.miniRes, form.miniDuration, form.miniAudio, Boolean(filesToUpload.motionVid), Boolean(filesToUpload.seeVid), Boolean(filesToUpload.seeAudioRef), Boolean(filesToUpload.miniVid), Boolean(filesToUpload.h3ReferenceVideo)], refreshServerQuotedCost, {immediate:true});
             watch(() => form.h3Mode, () => {
                 if (form.h3Mode !== 'reference' && form.h3AspectRatio === 'adaptive') form.h3AspectRatio = '16:9';
             });
@@ -952,6 +1094,20 @@
             const processFiles = (files) => {
                 if (!files || files.length === 0) return;
                 Array.from(files).forEach(file => {
+                    const target = currentUploadTarget.field;
+                    if (isSeedance25.value && ['seeFirstImg', 'seeLastImg', 'seeImages'].includes(target)) {
+                        const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/bmp', 'image/tiff', 'image/gif'];
+                        if (!allowed.includes(file.type)) return ElementPlus.ElMessage.error(`【${file.name}】不是 Seedance 2.5 支持的图片格式`);
+                        if (file.size > 30 * 1024 * 1024) return ElementPlus.ElMessage.error(`【${file.name}】超过 30MB 图片上限`);
+                    }
+                    if (isSeedance25.value && target === 'seeVid') {
+                        if (!['video/mp4', 'video/quicktime'].includes(file.type)) return ElementPlus.ElMessage.error(`【${file.name}】仅支持 MP4 或 MOV 视频`);
+                        if (file.size > 200 * 1024 * 1024) return ElementPlus.ElMessage.error(`【${file.name}】超过 200MB 视频上限`);
+                    }
+                    if (isSeedance25.value && target === 'seeAudioRef') {
+                        if (!['audio/wav', 'audio/x-wav', 'audio/mpeg', 'audio/mp3'].includes(file.type)) return ElementPlus.ElMessage.error(`【${file.name}】仅支持 WAV 或 MP3 音频`);
+                        if (file.size > 15 * 1024 * 1024) return ElementPlus.ElMessage.error(`【${file.name}】超过 15MB 音频上限`);
+                    }
                     if (currentUploadTarget.isElement && file.size > 10 * 1024 * 1024) return ElementPlus.ElMessage.error(`【${file.name}】大小超过 10MB，已被拒绝`);
                     const localBlobUrl = URL.createObjectURL(file);
 
@@ -963,6 +1119,7 @@
                         form[currentUploadTarget.field].push(localBlobUrl); filesToUpload[currentUploadTarget.field].push(file);
                     } else {
                         if (currentUploadTarget.field === 'seeVid') form.seeVidDuration = 0;
+                        if (currentUploadTarget.field === 'seeAudioRef') form.seeAudioRefDuration = 0;
                         if (currentUploadTarget.field === 'h3ReferenceVideo') form.h3ReferenceVideoDuration = 0;
                         form[currentUploadTarget.field] = localBlobUrl; filesToUpload[currentUploadTarget.field] = file;
                     }
@@ -974,9 +1131,9 @@
                 if (drag[field] !== undefined) drag[field] = false;
                 currentUploadTarget = { field, isArray, isElement: false, elementIndex: -1 };
                 const files = e.dataTransfer.files;
-                const acceptsImages = accept.includes('image/*');
-                const acceptsVideos = accept.includes('video/*');
-                const acceptsAudio = accept.includes('audio/*');
+                const acceptsImages = accept.includes('image/');
+                const acceptsVideos = accept.includes('video/');
+                const acceptsAudio = accept.includes('audio/');
                 const filteredFiles = Array.from(files).filter(f =>
                     acceptsImages ? f.type.startsWith('image/') : acceptsVideos ? f.type.startsWith('video/') : acceptsAudio && f.type.startsWith('audio/')
                 );
@@ -990,6 +1147,10 @@
             const handleSeedanceVideoLoaded = (event) => {
                 const seconds = Number(event?.target?.duration);
                 form.seeVidDuration = Number.isFinite(seconds) && seconds > 0 ? Math.ceil(seconds) : 0;
+            };
+            const handleSeedanceAudioLoaded = (event) => {
+                const seconds = Number(event?.target?.duration);
+                form.seeAudioRefDuration = Number.isFinite(seconds) && seconds > 0 ? Math.ceil(seconds) : 0;
             };
             const handleH3ReferenceVideoLoaded = (event) => {
                 const seconds = Number(event?.target?.duration);
@@ -1008,6 +1169,27 @@
 
             const submit = async () => {
                 if (!form.spu) return ElementPlus.ElMessage.warning('请输入 SPU 款号');
+                if (isSeedance25.value) {
+                    if (!form.prompt || !form.prompt.trim()) return ElementPlus.ElMessage.warning('Seedance 2.5 必须填写提示词');
+                    if (!Number.isInteger(Number(form.seeDuration)) || form.seeDuration < 4 || form.seeDuration > 30) {
+                        return ElementPlus.ElMessage.warning('Seedance 2.5 时长必须是 4–30 秒的整数');
+                    }
+                    const hasFirstFrame = Boolean(filesToUpload.seeFirstImg || form.workflowImageUrl);
+                    if (form.see25Mode === 'first_frame' && !hasFirstFrame) return ElementPlus.ElMessage.warning('首帧模式请上传一张首帧图');
+                    if (form.see25Mode === 'first_last_frame' && (!hasFirstFrame || !filesToUpload.seeLastImg)) {
+                        return ElementPlus.ElMessage.warning('首尾帧模式必须同时提供首帧图和尾帧图');
+                    }
+                    if (form.see25Mode === 'multimodal'
+                        && !filesToUpload.seeImages.length && !filesToUpload.seeVid && !filesToUpload.seeAudioRef && !form.workflowImageUrl) {
+                        return ElementPlus.ElMessage.warning('多模态模式至少需要一项图片、视频或音频参考素材');
+                    }
+                    if (filesToUpload.seeVid && (!form.seeVidDuration || form.seeVidDuration < 2 || form.seeVidDuration > 30)) {
+                        return ElementPlus.ElMessage.warning('参考视频时长必须为 2–30 秒');
+                    }
+                    if (filesToUpload.seeAudioRef && (!form.seeAudioRefDuration || form.seeAudioRefDuration < 2 || form.seeAudioRefDuration > 30)) {
+                        return ElementPlus.ElMessage.warning('参考音频时长必须为 2–30 秒');
+                    }
+                }
                 if (seedance25Quote.value?.pendingVideoDuration) {
                     return ElementPlus.ElMessage.warning('正在读取动作参考视频时长，请稍后再提交');
                 }
@@ -1168,6 +1350,42 @@
                         }
                         if (filesToUpload.miniLastImg) inputPayload.last_frame_url = await uploadSingleToOss(filesToUpload.miniLastImg, pd);
                     }
+                    else if (isSeedance25.value) {
+                        inputPayload = {
+                            seedance_mode: form.see25Mode,
+                            prompt: form.prompt.trim(),
+                            resolution: form.seeRes,
+                            aspect_ratio: form.seeRatio,
+                            duration: Number(form.seeDuration),
+                            generate_audio: Boolean(form.seeAudio),
+                            return_last_frame: Boolean(form.see25ReturnLastFrame)
+                        };
+                        uploadProgressMsg.value = '上传当前模式素材...';
+                        if (form.see25Mode === 'first_frame' || form.see25Mode === 'first_last_frame') {
+                            inputPayload.first_frame_url = filesToUpload.seeFirstImg
+                                ? await uploadSingleToOss(filesToUpload.seeFirstImg, pd)
+                                : form.workflowImageUrl;
+                            reqInputImg = inputPayload.first_frame_url;
+                            if (form.see25Mode === 'first_last_frame') {
+                                inputPayload.last_frame_url = await uploadSingleToOss(filesToUpload.seeLastImg, pd);
+                            }
+                        } else if (form.see25Mode === 'multimodal') {
+                            const referenceImages = filesToUpload.seeImages.length
+                                ? await Promise.all(filesToUpload.seeImages.map(file => uploadSingleToOss(file, pd)))
+                                : (form.workflowImageUrl ? [form.workflowImageUrl] : []);
+                            if (referenceImages.length) {
+                                inputPayload.reference_image_urls = referenceImages;
+                                reqInputImg = referenceImages[0];
+                            }
+                            if (filesToUpload.seeVid) {
+                                inputPayload.reference_video_urls = [await uploadSingleToOss(filesToUpload.seeVid, pd)];
+                                reqColorImg = inputPayload.reference_video_urls[0];
+                            }
+                            if (filesToUpload.seeAudioRef) {
+                                inputPayload.reference_audio_urls = [await uploadSingleToOss(filesToUpload.seeAudioRef, pd)];
+                            }
+                        }
+                    }
                     else if (isSeedanceStandard.value) {
                         inputPayload = {
                             prompt: form.prompt,
@@ -1178,10 +1396,6 @@
                             return_last_frame: false,
                             web_search: false
                         };
-                        if (form.model === 'bytedance/seedance-2-5') {
-                            inputPayload.output_format = 'mp4';
-                            inputPayload.nsfw_checker = true;
-                        }
                         uploadProgressMsg.value = '上传素材...';
 
                         if (form.workflowImageUrl && filesToUpload.seeImages.length === 0 && !filesToUpload.seeFirstImg) {
@@ -1249,7 +1463,8 @@
 
             return {
                 form, filesToUpload, drag, isMultipleUpload, loading, uploadProgressMsg,
-                isMiniMaxH3, isSeedanceStandard, seedanceMaxDuration, h3ImageInputCount, estimatedCostLabel, handleSeedanceVideoLoaded, handleH3ReferenceVideoLoaded,
+                isMiniMaxH3, isSeedanceStandard, isSeedance25, seedanceMaxDuration, seedance25ImageAccept, seedance25VideoAccept, seedance25AudioAccept,
+                h3ImageInputCount, estimatedCostLabel, handleSeedanceVideoLoaded, handleSeedanceAudioLoaded, handleH3ReferenceVideoLoaded,
                 mention, mentionItems, mentionEmptyText, mentionTitle, handlePromptInput, insertMention,
                 totalMultiShotDuration, getMaxDurationForShot, triggerUpload, handleFileSelected, handleDrop, removeSeeImage, removeH3ReferenceImage, submit,
                 addKlingShot, removeKlingShot, addKlingElement, removeKlingElement, removeKlingElementImage,
