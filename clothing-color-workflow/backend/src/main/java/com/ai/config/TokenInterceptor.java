@@ -45,6 +45,7 @@ public class TokenInterceptor implements HandlerInterceptor {
         // 🔴 将真实姓名和店铺名分别塞入 Request 域，方便后续分别落库
         request.setAttribute("operator", user.getRealName());
         request.setAttribute("shopName", user.getShopName());
+        request.setAttribute("userId", user.getId());
 
         log.info("✅ [溯源] 店铺 [{}] 的员工 [{}] 发起了操作: {}", user.getShopName(), user.getRealName(), request.getRequestURI());
         return true;

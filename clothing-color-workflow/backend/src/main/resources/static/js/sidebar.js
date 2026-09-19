@@ -19,6 +19,7 @@
         var onModelLib = isActive('model-library.html');
         var currentView = getViewParam();
         var onAiCanvas = isActive('ai-canvas.html') || isActive('ai-canvas-templates.html');
+        var onTemplateLab = isActive('template-lab.html') || isActive('template-lab-editor.html');
         var onSystemManagement = isActive('admin.html') || isActive('price-management.html');
 
         var sidebar = document.createElement('div');
@@ -39,6 +40,7 @@
             navLink('buyer-show.html', 'BS', 'AI 买家秀', isActive('buyer-show.html')),
             aplusMenu(onAplus),
             aiCanvasMenu(onAiCanvas),
+            navLink('template-lab.html', 'TL', '模板拼图实验室', onTemplateLab),
             navLink('video.html', 'VD', '视频生成', isActive('video.html')),
             modelLibraryMenu(onModelLib, currentView),
             navLink('template-manage.html', 'TP', '场景库', isActive('template-manage.html')),

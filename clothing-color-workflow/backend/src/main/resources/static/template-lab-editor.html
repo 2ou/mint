@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <title>拼图编辑器 - 模板拼图实验室</title>
+    <link rel="stylesheet" href="css/variables.css">
+    <link rel="stylesheet" href="css/shared.css">
+    <link rel="stylesheet" href="css/template-lab-editor.css">
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <script src="https://unpkg.com/fabric@5.3.0/dist/fabric.min.js"></script>
+    <script src="auth.js"></script>
+    <script src="js/sidebar.js"></script>
+</head>
+<body class="template-editor-page">
+<a class="editor-skip-link" href="#editor-stage">跳到画布</a>
+<div class="app-layout">
+    <main class="app-main editor-app">
+        <header class="editor-topbar">
+            <div class="editor-topbar__identity">
+                <a class="editor-icon-button" href="template-lab.html" aria-label="返回模板拼图实验室" title="返回项目列表">
+                    <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg>
+                </a>
+                <div>
+                    <label class="sr-only" for="editor-project-name">项目名称</label>
+                    <input id="editor-project-name" class="editor-project-name" maxlength="160" value="正在读取项目...">
+                    <div class="editor-save-state" id="editor-save-state" role="status" aria-live="polite">正在加载</div>
+                </div>
+            </div>
+            <div class="editor-toolbar" aria-label="编辑工具栏">
+                <div class="editor-toolbar__group">
+                    <button class="editor-icon-button" id="undo-button" type="button" aria-label="撤销" title="撤销 Ctrl+Z" disabled>
+                        <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M9 7 4 12l5 5"/><path d="M5 12h8a6 6 0 0 1 6 6"/></svg>
+                    </button>
+                    <button class="editor-icon-button" id="redo-button" type="button" aria-label="重做" title="重做 Ctrl+Y" disabled>
+                        <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m15 7 5 5-5 5"/><path d="M19 12h-8a6 6 0 0 0-6 6"/></svg>
+                    </button>
+                </div>
+                <div class="editor-toolbar__group editor-zoom-control">
+                    <button class="editor-icon-button" id="zoom-out" type="button" aria-label="缩小画布">
+                        <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M5 12h14"/></svg>
+                    </button>
+                    <button class="editor-zoom-value" id="zoom-value" type="button" title="恢复适合窗口">100%</button>
+                    <button class="editor-icon-button" id="zoom-in" type="button" aria-label="放大画布">
+                        <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+                    </button>
+                </div>
+                <div class="editor-toolbar__group editor-export-controls">
+                    <label class="sr-only" for="export-format">导出格式</label>
+                    <select id="export-format" title="导出格式"><option value="png">PNG</option><option value="jpeg">JPG</option></select>
+                    <label class="sr-only" for="export-scale">导出尺寸</label>
+                    <select id="export-scale" title="导出尺寸"><option value="1">原尺寸</option><option value="2">2 倍高清</option></select>
+                    <button class="editor-button editor-button--primary" id="export-button" type="button">
+                        <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>
+                        导出图片
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <div class="editor-workspace">
+            <aside class="editor-panel editor-panel--left" aria-label="素材和文字">
+                <div class="editor-panel__tabs" role="tablist" aria-label="编辑资源">
+                    <button type="button" role="tab" aria-selected="true" data-panel-tab="assets">图片素材</button>
+                    <button type="button" role="tab" aria-selected="false" data-panel-tab="text">文字</button>
+                </div>
+                <div class="editor-panel__body" data-panel-content="assets">
+                    <input id="asset-file-input" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden>
+                    <button class="editor-upload-zone" id="upload-assets" type="button">
+                        <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/></svg>
+                        <strong>上传图片</strong>
+                        <span>JPG、PNG、WebP，单张不超过 25MB</span>
+                    </button>
+                    <p class="editor-panel__hint">选择相框后点击素材，或直接把素材拖到相框中。</p>
+                    <div class="editor-asset-grid" id="asset-grid"></div>
+                </div>
+                <div class="editor-panel__body" data-panel-content="text" hidden>
+                    <div class="editor-text-presets">
+                        <button type="button" data-add-text="heading"><strong>添加标题</strong><span>适合主要卖点</span></button>
+                        <button type="button" data-add-text="body"><strong>添加正文</strong><span>适合商品说明</span></button>
+                        <button type="button" data-add-text="caption"><strong>添加小字</strong><span>适合细节标注</span></button>
+                    </div>
+                    <div class="editor-shortcuts">
+                        <h3>快捷操作</h3>
+                        <dl>
+                            <div><dt>撤销</dt><dd>Ctrl + Z</dd></div>
+                            <div><dt>重做</dt><dd>Ctrl + Y</dd></div>
+                            <div><dt>复制文字</dt><dd>Ctrl + D</dd></div>
+                            <div><dt>删除元素</dt><dd>Delete</dd></div>
+                            <div><dt>保存</dt><dd>Ctrl + S</dd></div>
+                        </dl>
+                    </div>
+                </div>
+            </aside>
+
+            <section class="editor-stage" id="editor-stage" aria-label="拼图画布">
+                <div class="editor-stage__loading" id="editor-loading" role="status">
+                    <span class="editor-spinner" aria-hidden="true"></span>
+                    <strong>正在准备编辑器</strong>
+                    <span>读取模板和项目内容...</span>
+                </div>
+                <div class="editor-canvas-viewport" id="canvas-viewport" hidden>
+                    <canvas id="template-canvas"></canvas>
+                </div>
+                <div class="editor-stage__tip" id="stage-tip" hidden>点击相框选择图片，拖动画面调整裁剪区域</div>
+            </section>
+
+            <aside class="editor-panel editor-panel--right" aria-label="属性设置">
+                <div class="editor-panel__title">
+                    <strong>属性</strong>
+                    <span id="selection-kind">未选择元素</span>
+                </div>
+                <div class="editor-properties" id="properties-empty">
+                    <div class="editor-property-empty">
+                        <svg aria-hidden="true" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/></svg>
+                        <strong>选择画布元素</strong>
+                        <span>选择图片可调整裁剪，选择文字可修改样式。</span>
+                    </div>
+                    <div class="editor-document-info">
+                        <div><span>模板</span><strong id="document-template">-</strong></div>
+                        <div><span>画布尺寸</span><strong id="document-size">-</strong></div>
+                    </div>
+                </div>
+
+                <div class="editor-properties" id="properties-frame" hidden>
+                    <div class="editor-property-group">
+                        <label>当前相框</label>
+                        <strong id="frame-name">相框</strong>
+                        <p id="frame-help">从左侧选择图片，或上传一张新图片。</p>
+                    </div>
+                    <button class="editor-button editor-button--primary editor-button--block" id="replace-frame-image" type="button">替换相框图片</button>
+                    <div class="editor-property-group" id="crop-controls" hidden>
+                        <label for="image-zoom">图片缩放 <output id="image-zoom-value">100%</output></label>
+                        <input id="image-zoom" type="range" min="100" max="300" step="1" value="100">
+                        <div class="editor-two-buttons">
+                            <button class="editor-button" id="reset-crop" type="button">复位裁剪</button>
+                            <button class="editor-button editor-button--danger" id="remove-frame-image" type="button">移除图片</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="editor-properties" id="properties-text" hidden>
+                    <div class="editor-property-group">
+                        <label for="text-content">文字内容</label>
+                        <textarea id="text-content" rows="4"></textarea>
+                    </div>
+                    <div class="editor-property-group">
+                        <label for="font-family">字体</label>
+                        <select id="font-family">
+                            <option value="Arial">Arial</option>
+                            <option value="Microsoft YaHei">微软雅黑</option>
+                            <option value="SimHei">黑体</option>
+                            <option value="SimSun">宋体</option>
+                            <option value="Georgia">Georgia</option>
+                        </select>
+                    </div>
+                    <div class="editor-property-row">
+                        <label class="editor-property-group"><span>字号</span><input id="font-size" type="number" min="10" max="320" step="1"></label>
+                        <label class="editor-property-group"><span>颜色</span><input id="text-color" type="color"></label>
+                    </div>
+                    <div class="editor-property-row">
+                        <label class="editor-property-group"><span>行距</span><input id="text-line-height" type="number" min="0.6" max="3" step="0.05"></label>
+                        <label class="editor-property-group"><span>字距</span><input id="text-letter-spacing" type="number" min="-20" max="80" step="1"></label>
+                    </div>
+                    <div class="editor-segmented" aria-label="文字样式">
+                        <button id="text-bold" type="button" aria-pressed="false" title="粗体"><strong>B</strong></button>
+                        <button id="text-italic" type="button" aria-pressed="false" title="斜体"><em>I</em></button>
+                        <button type="button" data-text-align="left" aria-pressed="false" title="左对齐">左</button>
+                        <button type="button" data-text-align="center" aria-pressed="false" title="居中">中</button>
+                        <button type="button" data-text-align="right" aria-pressed="false" title="右对齐">右</button>
+                    </div>
+                    <div class="editor-property-group">
+                        <label for="text-opacity">透明度 <output id="text-opacity-value">100%</output></label>
+                        <input id="text-opacity" type="range" min="10" max="100" step="1" value="100">
+                    </div>
+                    <div class="editor-two-buttons">
+                        <button class="editor-button" id="duplicate-text" type="button">复制文字</button>
+                        <button class="editor-button editor-button--danger" id="delete-text" type="button">删除文字</button>
+                    </div>
+                    <div class="editor-two-buttons">
+                        <button class="editor-button" id="bring-forward" type="button">上移一层</button>
+                        <button class="editor-button" id="send-backward" type="button">下移一层</button>
+                    </div>
+                </div>
+            </aside>
+        </div>
+    </main>
+</div>
+
+<div class="editor-toast" id="editor-toast" role="status" aria-live="polite"></div>
+<script src="js/template-lab-editor.js"></script>
+</body>
+</html>

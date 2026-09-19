@@ -1,0 +1,97 @@
+[
+  {
+    "id": "fashion-duo",
+    "name": "双面造型",
+    "category": "副图",
+    "description": "左右双图并列，适合展示正反面或两种搭配。",
+    "width": 1200,
+    "height": 1500,
+    "background": "#f3f5f8",
+    "accent": "#183153",
+    "frames": [
+      {"id": "left-look", "x": 72, "y": 210, "width": 500, "height": 1110, "shape": "rounded", "radius": 24},
+      {"id": "right-look", "x": 628, "y": 210, "width": 500, "height": 1110, "shape": "rounded", "radius": 24}
+    ],
+    "texts": [
+      {"text": "TWO WAYS TO WEAR", "x": 72, "y": 72, "width": 760, "fontSize": 54, "fontWeight": "700", "fill": "#183153"},
+      {"text": "替换图片并修改这段说明", "x": 76, "y": 142, "width": 640, "fontSize": 24, "fill": "#687386"}
+    ]
+  },
+  {
+    "id": "detail-focus",
+    "name": "主图与细节",
+    "category": "详情",
+    "description": "一张主视觉搭配三张细节图，适合面料与工艺说明。",
+    "width": 1200,
+    "height": 1500,
+    "background": "#f7f7f5",
+    "accent": "#24332d",
+    "frames": [
+      {"id": "hero", "x": 64, "y": 68, "width": 700, "height": 1120, "shape": "rounded", "radius": 28},
+      {"id": "detail-a", "x": 812, "y": 68, "width": 324, "height": 324, "shape": "circle"},
+      {"id": "detail-b", "x": 812, "y": 438, "width": 324, "height": 324, "shape": "circle"},
+      {"id": "detail-c", "x": 812, "y": 808, "width": 324, "height": 324, "shape": "circle"}
+    ],
+    "texts": [
+      {"text": "DESIGNED IN DETAIL", "x": 64, "y": 1240, "width": 840, "fontSize": 52, "fontWeight": "700", "fill": "#24332d"},
+      {"text": "面料 · 版型 · 工艺", "x": 68, "y": 1310, "width": 520, "fontSize": 26, "fill": "#69766f"}
+    ]
+  },
+  {
+    "id": "lookbook-grid",
+    "name": "四格穿搭",
+    "category": "拼图",
+    "description": "规整四宫格，适合多颜色、多场景和搭配对比。",
+    "width": 1600,
+    "height": 1200,
+    "background": "#eef2f7",
+    "accent": "#16243b",
+    "frames": [
+      {"id": "grid-a", "x": 64, "y": 188, "width": 710, "height": 432, "shape": "rounded", "radius": 20},
+      {"id": "grid-b", "x": 826, "y": 188, "width": 710, "height": 432, "shape": "rounded", "radius": 20},
+      {"id": "grid-c", "x": 64, "y": 668, "width": 710, "height": 432, "shape": "rounded", "radius": 20},
+      {"id": "grid-d", "x": 826, "y": 668, "width": 710, "height": 432, "shape": "rounded", "radius": 20}
+    ],
+    "texts": [
+      {"text": "THE DAILY EDIT", "x": 64, "y": 54, "width": 840, "fontSize": 62, "fontWeight": "700", "fill": "#16243b"},
+      {"text": "四种搭配，一套完整表达", "x": 1010, "y": 82, "width": 520, "fontSize": 25, "textAlign": "right", "fill": "#647186"}
+    ]
+  },
+  {
+    "id": "shape-story",
+    "name": "几何故事板",
+    "category": "创意",
+    "description": "圆形与切角相框组合，适合更有节奏的商品副图。",
+    "width": 1200,
+    "height": 1200,
+    "background": "#f5f1ed",
+    "accent": "#913f35",
+    "frames": [
+      {"id": "story-main", "x": 70, "y": 70, "width": 650, "height": 740, "shape": "polygon", "points": [[0,0],[650,0],[650,650],[560,740],[0,740]]},
+      {"id": "story-circle", "x": 772, "y": 116, "width": 352, "height": 352, "shape": "circle"},
+      {"id": "story-detail", "x": 740, "y": 540, "width": 384, "height": 470, "shape": "rounded", "radius": 32}
+    ],
+    "texts": [
+      {"text": "NEW SEASON", "x": 70, "y": 866, "width": 620, "fontSize": 64, "fontWeight": "700", "fill": "#913f35"},
+      {"text": "自由修改文字，模板结构保持整洁", "x": 74, "y": 946, "width": 570, "fontSize": 26, "fill": "#735f59"}
+    ]
+  },
+  {
+    "id": "wide-feature",
+    "name": "横版卖点",
+    "category": "横幅",
+    "description": "21:9 横版构图，适合网页端卖点图和活动横幅。",
+    "width": 1680,
+    "height": 720,
+    "background": "#edf3f5",
+    "accent": "#174b57",
+    "frames": [
+      {"id": "wide-main", "x": 840, "y": 40, "width": 800, "height": 640, "shape": "rounded", "radius": 26},
+      {"id": "wide-detail", "x": 642, "y": 420, "width": 224, "height": 224, "shape": "circle"}
+    ],
+    "texts": [
+      {"text": "LIGHTWEIGHT\nALL DAY", "x": 72, "y": 116, "width": 660, "fontSize": 78, "fontWeight": "700", "lineHeight": 0.95, "fill": "#174b57"},
+      {"text": "在这里输入商品卖点与场景说明", "x": 78, "y": 344, "width": 520, "fontSize": 30, "fill": "#5c747b"}
+    ]
+  }
+]

@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <title>模板拼图实验室 - AI 时尚视觉</title>
+    <link rel="stylesheet" href="css/variables.css">
+    <link rel="stylesheet" href="css/shared.css">
+    <link rel="stylesheet" href="css/template-lab.css">
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <script src="auth.js"></script>
+    <script src="js/sidebar.js"></script>
+</head>
+<body>
+<a class="lab-skip-link" href="#main-content">跳到主要内容</a>
+<div class="app-layout">
+    <main class="app-main lab-page" id="main-content">
+        <header class="lab-header">
+            <div>
+                <h1>模板拼图实验室</h1>
+                <p>选择固定模板，替换相框图片并自由编辑文字。实验室项目与 AI 画布完全独立。</p>
+            </div>
+            <button class="lab-button lab-button--primary" id="open-template-picker" type="button">
+                <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+                新建拼图项目
+            </button>
+        </header>
+
+        <section class="lab-section" aria-labelledby="projects-heading">
+            <div class="lab-section__header">
+                <div>
+                    <h2 id="projects-heading">我的项目</h2>
+                    <p id="project-count">正在读取项目...</p>
+                </div>
+                <label class="lab-search">
+                    <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.7-3.7"/></svg>
+                    <span class="sr-only">搜索项目</span>
+                    <input id="project-search" type="search" placeholder="搜索项目名称" autocomplete="off">
+                </label>
+            </div>
+            <div class="lab-project-grid" id="project-grid" aria-live="polite"></div>
+        </section>
+
+        <section class="lab-section" aria-labelledby="templates-heading">
+            <div class="lab-section__header">
+                <div>
+                    <h2 id="templates-heading">内置模板</h2>
+                    <p>模板锁定背景和相框结构，文字元素可以自由调整。</p>
+                </div>
+                <div class="lab-filter" id="template-filter" aria-label="模板分类"></div>
+            </div>
+            <div class="lab-template-grid" id="template-grid" aria-live="polite"></div>
+        </section>
+    </main>
+</div>
+
+<dialog class="lab-dialog" id="create-dialog" aria-labelledby="create-dialog-title">
+    <form method="dialog" id="create-form">
+        <div class="lab-dialog__header">
+            <div>
+                <h2 id="create-dialog-title">创建拼图项目</h2>
+                <p>项目创建后会立即进入独立编辑器。</p>
+            </div>
+            <button class="lab-icon-button" value="cancel" type="submit" aria-label="关闭">
+                <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg>
+            </button>
+        </div>
+        <div class="lab-dialog__body">
+            <div class="lab-selected-template" id="selected-template-summary"></div>
+            <label class="lab-field">
+                <span>项目名称</span>
+                <input id="project-name" name="projectName" maxlength="160" placeholder="例如：PNK366083 春夏副图">
+                <small>不填写时将根据模板和时间自动命名。</small>
+            </label>
+        </div>
+        <div class="lab-dialog__footer">
+            <button class="lab-button" value="cancel" type="submit">取消</button>
+            <button class="lab-button lab-button--primary" id="create-project" value="default" type="button">创建并编辑</button>
+        </div>
+    </form>
+</dialog>
+
+<div class="lab-toast" id="lab-toast" role="status" aria-live="polite"></div>
+<script src="js/template-lab.js"></script>
+</body>
+</html>
