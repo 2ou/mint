@@ -51,14 +51,14 @@ public class TemplateLabController {
     }
 
     @GetMapping("/projects/{id}")
-    public ApiResponse<TemplateLabProjectResponse> project(@PathVariable Long id,
+    public ApiResponse<TemplateLabProjectResponse> project(@PathVariable("id") Long id,
                                                            @RequestAttribute("userId") Long userId) {
         return ApiResponse.ok("查询成功", templateLabService.getProject(id, userId));
     }
 
     @PutMapping("/projects/{id}")
     public ApiResponse<TemplateLabProjectResponse> updateProject(
-            @PathVariable Long id,
+            @PathVariable("id") Long id,
             @RequestAttribute("userId") Long userId,
             @Valid @RequestBody TemplateLabProjectUpdateRequest request) {
         return ApiResponse.ok("项目已保存", templateLabService.updateProject(id, userId, request));
@@ -66,13 +66,13 @@ public class TemplateLabController {
 
     @PostMapping("/projects/{id}/duplicate")
     public ApiResponse<TemplateLabProjectResponse> duplicateProject(
-            @PathVariable Long id,
+            @PathVariable("id") Long id,
             @RequestAttribute("userId") Long userId) {
         return ApiResponse.ok("项目已复制", templateLabService.duplicateProject(id, userId));
     }
 
     @DeleteMapping("/projects/{id}")
-    public ApiResponse<Void> deleteProject(@PathVariable Long id,
+    public ApiResponse<Void> deleteProject(@PathVariable("id") Long id,
                                            @RequestAttribute("userId") Long userId) {
         templateLabService.deleteProject(id, userId);
         return ApiResponse.ok("项目已删除", null);
@@ -80,7 +80,7 @@ public class TemplateLabController {
 
     @PostMapping(value = "/projects/{id}/assets", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ApiResponse<Map<String, Object>> uploadAsset(
-            @PathVariable Long id,
+            @PathVariable("id") Long id,
             @RequestAttribute("userId") Long userId,
             @RequestParam("file") MultipartFile file) {
         return ApiResponse.ok("图片已上传", templateLabService.uploadAsset(id, userId, file));
