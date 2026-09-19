@@ -14,16 +14,17 @@ import java.util.Set;
 /**
  * Builds the only request shape accepted by Seedance 2.5 in this application.
  *
- * <p>KIE documents three mutually exclusive input scenarios: strict frames,
- * multimodal references, and text only. Keeping that rule here prevents a
- * stale browser or a manually composed request from mixing incompatible
- * fields before it reaches KIE.</p>
+ * <p>KIE documents mutually exclusive strict-frame and multimodal scenarios.
+ * A request with a reference video is additionally treated by KIE as video
+ * editing: its output duration and aspect ratio must follow that source
+ * video. Keeping those branches here prevents a stale browser or a manually
+ * composed request from sending incompatible fields to KIE.</p>
  */
 @Service
 public class Seedance25VideoRequestService {
 
     public static final String MODEL = "bytedance/seedance-2-5";
-    private static final Set<String> MODES = Set.of("text", "first_frame", "first_last_frame", "multimodal");
+    private static final Set<String> MODES = Set.of("text", "first_frame", "first_last_frame", "multimodal", "video_edit");
     private static final Set<String> RESOLUTIONS = Set.of("480p", "720p", "1080p");
     private static final Set<String> ASPECT_RATIOS = Set.of("1:1", "4:3", "3:4", "16:9", "9:16", "21:9");
     private static final int MAX_PROMPT_LENGTH = 30_000;
@@ -41,11 +42,6 @@ public class Seedance25VideoRequestService {
         if (prompt.length() > MAX_PROMPT_LENGTH) {
             throw new IllegalArgumentException("提示词不能超过 30000 个字符");
         }
-
-        int duration = requiredDuration(source.get("duration"));
-        String resolution = requiredChoice(source.get("resolution"), RESOLUTIONS, "分辨率仅支持 480p、720p 或 1080p");
-        String aspectRatio = requiredChoice(source.get("aspect_ratio"), ASPECT_RATIOS,
-                "画面比例仅支持 1:1、4:3、3:4、16:9、9:16 或 21:9");
 
         List<MediaItem> imageItems = mediaItems(source, List.of(
                 "reference_image_urls", "images", "imageUrls", "imagesUrl", "imagesUrls", "imageUrl", "image_url",
@@ -68,6 +64,14 @@ public class Seedance25VideoRequestService {
         if (!MODES.contains(mode)) {
             throw new IllegalArgumentException("Seedance 2.5 输入模式无效");
         }
+
+        String resolution = requiredChoice(source.get("resolution"), RESOLUTIONS, "分辨率仅支持 480p、720p 或 1080p");
+        boolean videoEdit = "video_edit".equals(mode);
+        int duration = videoEdit ? -1 : requiredDuration(source.get("duration"));
+        String aspectRatio = videoEdit
+                ? "adaptive"
+                : requiredChoice(source.get("aspect_ratio"), ASPECT_RATIOS,
+                "画面比例仅支持 1:1、4:3、3:4、16:9、9:16 或 21:9");
 
         Map<String, Object> input = new LinkedHashMap<>();
         input.put("prompt", prompt);
@@ -97,8 +101,11 @@ public class Seedance25VideoRequestService {
             }
             case "multimodal" -> {
                 requireNoMedia(firstFrames, lastFrames, "多模态模式不能混用首帧或尾帧");
-                if (referenceImages.isEmpty() && referenceVideos.isEmpty() && referenceAudios.isEmpty()) {
-                    throw new IllegalArgumentException("多模态模式至少需要一项图片、视频或音频参考素材");
+                if (!referenceVideos.isEmpty()) {
+                    throw new IllegalArgumentException("检测到参考视频，请切换到视频编辑模式；视频编辑会自动跟随源视频的比例和时长");
+                }
+                if (referenceImages.isEmpty() && referenceAudios.isEmpty()) {
+                    throw new IllegalArgumentException("多模态参考模式至少需要一项图片或音频素材");
                 }
                 if (referenceImages.size() > MAX_REFERENCE_IMAGES) {
                     throw new IllegalArgumentException("多模态模式最多支持 30 张参考图片");
@@ -107,7 +114,20 @@ public class Seedance25VideoRequestService {
                     throw new IllegalArgumentException("多模态模式最多支持 10 个参考音频");
                 }
                 if (!referenceImages.isEmpty()) input.put("reference_image_urls", referenceImages);
-                if (!referenceVideos.isEmpty()) input.put("reference_video_urls", referenceVideos);
+                if (!referenceAudios.isEmpty()) input.put("reference_audio_urls", referenceAudios);
+            }
+            case "video_edit" -> {
+                requireNoMedia(firstFrames, lastFrames, "视频编辑模式不能混用首帧或尾帧");
+                requireExactlyOne(referenceVideos, "视频编辑模式需要且只能提供一个编辑源视频");
+                int sourceDuration = requiredVideoDuration(source.get("video_duration_seconds"));
+                if (referenceImages.size() > MAX_REFERENCE_IMAGES) {
+                    throw new IllegalArgumentException("视频编辑模式最多支持 30 张辅助图片");
+                }
+                if (referenceAudios.size() > MAX_REFERENCE_AUDIOS) {
+                    throw new IllegalArgumentException("视频编辑模式最多支持 10 个辅助音频");
+                }
+                input.put("reference_video_urls", referenceVideos);
+                if (!referenceImages.isEmpty()) input.put("reference_image_urls", referenceImages);
                 if (!referenceAudios.isEmpty()) input.put("reference_audio_urls", referenceAudios);
             }
             default -> throw new IllegalStateException("未处理的 Seedance 2.5 输入模式");
@@ -122,6 +142,7 @@ public class Seedance25VideoRequestService {
         if (hasStrictFrames && hasMultimodal) {
             throw new IllegalArgumentException("Seedance 2.5 的首尾帧与多模态参考素材不能混用，请明确选择输入模式");
         }
+        if (!videos.isEmpty()) return "video_edit";
         if (hasMultimodal) return "multimodal";
         if (!lastFrames.isEmpty()) return "first_last_frame";
         if (!firstFrames.isEmpty()) return "first_frame";
@@ -140,6 +161,25 @@ public class Seedance25VideoRequestService {
         } catch (NumberFormatException exception) {
             throw new IllegalArgumentException("Seedance 2.5 时长仅支持 4–30 秒整数");
         }
+    }
+
+    private Integer intOrNull(Object raw) {
+        if (raw == null) return null;
+        String value = text(raw);
+        if (value.isBlank()) return null;
+        try {
+            return Integer.valueOf(value);
+        } catch (NumberFormatException exception) {
+            return null;
+        }
+    }
+
+    private int requiredVideoDuration(Object raw) {
+        Integer duration = intOrNull(raw);
+        if (duration == null || duration < 4 || duration > 30) {
+            throw new IllegalArgumentException("编辑源视频时长必须为 4–30 秒，请等待视频元数据读取完成后再提交");
+        }
+        return duration;
     }
 
     private String requiredChoice(Object raw, Set<String> allowed, String message) {

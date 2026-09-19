@@ -11,6 +11,7 @@ import com.ai.exception.BusinessException;
 import com.ai.repository.ModelIdentityRepository;
 import com.ai.repository.ModelLibraryRepository;
 import com.ai.service.KieClientService;
+import com.ai.service.KieImageModels;
 import com.ai.service.ModelLibraryService;
 import com.ai.service.OssService;
 import com.ai.service.TextModelService;
@@ -278,7 +279,8 @@ public class ModelLibraryServiceImpl implements ModelLibraryService {
         String identityPrompt = generatePrompt(request);
         String identityName = defaultIfBlank(request.getNamePrefix(), randomModelName());
         String negativePrompt = defaultIfBlank(request.getNegativePrompt(), DEFAULT_NEGATIVE_PROMPT);
-        String imageModel = defaultIfBlank(request.getImageModel(), "nano-banana-pro");
+        String imageModel = KieImageModels.requireSelectable(
+                request.getImageModel(), KieImageModels.NANO_BANANA_PRO);
         Long seed = request.getSeed() == null
                 ? ThreadLocalRandom.current().nextLong(1, Long.MAX_VALUE)
                 : request.getSeed();
@@ -503,8 +505,9 @@ public class ModelLibraryServiceImpl implements ModelLibraryService {
         model.setBackground(request.getBackground());
         model.setClothingDescription(request.getClothingDescription());
         model.setClothingImageUrl(request.getClothingImageUrl());
-        model.setImageModel(defaultIfBlank(request.getModel(), "nano-banana-pro"));
-        model.setModelVersion(defaultIfBlank(request.getModel(), "nano-banana-pro"));
+        String imageModel = KieImageModels.requireSelectable(request.getModel(), KieImageModels.NANO_BANANA_PRO);
+        model.setImageModel(imageModel);
+        model.setModelVersion(imageModel);
         model.setResolution(defaultIfBlank(request.getResolution(), "2K"));
         model.setAspectRatio(defaultIfBlank(request.getAspectRatio(), "3:4"));
         model.setSeed(request.getSeed() == null ? ThreadLocalRandom.current().nextLong(1, Long.MAX_VALUE) : request.getSeed());
@@ -517,16 +520,22 @@ public class ModelLibraryServiceImpl implements ModelLibraryService {
     }
 
     private void submitModelTask(ModelLibrary model) {
+        String requestedModel = defaultIfBlank(model.getModelVersion(), model.getImageModel());
+        requestedModel = KieImageModels.logicalModel(requestedModel);
+        int referenceCount = KieImageModels.referenceCount(model.getClothingImageUrl());
+        String actualModel = KieImageModels.resolveActualModel(requestedModel, referenceCount);
         String taskId = kieClientService.createTask(
                 null,
                 model.getGeneratedPrompt(),
                 model.getResolution(),
                 model.getAspectRatio(),
-                model.getImageModel(),
+                requestedModel,
                 model.getClothingImageUrl(),
                 null,
                 appProperties.getKie().getCallbackUrl()
         );
+        model.setModelVersion(requestedModel);
+        model.setImageModel(actualModel);
         model.setTaskId(taskId);
         model.setTaskStatus("CREATED");
         model.setStatus("DRAFT");

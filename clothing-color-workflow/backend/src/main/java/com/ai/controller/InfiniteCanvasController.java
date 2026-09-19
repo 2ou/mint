@@ -7,6 +7,7 @@ import com.ai.repository.CanvasProjectRepository;
 import com.ai.service.CanvasMediaCleanupService;
 import com.ai.service.CanvasTaskService;
 import com.ai.service.KieClientService;
+import com.ai.service.KieImageModels;
 import com.ai.service.ModelPricingService;
 import com.ai.service.OssService;
 import com.ai.service.Seedance25VideoRequestService;
@@ -44,6 +45,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
@@ -92,8 +94,8 @@ public class InfiniteCanvasController {
     private static final String WORKSPACE_PROJECT_NAME = "__infinite_canvas_workspace__";
     private static final String LIBRARY_PROJECT_NAME = "__infinite_canvas_library__";
     private static final String DEFAULT_PROJECT_ID = "default";
-    private static final String PROJECT_IMAGE_MODEL = "nano-banana-pro";
-    private static final List<String> PROJECT_IMAGE_MODELS = List.of(PROJECT_IMAGE_MODEL, "gpt-image-2-image-to-image");
+    private static final String PROJECT_IMAGE_MODEL = KieImageModels.NANO_BANANA_PRO;
+    private static final List<String> PROJECT_IMAGE_MODELS = KieImageModels.SELECTABLE_MODELS;
     private static final String SEEDANCE_2_5_MODEL = "bytedance/seedance-2-5";
     private static final String SEEDANCE_2_MODEL = "bytedance/seedance-2";
     private static final String MINIMAX_H3_TEXT_MODEL = "minimax-h3/text-to-video";
@@ -107,18 +109,24 @@ public class InfiniteCanvasController {
             MINIMAX_H3_REFERENCE_MODEL
     );
     private static final String PROJECT_VIDEO_MODEL = SEEDANCE_2_5_MODEL;
-    private static final long KIE_IMAGE_UPLOAD_MAX_BYTES = 10L * 1024 * 1024;
+    private static final long KIE_IMAGE_UPLOAD_MAX_BYTES = KieImageModels.GPT_IMAGE_25_MAX_IMAGE_BYTES;
     private static final long KIE_MEDIA_UPLOAD_MAX_BYTES = 100L * 1024 * 1024;
     private static final long KIE_VIDEO_REFERENCE_IMAGE_MAX_BYTES = 30L * 1024 * 1024;
     private static final long KIE_VIDEO_REFERENCE_AUDIO_MAX_BYTES = 15L * 1024 * 1024;
     private static final long WORKFLOW_ARCHIVE_MAX_BYTES = 220L * 1024 * 1024;
     private static final long MEDIA_PROXY_MAX_BYTES = 110L * 1024 * 1024;
+    private static final int CANVAS_PREVIEW_MIN_WIDTH = 64;
+    private static final int CANVAS_PREVIEW_MAX_WIDTH = 2048;
+    private static final float CANVAS_PREVIEW_JPEG_QUALITY = 0.82f;
+    private static final int CANVAS_OUTPUT_ARCHIVE_MAX_ITEMS = 100;
+    private static final long CANVAS_OUTPUT_ARCHIVE_MAX_TOTAL_BYTES = 600L * 1024 * 1024;
     private static final int MEDIA_PROXY_MAX_REDIRECTS = 3;
     private static final Set<String> KIE_MEDIA_HOST_SUFFIXES = Set.of(
             ".kie.ai", ".aiquickdraw.com", ".redpandaai.co"
     );
     private static final Set<String> KIE_IMAGE_ASPECT_RATIOS = Set.of(
-            "1:1", "16:9", "9:16", "4:3", "3:4", "4:5", "5:4", "3:2", "2:3", "21:9", "9:21"
+            "auto", "1:1", "16:9", "9:16", "4:3", "3:4", "4:5", "5:4", "3:2", "2:3",
+            "21:9", "9:21", "27:16", "16:27", "9:8", "8:9"
     );
     private static final Set<String> LIBLIB_MEDIA_HOSTS = Set.of(
             "libtv-res.liblib.art", "liblibai-online.liblib.cloud"
@@ -199,7 +207,16 @@ public class InfiniteCanvasController {
             serveLocalResized(url, width, response);
             return;
         }
-        proxyTrustedMedia(url, "canvas-preview", true, response);
+        if (url != null && (url.startsWith("http://") || url.startsWith("https://"))) {
+            serveRemoteResized(url, width, response);
+            return;
+        }
+        // 兼容开源画布历史数据中的相对资源地址，仍交由原资源路由返回。
+        if (url != null && (url.startsWith("/assets/") || url.startsWith("/output/"))) {
+            response.sendRedirect(url);
+            return;
+        }
+        response.sendError(HttpServletResponse.SC_BAD_REQUEST, "Unsupported canvas preview URL");
     }
 
     /**
@@ -227,21 +244,108 @@ public class InfiniteCanvasController {
             response.sendError(HttpServletResponse.SC_UNSUPPORTED_MEDIA_TYPE, "无法解析的图片文件");
             return;
         }
-        int srcWidth = image.getWidth();
-        int srcHeight = image.getHeight();
-        int targetWidth = (requestedWidth != null && requestedWidth > 0)
-                ? Math.max(32, Math.min(2048, requestedWidth)) : srcWidth;
-        BufferedImage out = image;
-        if (targetWidth < srcWidth) {
-            int targetHeight = (int) Math.round(srcHeight * (targetWidth / (double) srcWidth));
-            out = new BufferedImage(targetWidth, targetHeight, BufferedImage.TYPE_INT_RGB);
-            Graphics2D g = out.createGraphics();
-            g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
-            g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
-            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-            g.drawImage(image, 0, 0, targetWidth, targetHeight, null);
-            g.dispose();
+        try {
+            writeResizedImageResponse(image, normalizePreviewWidth(requestedWidth), response);
+        } finally {
+            image.flush();
         }
+    }
+
+    /**
+     * OSS/KIE 图片在服务端缩放后再交给画布，避免浏览器同时解码几十张 2K/4K 原图。
+     * 原图下载和图片编辑仍走 download-output，不改变源文件。
+     */
+    private void serveRemoteResized(String sourceUrl, Integer requestedWidth,
+                                    HttpServletResponse response) throws IOException {
+        final URI source;
+        try {
+            source = trustedMediaUri(sourceUrl);
+        } catch (IllegalArgumentException e) {
+            response.sendError(HttpServletResponse.SC_BAD_REQUEST, e.getMessage());
+            return;
+        }
+        BufferedImage image = readTrustedRemoteImage(source);
+        if (image == null) {
+            response.sendError(HttpServletResponse.SC_UNSUPPORTED_MEDIA_TYPE, "Remote media is not a supported image");
+            return;
+        }
+        try {
+            writeResizedImageResponse(image, normalizePreviewWidth(requestedWidth), response);
+        } finally {
+            image.flush();
+        }
+    }
+
+    private BufferedImage readTrustedRemoteImage(URI source) throws IOException {
+        URI target = source;
+        for (int redirectCount = 0; redirectCount <= MEDIA_PROXY_MAX_REDIRECTS; redirectCount += 1) {
+            Request request = new Request.Builder()
+                    .url(target.toString())
+                    .header("User-Agent", "Mozilla/5.0 (compatible; AgentAPlusCanvas/1.0)")
+                    .header("Accept", "image/avif,image/webp,image/apng,image/*,*/*;q=0.5")
+                    .header("Referer", "https://kie.ai/")
+                    .build();
+            try (Response remoteResponse = mediaProxyClient.newCall(request).execute()) {
+                if (isRedirect(remoteResponse.code())) {
+                    String location = remoteResponse.header("Location");
+                    if (location == null || location.isBlank()) {
+                        throw new IOException("Remote image redirect is missing Location");
+                    }
+                    target = trustedMediaUri(target.resolve(location).toString());
+                    continue;
+                }
+                ResponseBody body = remoteResponse.body();
+                if (!remoteResponse.isSuccessful() || body == null) {
+                    throw new IOException("Remote image request failed with status " + remoteResponse.code());
+                }
+                long declaredLength = body.contentLength();
+                if (declaredLength > MEDIA_PROXY_MAX_BYTES) {
+                    throw new IOException("Remote image exceeds preview size limit");
+                }
+                try (InputStream input = body.byteStream();
+                     ByteArrayOutputStream bytes = new ByteArrayOutputStream(
+                             declaredLength > 0 && declaredLength < Integer.MAX_VALUE ? (int) declaredLength : 8192)) {
+                    byte[] buffer = new byte[8192];
+                    long copied = 0;
+                    int read;
+                    while ((read = input.read(buffer)) != -1) {
+                        copied += read;
+                        if (copied > MEDIA_PROXY_MAX_BYTES) {
+                            throw new IOException("Remote image exceeds preview size limit");
+                        }
+                        bytes.write(buffer, 0, read);
+                    }
+                    try (ByteArrayInputStream imageInput = new ByteArrayInputStream(bytes.toByteArray())) {
+                        return ImageIO.read(imageInput);
+                    }
+                }
+            }
+        }
+        throw new IOException("Remote image has too many redirects");
+    }
+
+    private int normalizePreviewWidth(Integer requestedWidth) {
+        int width = requestedWidth == null || requestedWidth <= 0 ? 512 : requestedWidth;
+        return Math.max(CANVAS_PREVIEW_MIN_WIDTH, Math.min(CANVAS_PREVIEW_MAX_WIDTH, width));
+    }
+
+    private void writeResizedImageResponse(BufferedImage source, int requestedWidth,
+                                           HttpServletResponse response) throws IOException {
+        int width = Math.max(1, Math.min(requestedWidth, source.getWidth()));
+        int height = Math.max(1, (int) Math.round(source.getHeight() * (width / (double) source.getWidth())));
+        BufferedImage output = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+        Graphics2D graphics = output.createGraphics();
+        try {
+            graphics.setColor(Color.WHITE);
+            graphics.fillRect(0, 0, width, height);
+            graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+            graphics.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+            graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            graphics.drawImage(source, 0, 0, width, height, null);
+        } finally {
+            graphics.dispose();
+        }
+
         response.setStatus(HttpServletResponse.SC_OK);
         response.setContentType("image/jpeg");
         response.setHeader("Cache-Control", "public, max-age=86400");
@@ -250,14 +354,15 @@ public class InfiniteCanvasController {
             ImageWriteParam param = writer.getDefaultWriteParam();
             if (param.canWriteCompressed()) {
                 param.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);
-                param.setCompressionQuality(0.82f);
+                param.setCompressionQuality(CANVAS_PREVIEW_JPEG_QUALITY);
             }
-            try (ImageOutputStream ios = ImageIO.createImageOutputStream(response.getOutputStream())) {
-                writer.setOutput(ios);
-                writer.write(null, new IIOImage(out, null, null), param);
+            try (ImageOutputStream outputStream = ImageIO.createImageOutputStream(response.getOutputStream())) {
+                writer.setOutput(outputStream);
+                writer.write(null, new IIOImage(output, null, null), param);
             }
         } finally {
             writer.dispose();
+            output.flush();
         }
     }
 
@@ -539,12 +644,13 @@ public class InfiniteCanvasController {
                                 "key", "size",
                                 "type", "size",
                                 "label", "尺寸",
-                                "ratios", List.of("1:1", "3:4", "4:3", "16:9", "9:16"),
+                                "ratios", List.of("auto", "1:1", "3:4", "4:3", "16:9", "9:16", "3:2", "2:3", "21:9"),
                                 "resolutions", List.of("1k", "2k", "4k"),
                                 "default", Map.of("ratio", "1:1", "resolution", "2k")
                         ),
                         Map.of("key", "n", "type", "int", "label", "数量", "options", List.of(1, 2, 3, 4), "default", 1),
-                        Map.of("key", "reference_images", "type", "refs", "label", "参考图", "max", 8)
+                        Map.of("key", "reference_images", "type", "refs", "label", "参考图", "max", 16),
+                        Map.of("key", "background", "type", "select", "label", "背景", "options", List.of("auto", "opaque", "transparent"), "default", "auto")
                 )
         );
     }
@@ -606,6 +712,7 @@ public class InfiniteCanvasController {
         String colorUrl = refs.size() > 1
                 ? refs.subList(1, refs.size()).stream().map(this::normalizeInputUrl).collect(Collectors.joining(","))
                 : "";
+        String model = normalizeImageModel(textValue(payload.get("model")));
         String resolution = explicitImageResolution(textValue(payload.get("resolution")));
         String aspectRatio = explicitImageAspectRatio(textValue(payload.get("aspect_ratio")));
         if (resolution.isBlank()) {
@@ -614,7 +721,8 @@ public class InfiniteCanvasController {
         if (aspectRatio.isBlank()) {
             throw new IllegalArgumentException("KIE 图片任务必须明确传受支持的 aspect_ratio");
         }
-        String model = normalizeImageModel(textValue(payload.get("model")));
+        String background = firstNonBlank(textValue(payload.get("background")), "auto");
+        String actualModel = KieImageModels.resolveActualModel(model, refs.size());
         String taskId = kieClientService.createTask(
                 "AI_CANVAS",
                 prompt,
@@ -623,12 +731,20 @@ public class InfiniteCanvasController {
                 model,
                 inputUrl,
                 colorUrl,
+                background,
                 appProperties.getKie().getCallbackUrl()
         );
-        canvasTaskService.recordCreated(taskId, "image", operator, shopName, payload);
+        Map<String, Object> taskPayload = new LinkedHashMap<>(payload);
+        taskPayload.put("model", actualModel);
+        taskPayload.put("requested_model", KieImageModels.logicalModel(model));
+        taskPayload.put("provider_model", actualModel);
+        taskPayload.put("background", background);
+        canvasTaskService.recordCreated(taskId, "image", operator, shopName, taskPayload);
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("task_id", taskId);
         response.put("status", "queued");
+        response.put("requested_model", KieImageModels.logicalModel(model));
+        response.put("provider_model", actualModel);
         response.put("completion_mode", useCallbackTaskCompletion() ? "callback" : "polling");
         response.putAll(canvasTaskService.billingFields(taskId));
         return response;
@@ -813,9 +929,130 @@ public class InfiniteCanvasController {
         return Map.of("exists", exists);
     }
 
-    @PostMapping("/canvas-assets/download")
-    public Map<String, Object> canvasAssetsDownload() {
-        throw new RuntimeException("当前接入模式暂不支持本地资源打包下载");
+    @PostMapping(value = "/canvas-assets/download", produces = "application/zip")
+    public void canvasAssetsDownload(@RequestBody Map<String, Object> payload,
+                                     HttpServletResponse response) throws IOException {
+        List<CanvasArchiveItem> items = canvasArchiveItems(payload);
+        if (items.isEmpty()) throw new IllegalArgumentException("请至少选择一张图片");
+        if (items.size() > CANVAS_OUTPUT_ARCHIVE_MAX_ITEMS) {
+            throw new IllegalArgumentException("单次最多打包 " + CANVAS_OUTPUT_ARCHIVE_MAX_ITEMS + " 张图片");
+        }
+
+        String filename = canvasArchiveFilename(textValue(payload.get("filename")));
+        Path archive = Files.createTempFile("canvas-output-", ".zip");
+        int packed = 0;
+        int skipped = 0;
+        long totalBytes = 0L;
+        try {
+            Set<String> entryNames = new LinkedHashSet<>();
+            try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(archive))) {
+                for (int index = 0; index < items.size(); index++) {
+                    CanvasArchiveItem item = items.get(index);
+                    try {
+                        byte[] bytes = readCanvasArchiveSource(item.url());
+                        if (bytes.length == 0) throw new IOException("图片文件为空");
+                        if (totalBytes + bytes.length > CANVAS_OUTPUT_ARCHIVE_MAX_TOTAL_BYTES) {
+                            throw new IllegalArgumentException("所选图片总大小超过 600MB，请减少选择后重试");
+                        }
+                        String entryName = uniqueCanvasArchiveEntryName(item.name(), item.url(), index + 1, entryNames);
+                        zip.putNextEntry(new ZipEntry(entryName));
+                        zip.write(bytes);
+                        zip.closeEntry();
+                        totalBytes += bytes.length;
+                        packed++;
+                    } catch (IOException e) {
+                        skipped++;
+                        log.warn("Skipping canvas archive item {}: {}", index + 1, e.getMessage());
+                    }
+                }
+                zip.finish();
+            }
+            if (packed == 0) throw new IllegalArgumentException("所选图片暂时无法读取，请稍后重试");
+
+            response.setStatus(HttpServletResponse.SC_OK);
+            response.setContentType("application/zip");
+            response.setHeader("Content-Disposition", contentDisposition(filename, false));
+            response.setHeader("Cache-Control", "no-store");
+            response.setHeader("X-AI-Canvas-Archive-Items", String.valueOf(packed));
+            response.setHeader("X-AI-Canvas-Archive-Skipped", String.valueOf(skipped));
+            response.setContentLengthLong(Files.size(archive));
+            try (InputStream input = Files.newInputStream(archive);
+                 OutputStream output = response.getOutputStream()) {
+                byte[] buffer = new byte[8192];
+                int read;
+                while ((read = input.read(buffer)) != -1) output.write(buffer, 0, read);
+            }
+        } finally {
+            Files.deleteIfExists(archive);
+        }
+    }
+
+    private List<CanvasArchiveItem> canvasArchiveItems(Map<String, Object> payload) {
+        List<CanvasArchiveItem> items = new ArrayList<>();
+        Object rawItems = payload == null ? null : payload.get("items");
+        if (rawItems instanceof List<?> list) {
+            for (Object raw : list) {
+                if (!(raw instanceof Map<?, ?> map)) continue;
+                String url = textValue(map.get("url")).trim();
+                if (!url.isBlank()) items.add(new CanvasArchiveItem(url, textValue(map.get("name")).trim()));
+            }
+        }
+        if (!items.isEmpty()) return items;
+        for (String url : mediaUrls(payload == null ? null : payload.get("urls"))) {
+            items.add(new CanvasArchiveItem(url, ""));
+        }
+        return items;
+    }
+
+    private byte[] readCanvasArchiveSource(String sourceUrl) throws IOException {
+        String source = textValue(sourceUrl).trim();
+        if (source.startsWith("/ai-result/")) return readLocalCanvasArchiveSource(source);
+        return downloadWorkflowResource(source);
+    }
+
+    private byte[] readLocalCanvasArchiveSource(String relativeUrl) throws IOException {
+        String root = appProperties.getLocalSaveRoot();
+        if (root == null || root.isBlank()) {
+            String os = System.getProperty("os.name").toLowerCase(Locale.ROOT);
+            root = os.contains("win") ? "D:/AiResult" : "/tmp/ai-result";
+        }
+        String rel = relativeUrl.substring("/ai-result/".length());
+        Path rootPath = Paths.get(root).toAbsolutePath().normalize();
+        Path filePath = rootPath.resolve(rel).normalize();
+        if (!filePath.startsWith(rootPath) || !Files.exists(filePath) || !Files.isRegularFile(filePath)) {
+            throw new IOException("本地图片不存在");
+        }
+        long size = Files.size(filePath);
+        if (size <= 0L) throw new IOException("本地图片为空");
+        if (size > KIE_MEDIA_UPLOAD_MAX_BYTES) throw new IOException("单张图片超过 100MB");
+        return Files.readAllBytes(filePath);
+    }
+
+    private String canvasArchiveFilename(String requestedName) {
+        String candidate = textValue(requestedName).replaceAll("[\\r\\n\\\\/:*?\"<>|]+", "_").trim();
+        if (candidate.isBlank()) candidate = "canvas-output";
+        return candidate.toLowerCase(Locale.ROOT).endsWith(".zip") ? candidate : candidate + ".zip";
+    }
+
+    private String uniqueCanvasArchiveEntryName(String requestedName, String sourceUrl, int index, Set<String> existing) {
+        String candidate = textValue(requestedName).replaceAll("[\\r\\n\\\\/:*?\"<>|]+", "_").replaceFirst("^\\.+", "").trim();
+        String rawUrl = textValue(sourceUrl).split("[?#]", 2)[0];
+        String extension = fileExtension(rawUrl, "");
+        if (extension.isBlank() || ".bin".equalsIgnoreCase(extension)) extension = ".png";
+        if (candidate.isBlank()) candidate = "image-" + String.format(Locale.ROOT, "%02d", index) + extension;
+        if (!candidate.matches(".*\\.[A-Za-z0-9]{2,8}$")) candidate += extension;
+
+        String base = candidate.replaceFirst("(\\.[A-Za-z0-9]{2,8})$", "");
+        String suffix = candidate.substring(base.length());
+        String resolved = candidate;
+        int duplicate = 2;
+        while (!existing.add(resolved.toLowerCase(Locale.ROOT))) {
+            resolved = base + "_" + duplicate++ + suffix;
+        }
+        return resolved;
+    }
+
+    private record CanvasArchiveItem(String url, String name) {
     }
 
     @GetMapping("/asset-library")
@@ -2901,6 +3138,7 @@ public class InfiniteCanvasController {
         Map<String, Object> input = new LinkedHashMap<>();
         input.put("prompt", prompt);
         input.put("duration", miniMaxH3Duration(payload.get("duration")));
+        input.put("resolution", miniMaxH3Resolution(textValue(payload.get("resolution"))));
 
         List<VideoImageReference> images = videoImageReferences(payload.get("images"));
         List<String> videos = mediaUrls(payload.get("videos")).stream().map(this::normalizeInputUrl).toList();
@@ -2986,10 +3224,17 @@ public class InfiniteCanvasController {
 
     private int miniMaxH3Duration(Object value) {
         try {
-            return Math.max(5, Math.min(15, Integer.parseInt(textValue(value))));
+            return Math.max(4, Math.min(15, Integer.parseInt(textValue(value))));
         } catch (Exception ignored) {
-            return 6;
+            return 4;
         }
+    }
+
+    private String miniMaxH3Resolution(String value) {
+        String normalized = value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
+        if (normalized.isBlank() || normalized.contains("768")) return "768P";
+        if (normalized.contains("2k") || normalized.contains("2048")) return "2K";
+        throw new IllegalArgumentException("MiniMax H3 resolution must be 768P or 2K");
     }
 
     private String miniMaxH3AspectRatio(String value, boolean referenceMode) {
@@ -3028,7 +3273,7 @@ public class InfiniteCanvasController {
         // 信任前端传入的模型：前端模型列表来自 /api/config（即 PROJECT_IMAGE_MODELS），
         // 仅当为空 / 非法前缀时回退默认模型，避免「选了 GPT 实际跑 nano」的静默降级。
         if (model == null || model.isBlank() || model.startsWith("project-")) return PROJECT_IMAGE_MODEL;
-        return model;
+        return model.trim();
     }
 
     private String normalizeVideoModel(String model) {

@@ -1576,8 +1576,14 @@
                             <div class="model-config-field-wide">
                                 <span class="model-config-label">图片模型</span>
                                 <select class="form-input" v-model="form.imageModel">
-                                    <option value="nano-banana-pro">nano-banana-pro</option>
-                                    <option value="gpt-image-2-image-to-image">gpt-image-2-image</option>
+                                    <optgroup label="Google">
+                                        <option value="nano-banana-pro">Nano Banana Pro</option>
+                                        <option value="nano-banana-2">Nano Banana 2</option>
+                                    </optgroup>
+                                    <optgroup label="OpenAI">
+                                        <option value="gpt-image-2-image-to-image">GPT Image 2</option>
+                                        <option value="gpt-image-2-5-sunburst">GPT Image 2.5</option>
+                                    </optgroup>
                                 </select>
                             </div>
                         </div>

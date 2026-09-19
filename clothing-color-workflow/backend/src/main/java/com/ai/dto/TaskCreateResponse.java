@@ -20,6 +20,7 @@ public class TaskCreateResponse {
     private boolean success;
     private String prompt;
     private String model;
+    private String requestedModel;
     private String resolution;
     private Integer taskType;
     private String shopName;
@@ -52,6 +53,7 @@ public class TaskCreateResponse {
         this.prompt = task.getPrompt();
         this.spu = task.getSpu();
         this.model = task.getModel();
+        this.requestedModel = task.getRequestedModel();
         this.resolution = task.getResolution();
         this.taskType = task.getTaskType();
         this.shopName = task.getShopName();

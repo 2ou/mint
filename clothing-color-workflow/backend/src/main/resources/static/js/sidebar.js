@@ -216,7 +216,7 @@
             '}',
             '.sidebar-user-name { font-size: 13px; font-weight: 700; color: #f8fbff; }',
             '.sidebar-user-shop { font-size: 11px; color: rgba(226,232,240,0.62); margin-top: 2px; }',
-            '.sidebar-nav { flex: 1; padding: 10px 12px; display: flex; flex-direction: column; gap: 3px; }',
+            '.sidebar-nav { flex: 1 1 auto; min-height: 0; padding: 10px 12px; display: flex; flex-direction: column; gap: 3px; overflow-y: auto; }',
             '.sidebar-link {',
             '  display: flex; align-items: center; gap: 10px; padding: 10px 12px;',
             '  border-radius: 8px; color: rgba(226,232,240,0.72);',

@@ -36,6 +36,14 @@
         .seedance25-upload-label span { color: #f56c6c; font-weight: 600; }
         .seedance25-upload-label em { color: #909399; font-size: 12px; font-style: normal; font-weight: 400; }
         .seedance25-helper { margin-left: 10px; color: #909399; font-size: 12px; }
+        .seedance25-video-edit-note { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 14px; padding: 12px 14px; border: 1px solid #bfdbfe; border-radius: 8px; background: #eff6ff; color: #1e3a8a; font-size: 13px; line-height: 1.55; }
+        .seedance25-video-edit-note strong { flex: 0 0 auto; color: #1d4ed8; }
+        .seedance25-video-edit-note code, .seedance25-locked-value code { padding: 1px 5px; border-radius: 4px; background: rgba(37, 99, 235, .1); color: #1d4ed8; font-weight: 700; }
+        .seedance25-source-duration { margin-top: 7px; font-size: 12px; color: #2563eb; font-weight: 600; }
+        .seedance25-source-duration.is-invalid { color: #d97706; }
+        .seedance25-locked-value { min-height: 40px; box-sizing: border-box; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 12px; border: 1px solid #dbeafe; border-radius: 6px; background: #f8fbff; color: #475569; font-size: 13px; }
+        .seedance25-locked-value strong { color: #1e3a8a; font-weight: 600; }
+        .seedance25-billing-detail { margin-top: 8px; padding: 9px 12px; border: 1px solid #fde68a; border-radius: 7px; background: #fffbeb; color: #854d0e; font-size: 12px; line-height: 1.55; }
     </style>
 </head>
 <body>
@@ -392,6 +400,11 @@
                         </el-radio-group>
                     </el-form-item>
                 </el-form>
+                <el-alert
+                    :title="`MiniMax H3 · ${form.h3Resolution === '2k' ? '2K（13 积分/秒）' : '768P（8 积分/秒）'}`"
+                    :description="`支持 4–15 秒；图片输入额外 4 积分/张（约 ¥0.128）。${form.h3Mode === 'image' ? '图生视频的比例跟随首帧。' : '视频参考按当前输出清晰度计价。'}`"
+                    type="info" :closable="false" show-icon style="margin:0 0 18px;">
+                </el-alert>
 
                 <el-row v-if="form.h3Mode === 'image'" :gutter="20" style="margin-bottom: 20px;">
                     <el-col :span="8">
@@ -419,7 +432,7 @@
                 </el-row>
 
                 <div v-if="form.h3Mode === 'reference'">
-                    <div style="font-weight:bold; margin-bottom:10px;">参考图片（前 5 张免费）</div>
+                    <div style="font-weight:bold; margin-bottom:10px;">参考图片（4 积分/张）</div>
                     <div class="seedance-drop-zone" :class="{'is-dragover': drag.h3ReferenceImages}"
                          @dragover.prevent="drag.h3ReferenceImages = true" @dragleave.prevent="drag.h3ReferenceImages = false"
                          @drop.prevent="e => handleDrop(e, 'h3ReferenceImages', 'image/*', true)">
@@ -432,7 +445,7 @@
                             <div style="font-size:12px; font-weight:bold; padding:0 5px;">点击或拖拽</div>
                         </div>
                     </div>
-                    <div v-if="h3ImageInputCount > 5" style="margin-top:8px; color:#E6A23C; font-size:12px;">超出 {{ h3ImageInputCount - 5 }} 张，按 11 积分/张计费</div>
+                    <div v-if="h3ImageInputCount" style="margin-top:8px; color:#606266; font-size:12px;">当前 {{ h3ImageInputCount }} 张图片输入，预计 {{ h3ImageInputCount * 4 }} 积分（约 ¥{{ (h3ImageInputCount * 4 * KIE_CREDIT_CNY).toFixed(3) }}）</div>
 
                     <el-row :gutter="20" style="margin-top:15px;">
                         <el-col :span="8">
@@ -461,7 +474,17 @@
                 </div>
 
                 <el-row :gutter="20" style="margin-top:20px;">
-                    <el-col v-if="form.h3Mode !== 'image'" :span="12">
+                    <el-col :span="form.h3Mode === 'image' ? 12 : 8">
+                        <el-form label-width="76px">
+                            <el-form-item label="输出清晰度">
+                                <el-radio-group v-model="form.h3Resolution" size="small">
+                                    <el-radio-button value="768p">768P · 8 积分/秒</el-radio-button>
+                                    <el-radio-button value="2k">2K · 13 积分/秒</el-radio-button>
+                                </el-radio-group>
+                            </el-form-item>
+                        </el-form>
+                    </el-col>
+                    <el-col v-if="form.h3Mode !== 'image'" :span="8">
                         <el-form label-width="76px">
                             <el-form-item label="画面比例">
                                 <el-select v-model="form.h3AspectRatio" style="width:100%;">
@@ -473,10 +496,10 @@
                             </el-form-item>
                         </el-form>
                     </el-col>
-                    <el-col :span="form.h3Mode === 'image' ? 24 : 12">
+                    <el-col :span="form.h3Mode === 'image' ? 12 : 8">
                         <el-form label-width="76px">
                             <el-form-item label="视频时长">
-                                <el-input-number v-model="form.h3Duration" :min="5" :max="15" style="width:100%;"></el-input-number>
+                                <el-input-number v-model="form.h3Duration" :min="4" :max="15" style="width:100%;"></el-input-number>
                             </el-form-item>
                         </el-form>
                     </el-col>
@@ -564,14 +587,15 @@
 
             <div v-if="isSeedance25">
                 <div class="app-section-title">2. Seedance 2.5 输入与生成参数</div>
-                <el-alert type="info" :closable="false" style="margin-bottom:16px;" title="每次仅使用一种输入模式。切换模式会保留已上传素材，但提交时只传递当前模式允许的字段。"></el-alert>
+                <el-alert type="info" :closable="false" style="margin-bottom:16px;" title="每次仅使用一种输入模式。切换会保留素材；非当前模式素材不会参与本次生成。"></el-alert>
                 <el-form label-width="112px">
                     <el-form-item label="输入模式">
                         <el-radio-group v-model="form.see25Mode">
                             <el-radio-button label="text">文生视频</el-radio-button>
                             <el-radio-button label="first_frame">首帧图</el-radio-button>
                             <el-radio-button label="first_last_frame">首尾帧</el-radio-button>
-                            <el-radio-button label="multimodal">多模态参考</el-radio-button>
+                            <el-radio-button label="multimodal">图片 / 音频参考</el-radio-button>
+                            <el-radio-button label="video_edit">视频编辑</el-radio-button>
                         </el-radio-group>
                     </el-form-item>
                 </el-form>
@@ -616,8 +640,12 @@
                         </div>
                     </el-col>
                 </el-row>
-                <div v-else class="seedance25-multimodal" style="margin-bottom:20px;">
-                    <div class="seedance25-upload-label">图片、视频或音频参考 <span>至少一项</span></div>
+                <div v-else-if="form.see25Mode === 'multimodal' || form.see25Mode === 'video_edit'" class="seedance25-multimodal" style="margin-bottom:20px;">
+                    <div v-if="isSeedance25VideoEdit" class="seedance25-video-edit-note" role="status">
+                        <strong>视频编辑</strong>
+                        <span>输出比例和时长由编辑源视频决定；系统将向 KIE 传递 <code>adaptive</code> 与 <code>-1</code>。</span>
+                    </div>
+                    <div class="seedance25-upload-label">{{ isSeedance25VideoEdit ? '辅助图片参考' : '图片或音频参考' }} <span>{{ isSeedance25VideoEdit ? '可选' : '至少一项' }}</span></div>
                     <div class="seedance-drop-zone" :class="{'is-dragover': drag.seeImages}"
                          @dragover.prevent="drag.seeImages = true" @dragleave.prevent="drag.seeImages = false"
                          @drop.prevent="e => handleDrop(e, 'seeImages', seedance25ImageAccept, true)">
@@ -630,15 +658,18 @@
                         </div>
                     </div>
                     <el-row :gutter="20" style="margin-top:14px;">
-                        <el-col :span="8">
-                            <div class="seedance25-upload-label">参考视频 <em>可选，MP4 / MOV，≤200MB</em></div>
+                        <el-col v-if="isSeedance25VideoEdit" :span="8">
+                            <div class="seedance25-upload-label">编辑源视频 <span>必填</span> <em>MP4 / MOV，4–30 秒，≤200MB</em></div>
                             <div class="upload-box" :class="{'is-dragover': drag.seeVid}"
                                  @click="triggerUpload('seeVid', seedance25VideoAccept)"
                                  @dragover.prevent="drag.seeVid = true" @dragleave.prevent="drag.seeVid = false"
                                  @drop.prevent="e => handleDrop(e, 'seeVid', seedance25VideoAccept)">
                                 <video v-if="form.seeVid" :src="form.seeVid" class="media-preview" autoplay muted loop @loadedmetadata="handleSeedanceVideoLoaded"></video>
-                                <div v-else>添加参考视频</div>
+                                <div v-else>添加编辑源视频</div>
                                 <div v-if="form.seeVid" class="remove-btn" @click.stop="form.seeVid='';form.seeVidDuration=0;filesToUpload.seeVid=null">X</div>
+                            </div>
+                            <div v-if="form.seeVid" class="seedance25-source-duration" :class="{'is-invalid': form.seeVidDuration < 4 || form.seeVidDuration > 30}">
+                                {{ form.seeVidDuration ? `已读取：${form.seeVidDuration} 秒` : '正在读取视频时长…' }}
                             </div>
                         </el-col>
                         <el-col :span="8">
@@ -659,15 +690,22 @@
                     <el-col :span="16">
                         <el-form label-width="112px">
                             <el-form-item label="画面比例">
-                                <el-select v-model="form.seeRatio" style="width:100%;">
+                                <div v-if="isSeedance25VideoEdit" class="seedance25-locked-value" aria-live="polite"><strong>跟随编辑源视频</strong><code>adaptive</code></div>
+                                <el-select v-else v-model="form.seeRatio" style="width:100%;">
                                     <el-option label="16:9（横屏）" value="16:9"></el-option><el-option label="9:16（竖屏）" value="9:16"></el-option>
                                     <el-option label="1:1（正方形）" value="1:1"></el-option><el-option label="4:3（横屏）" value="4:3"></el-option>
                                     <el-option label="3:4（竖屏）" value="3:4"></el-option><el-option label="21:9（超宽屏）" value="21:9"></el-option>
                                 </el-select>
                             </el-form-item>
                             <el-form-item label="视频时长" required>
-                                <el-input-number v-model="form.seeDuration" :min="4" :max="30" :precision="0" style="width:100%;"></el-input-number>
-                                <span class="seedance25-helper">4–30 秒，整数必填</span>
+                                <template v-if="isSeedance25VideoEdit">
+                                    <div class="seedance25-locked-value" aria-live="polite"><strong>跟随编辑源视频</strong><code>-1</code></div>
+                                    <span class="seedance25-helper">源视频需为 4–30 秒</span>
+                                </template>
+                                <template v-else>
+                                    <el-input-number v-model="form.seeDuration" :min="4" :max="30" :precision="0" style="width:100%;"></el-input-number>
+                                    <span class="seedance25-helper">4–30 秒，整数必填</span>
+                                </template>
                             </el-form-item>
                             <el-form-item label="分辨率">
                                 <el-select v-model="form.seeRes" style="width:150px;margin-right:15px;"><el-option label="480p" value="480p"></el-option><el-option label="720p" value="720p"></el-option><el-option label="1080p" value="1080p"></el-option></el-select>
@@ -762,6 +800,9 @@
                 <span style="font-weight: bold; color: #E6A23C; font-size: 15px;">💰 任务预估费用（KIE 当前积分价）</span>
                 <span style="font-size: 24px; font-weight: bold; color: #f56c6c;">{{ estimatedCostLabel }}</span>
             </div>
+            <div v-if="seedance25VideoEditBillingDetail" class="seedance25-billing-detail" role="status">
+                {{ seedance25VideoEditBillingDetail }}
+            </div>
 
             <el-button type="primary" class="app-btn-submit" @click="submit" :loading="loading">
                 {{ loading ? uploadProgressMsg : '🚀 提交生成任务 (直传云端并轮询)' }}
@@ -790,7 +831,7 @@
                 klingElements: [],
                 klingAudio: false,
                 klingTurboImg: '', klingTurboPrompt: '', klingTurboRes: '720p', klingTurboDuration: 5,
-                h3Mode: 'text', h3FirstFrame: '', h3LastFrame: '', h3ReferenceImages: [], h3ReferenceVideo: '', h3ReferenceVideoDuration: 0, h3ReferenceAudio: '', h3AspectRatio: '16:9', h3Duration: 6,
+                h3Mode: 'text', h3FirstFrame: '', h3LastFrame: '', h3ReferenceImages: [], h3ReferenceVideo: '', h3ReferenceVideoDuration: 0, h3ReferenceAudio: '', h3AspectRatio: '16:9', h3Resolution: '768p', h3Duration: 6,
                 seeImages: [], seeVid: '', seeVidDuration: 0, seeAudioRef: '', seeAudioRefDuration: 0, seeRatio: '16:9', seeRes: '720p', seeDuration: 15, seeAudio: false,
                 seeFirstImg: '', seeLastImg: '', see25Mode: 'text', see25ReturnLastFrame: false,
                 miniFirstImg: '', miniLastImg: '', miniImages: [], miniVid: '',
@@ -841,6 +882,7 @@
                 form.model === 'bytedance/seedance-2-5' || form.model === 'bytedance/seedance-2'
             );
             const isSeedance25 = computed(() => form.model === 'bytedance/seedance-2-5');
+            const isSeedance25VideoEdit = computed(() => isSeedance25.value && form.see25Mode === 'video_edit');
             const seedance25ImageAccept = 'image/jpeg,image/png,image/webp,image/bmp,image/tiff,image/gif';
             const seedance25VideoAccept = 'video/mp4,video/quicktime';
             const seedance25AudioAccept = 'audio/wav,audio/x-wav,audio/mpeg,audio/mp3';
@@ -865,24 +907,36 @@
                     return {model, payload:{duration: form.klingTurboDuration, resolution: form.klingTurboRes, image_urls: filesToUpload.klingTurboImg ? ['pending'] : []}};
                 }
                 if (isMiniMaxH3.value) {
-                    return {model, payload:{duration: form.h3Duration, reference_video_urls: filesToUpload.h3ReferenceVideo ? ['pending'] : [], reference_image_urls: filesToUpload.h3ReferenceImages.length ? ['pending'] : []}};
+                    const imageCount = form.h3Mode === 'image'
+                        ? Number(Boolean(filesToUpload.h3FirstFrame)) + Number(Boolean(filesToUpload.h3LastFrame))
+                        : filesToUpload.h3ReferenceImages.length;
+                    return {model, payload:{
+                        duration: form.h3Duration,
+                        resolution: form.h3Resolution,
+                        images: Array.from({length:imageCount}, (_, index) => `pending-image-${index + 1}`),
+                        reference_video_urls: filesToUpload.h3ReferenceVideo ? ['pending-video'] : []
+                    }};
                 }
                 if (form.model === 'bytedance/seedance-2-mini') {
                     return {model, payload:{duration: form.miniDuration, resolution: form.miniRes, generate_audio: form.miniAudio, reference_video_urls: filesToUpload.miniVid ? ['pending'] : []}};
                 }
                 if (isSeedance25.value) {
+                    const videoEdit = form.see25Mode === 'video_edit';
                     const payload = {
-                        duration: form.seeDuration,
+                        duration: videoEdit ? -1 : form.seeDuration,
                         resolution: form.seeRes,
-                        aspect_ratio: form.seeRatio,
+                        aspect_ratio: videoEdit ? 'adaptive' : form.seeRatio,
                         generate_audio: form.seeAudio,
                         return_last_frame: form.see25ReturnLastFrame,
                         seedance_mode: form.see25Mode
                     };
-                    if (form.see25Mode === 'multimodal') {
+                    if (form.see25Mode === 'multimodal' || videoEdit) {
                         payload.reference_image_urls = filesToUpload.seeImages.length ? ['pending'] : [];
-                        payload.reference_video_urls = filesToUpload.seeVid ? ['pending'] : [];
                         payload.reference_audio_urls = filesToUpload.seeAudioRef ? ['pending'] : [];
+                    }
+                    if (videoEdit) {
+                        payload.reference_video_urls = filesToUpload.seeVid ? ['pending'] : [];
+                        payload.video_duration_seconds = form.seeVidDuration;
                     }
                     return {model, payload};
                 }
@@ -904,22 +958,21 @@
             });
             const h3Quote = computed(() => {
                 if (!isMiniMaxH3.value) return null;
-                const hasVideoInput = form.h3Mode === 'reference' && Boolean(filesToUpload.h3ReferenceVideo);
-                const inputSeconds = hasVideoInput ? Number(form.h3ReferenceVideoDuration || 0) : 0;
-                if (hasVideoInput && inputSeconds <= 0) return { pendingVideoDuration: true };
-                const billableSeconds = Number(form.h3Duration || 0) + inputSeconds;
-                const extraImageCount = Math.max(0, h3ImageInputCount.value - 5);
-                const credits = Number((22.5 * billableSeconds + 11 * extraImageCount).toFixed(2));
+                const creditsPerSecond = form.h3Resolution === '2k' ? 13 : 8;
+                const outputCredits = Number(form.h3Duration || 0) * creditsPerSecond;
+                const imageCredits = h3ImageInputCount.value * 4;
+                const credits = Number((outputCredits + imageCredits).toFixed(2));
                 return {
-                    billableSeconds,
-                    extraImageCount,
+                    creditsPerSecond,
+                    outputCredits,
+                    imageCredits,
                     credits,
                     costCny: Number((credits * KIE_CREDIT_CNY).toFixed(2))
                 };
             });
             const seedance25Quote = computed(() => {
                 if (form.model !== 'bytedance/seedance-2-5') return null;
-                const hasVideoInput = form.see25Mode === 'multimodal' && Boolean(filesToUpload.seeVid);
+                const hasVideoInput = form.see25Mode === 'video_edit' && Boolean(filesToUpload.seeVid);
                 const creditsPerSecond = form.seeRes === '1080p'
                     ? (hasVideoInput ? 68.5 : 114)
                     : form.seeRes === '480p'
@@ -927,15 +980,22 @@
                         : (hasVideoInput ? 38 : 63);
                 const inputSeconds = hasVideoInput ? Number(form.seeVidDuration || 0) : 0;
                 if (hasVideoInput && inputSeconds <= 0) return { pendingVideoDuration: true };
-                const billableSeconds = Number(form.seeDuration || 0) + inputSeconds;
+                const billableSeconds = hasVideoInput ? inputSeconds * 2 : Number(form.seeDuration || 0);
                 const credits = Number((creditsPerSecond * billableSeconds).toFixed(2));
                 return {
                     hasVideoInput,
                     creditsPerSecond,
+                    sourceSeconds: inputSeconds,
                     billableSeconds,
                     credits,
                     costCny: Number((credits * KIE_CREDIT_CNY).toFixed(2))
                 };
+            });
+            const seedance25VideoEditBillingDetail = computed(() => {
+                const quote = seedance25Quote.value;
+                if (!quote?.hasVideoInput) return '';
+                if (quote.pendingVideoDuration) return '正在读取编辑源视频时长，读取完成后才会显示准确费用。';
+                return `视频编辑按两段计费：源视频 ${quote.sourceSeconds} 秒 + 等长输出 ${quote.sourceSeconds} 秒 = ${quote.billableSeconds} 秒。`;
             });
 
             const estimatedCost = computed(() => {
@@ -988,7 +1048,7 @@
                 if (h3?.pendingVideoDuration) return '正在读取参考视频时长';
                 if (h3) return `${h3.credits} 积分（约￥${h3.costCny.toFixed(2)}）`;
                 const quote = seedance25Quote.value;
-                if (quote?.pendingVideoDuration) return '正在读取动作视频时长';
+                if (quote?.pendingVideoDuration) return '正在读取编辑源视频时长';
                 if (quote) return `${quote.credits} 积分（约￥${quote.costCny.toFixed(2)}）`;
                 return estimatedCost.value === null ? '以 KIE 账单为准' : `￥${estimatedCost.value.toFixed(2)}`;
             });
@@ -1001,7 +1061,7 @@
                     form.h3AspectRatio = '16:9';
                 }
             });
-            watch(() => [form.model, form.motionMode, form.motionVidDuration, form.klingShotMode, form.klingDuration, form.klingMode, form.klingAudio, form.klingTurboRes, form.klingTurboDuration, form.h3Mode, form.h3Duration, form.see25Mode, form.see25ReturnLastFrame, form.seeRes, form.seeDuration, form.seeAudio, form.miniRes, form.miniDuration, form.miniAudio, Boolean(filesToUpload.motionVid), Boolean(filesToUpload.seeVid), Boolean(filesToUpload.seeAudioRef), Boolean(filesToUpload.miniVid), Boolean(filesToUpload.h3ReferenceVideo)], refreshServerQuotedCost, {immediate:true});
+            watch(() => [form.model, form.motionMode, form.motionVidDuration, form.klingShotMode, form.klingDuration, form.klingMode, form.klingAudio, form.klingTurboRes, form.klingTurboDuration, form.h3Mode, form.h3Resolution, form.h3Duration, h3ImageInputCount.value, form.see25Mode, form.see25ReturnLastFrame, form.seeRes, form.seeDuration, form.seeVidDuration, form.seeAudio, form.miniRes, form.miniDuration, form.miniAudio, Boolean(filesToUpload.motionVid), Boolean(filesToUpload.seeVid), Boolean(filesToUpload.seeAudioRef), Boolean(filesToUpload.miniVid), Boolean(filesToUpload.h3ReferenceVideo)], refreshServerQuotedCost, {immediate:true});
             watch(() => form.h3Mode, () => {
                 if (form.h3Mode !== 'reference' && form.h3AspectRatio === 'adaptive') form.h3AspectRatio = '16:9';
             });
@@ -1171,7 +1231,8 @@
                 if (!form.spu) return ElementPlus.ElMessage.warning('请输入 SPU 款号');
                 if (isSeedance25.value) {
                     if (!form.prompt || !form.prompt.trim()) return ElementPlus.ElMessage.warning('Seedance 2.5 必须填写提示词');
-                    if (!Number.isInteger(Number(form.seeDuration)) || form.seeDuration < 4 || form.seeDuration > 30) {
+                    const videoEdit = form.see25Mode === 'video_edit';
+                    if (!videoEdit && (!Number.isInteger(Number(form.seeDuration)) || form.seeDuration < 4 || form.seeDuration > 30)) {
                         return ElementPlus.ElMessage.warning('Seedance 2.5 时长必须是 4–30 秒的整数');
                     }
                     const hasFirstFrame = Boolean(filesToUpload.seeFirstImg || form.workflowImageUrl);
@@ -1180,13 +1241,16 @@
                         return ElementPlus.ElMessage.warning('首尾帧模式必须同时提供首帧图和尾帧图');
                     }
                     if (form.see25Mode === 'multimodal'
-                        && !filesToUpload.seeImages.length && !filesToUpload.seeVid && !filesToUpload.seeAudioRef && !form.workflowImageUrl) {
-                        return ElementPlus.ElMessage.warning('多模态模式至少需要一项图片、视频或音频参考素材');
+                        && !filesToUpload.seeImages.length && !filesToUpload.seeAudioRef && !form.workflowImageUrl) {
+                        return ElementPlus.ElMessage.warning('图片 / 音频参考模式至少需要一项图片或音频素材');
                     }
-                    if (filesToUpload.seeVid && (!form.seeVidDuration || form.seeVidDuration < 2 || form.seeVidDuration > 30)) {
-                        return ElementPlus.ElMessage.warning('参考视频时长必须为 2–30 秒');
+                    if (videoEdit && !filesToUpload.seeVid) {
+                        return ElementPlus.ElMessage.warning('视频编辑模式请上传一个编辑源视频');
                     }
-                    if (filesToUpload.seeAudioRef && (!form.seeAudioRefDuration || form.seeAudioRefDuration < 2 || form.seeAudioRefDuration > 30)) {
+                    if (videoEdit && (!form.seeVidDuration || form.seeVidDuration < 4 || form.seeVidDuration > 30)) {
+                        return ElementPlus.ElMessage.warning('编辑源视频时长必须为 4–30 秒，请等待元数据读取完成');
+                    }
+                    if ((form.see25Mode === 'multimodal' || videoEdit) && filesToUpload.seeAudioRef && (!form.seeAudioRefDuration || form.seeAudioRefDuration < 2 || form.seeAudioRefDuration > 30)) {
                         return ElementPlus.ElMessage.warning('参考音频时长必须为 2–30 秒');
                     }
                 }
@@ -1195,6 +1259,9 @@
                 }
                 if (h3Quote.value?.pendingVideoDuration) {
                     return ElementPlus.ElMessage.warning('正在读取参考视频时长，请稍后再提交');
+                }
+                if (isMiniMaxH3.value && (!Number.isInteger(Number(form.h3Duration)) || form.h3Duration < 4 || form.h3Duration > 15)) {
+                    return ElementPlus.ElMessage.warning('MiniMax H3 时长必须为 4–15 秒的整数');
                 }
                 if (isMiniMaxH3.value && form.h3Mode === 'image' && !filesToUpload.h3FirstFrame) {
                     return ElementPlus.ElMessage.warning('MiniMax H3 图生视频必须上传首帧参考图');
@@ -1210,7 +1277,7 @@
 
                 try {
                     await ElementPlus.ElMessageBox.confirm(
-                        `本次视频生成任务预估产生费用 <span style="color: #f56c6c; font-weight: bold; font-size: 18px;">${estimatedCostLabel.value}</span>。<br/>提交后将直接扣费并直传云端，是否确认继续？`,
+                        `本次视频生成任务预估产生费用 <span style="color: #f56c6c; font-weight: bold; font-size: 18px;">${estimatedCostLabel.value}</span>。${seedance25VideoEditBillingDetail.value ? `<br/><span style="color:#8a5a16;">${seedance25VideoEditBillingDetail.value}</span>` : ''}<br/>提交后将直接扣费并直传云端，是否确认继续？`,
                         '⚠️ 提交确认',
                         {
                             confirmButtonText: '确认提交',
@@ -1294,6 +1361,7 @@
                             inputPayload = {
                                 prompt: form.prompt,
                                 aspect_ratio: form.h3AspectRatio,
+                                resolution: form.h3Resolution,
                                 duration: form.h3Duration
                             };
                         }
@@ -1302,6 +1370,7 @@
                             inputPayload = {
                                 prompt: form.prompt,
                                 first_frame_url: firstFrameUrl,
+                                resolution: form.h3Resolution,
                                 duration: form.h3Duration
                             };
                             reqInputImg = firstFrameUrl;
@@ -1311,6 +1380,7 @@
                             inputPayload = {
                                 prompt: form.prompt,
                                 aspect_ratio: form.h3AspectRatio,
+                                resolution: form.h3Resolution,
                                 duration: form.h3Duration
                             };
                             if (filesToUpload.h3ReferenceImages.length > 0) {
@@ -1351,12 +1421,13 @@
                         if (filesToUpload.miniLastImg) inputPayload.last_frame_url = await uploadSingleToOss(filesToUpload.miniLastImg, pd);
                     }
                     else if (isSeedance25.value) {
+                        const videoEdit = form.see25Mode === 'video_edit';
                         inputPayload = {
                             seedance_mode: form.see25Mode,
                             prompt: form.prompt.trim(),
                             resolution: form.seeRes,
-                            aspect_ratio: form.seeRatio,
-                            duration: Number(form.seeDuration),
+                            aspect_ratio: videoEdit ? 'adaptive' : form.seeRatio,
+                            duration: videoEdit ? -1 : Number(form.seeDuration),
                             generate_audio: Boolean(form.seeAudio),
                             return_last_frame: Boolean(form.see25ReturnLastFrame)
                         };
@@ -1369,7 +1440,7 @@
                             if (form.see25Mode === 'first_last_frame') {
                                 inputPayload.last_frame_url = await uploadSingleToOss(filesToUpload.seeLastImg, pd);
                             }
-                        } else if (form.see25Mode === 'multimodal') {
+                        } else if (form.see25Mode === 'multimodal' || videoEdit) {
                             const referenceImages = filesToUpload.seeImages.length
                                 ? await Promise.all(filesToUpload.seeImages.map(file => uploadSingleToOss(file, pd)))
                                 : (form.workflowImageUrl ? [form.workflowImageUrl] : []);
@@ -1377,9 +1448,10 @@
                                 inputPayload.reference_image_urls = referenceImages;
                                 reqInputImg = referenceImages[0];
                             }
-                            if (filesToUpload.seeVid) {
+                            if (videoEdit && filesToUpload.seeVid) {
                                 inputPayload.reference_video_urls = [await uploadSingleToOss(filesToUpload.seeVid, pd)];
                                 reqColorImg = inputPayload.reference_video_urls[0];
+                                inputPayload.video_duration_seconds = form.seeVidDuration;
                             }
                             if (filesToUpload.seeAudioRef) {
                                 inputPayload.reference_audio_urls = [await uploadSingleToOss(filesToUpload.seeAudioRef, pd)];
@@ -1463,8 +1535,8 @@
 
             return {
                 form, filesToUpload, drag, isMultipleUpload, loading, uploadProgressMsg,
-                isMiniMaxH3, isSeedanceStandard, isSeedance25, seedanceMaxDuration, seedance25ImageAccept, seedance25VideoAccept, seedance25AudioAccept,
-                h3ImageInputCount, estimatedCostLabel, handleSeedanceVideoLoaded, handleSeedanceAudioLoaded, handleH3ReferenceVideoLoaded,
+                isMiniMaxH3, isSeedanceStandard, isSeedance25, isSeedance25VideoEdit, seedanceMaxDuration, seedance25ImageAccept, seedance25VideoAccept, seedance25AudioAccept,
+                h3ImageInputCount, estimatedCostLabel, seedance25VideoEditBillingDetail, handleSeedanceVideoLoaded, handleSeedanceAudioLoaded, handleH3ReferenceVideoLoaded,
                 mention, mentionItems, mentionEmptyText, mentionTitle, handlePromptInput, insertMention,
                 totalMultiShotDuration, getMaxDurationForShot, triggerUpload, handleFileSelected, handleDrop, removeSeeImage, removeH3ReferenceImage, submit,
                 addKlingShot, removeKlingShot, addKlingElement, removeKlingElement, removeKlingElementImage,

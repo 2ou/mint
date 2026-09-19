@@ -25,6 +25,10 @@ public class ImageTask {
     @Column(length = 64)
     private String model;
 
+    /** Logical model selected by the user; model stores the final KIE endpoint id. */
+    @Column(length = 64)
+    private String requestedModel;
+
     @Column(columnDefinition = "text")
     private String prompt;
 

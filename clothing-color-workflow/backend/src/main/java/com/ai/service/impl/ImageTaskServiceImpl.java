@@ -7,6 +7,7 @@ import com.ai.entity.ImageTask;
 import com.ai.repository.ImageTaskRepository;
 import com.ai.service.ImageTaskService;
 import com.ai.service.KieClientService;
+import com.ai.service.KieImageModels;
 import com.ai.service.OssService;
 import jakarta.persistence.criteria.Predicate;
 import lombok.extern.slf4j.Slf4j;
@@ -113,7 +114,11 @@ public class ImageTaskServiceImpl implements ImageTaskService {
         ImageTask task = new ImageTask();
         task.setSpu(spu); task.setPrompt(prompt);
         task.setResolution(resolution);
-        task.setModel(model);
+        String requestedModel = KieImageModels.requireSelectable(model, KieImageModels.NANO_BANANA_PRO);
+        String actualModel = KieImageModels.resolveActualModel(
+                requestedModel, KieImageModels.referenceCount(inputUrl, colorUrl));
+        task.setRequestedModel(requestedModel);
+        task.setModel(actualModel);
         task.setInputImageUrl(inputUrl); task.setColorImageUrl(colorUrl); task.setStatus("CREATED");
         task.setTaskType(taskType != null ? taskType : 1);
         task.setOperator(operator);
@@ -122,7 +127,8 @@ public class ImageTaskServiceImpl implements ImageTaskService {
 
         try {
             // 🔴 假设 kieClientService.createTask 方法签名也修改为接收 aspectRatio
-            String taskId = kieClientService.createTask(spu, prompt, resolution, aspectRatio, model, inputUrl, colorUrl, appProperties.getKie().getCallbackUrl());
+            String taskId = kieClientService.createTask(spu, prompt, resolution, aspectRatio, requestedModel,
+                    inputUrl, colorUrl, appProperties.getKie().getCallbackUrl());
             task.setTaskId(taskId); task.setStatus("PROCESSING");
         } catch (Exception e) {
             log.error("创建 KIE 任务失败", e);
@@ -403,4 +409,3 @@ public class ImageTaskServiceImpl implements ImageTaskService {
         }
     }
 }
-

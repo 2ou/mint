@@ -14,6 +14,8 @@ import com.ai.repository.AplusProjectRepository;
 import com.ai.service.AplusImageService;
 import com.ai.service.AplusQualityService;
 import com.ai.service.KieClientService;
+import com.ai.service.KieImageModels;
+import com.ai.service.ModelPricingService;
 import com.ai.service.OssService;
 import com.ai.config.AppProperties;
 import jakarta.annotation.Resource;
@@ -50,6 +52,7 @@ public class AplusImageServiceImpl implements AplusImageService {
     private final AplusQualityService qualityService;
     private final AppProperties appProperties;
     private final ObjectMapper objectMapper;
+    private final ModelPricingService modelPricingService;
 
     @Resource(name = "aplusAsyncExecutor")
     private Executor aplusAsyncExecutor;
@@ -156,15 +159,21 @@ public class AplusImageServiceImpl implements AplusImageService {
         try {
             String prompt = buildModulePrompt(task, project);
             String resolution = effectiveResolution(task);
-            String imageModel = effectiveModel(task);
+            String requestedModel = effectiveModel(task);
             List<AplusReferenceImage> references = referenceImages(task, project);
+            int referenceCount = (int) references.stream()
+                    .map(AplusReferenceImage::getUrl)
+                    .filter(url -> url != null && !url.isBlank())
+                    .distinct()
+                    .count();
+            String actualModel = KieImageModels.resolveActualModel(requestedModel, referenceCount);
             String callbackUrl = appProperties.getKie().getCallbackUrl();
             String kieTaskId = kieClientService.createTask(
                     project.getSpu(),
                     prompt,
                     resolution,
                     effectiveAspectRatio(task),
-                    imageModel,
+                    requestedModel,
                     firstReferenceUrl(references, AplusReferenceImage.PRODUCT_TRUTH),
                     supportingReferenceUrls(references),
                     callbackUrl
@@ -173,8 +182,13 @@ public class AplusImageServiceImpl implements AplusImageService {
             task.setPrompt(prompt);
             task.setKieTaskId(kieTaskId);
             task.setStatus(AplusTaskStatus.PROCESSING.name());
-            task.setModel(imageModel);
+            task.setRequestedModel(KieImageModels.logicalModel(requestedModel));
+            task.setModel(actualModel);
             task.setResolution(resolution);
+            task.setCost(modelPricingService.quote("image", Map.of(
+                    "model", actualModel,
+                    "resolution", resolution
+            ), 1).amountCny());
             task.setErrorMessage(null);
             task.setQualityStatus("NOT_EVALUATED");
             task.setQualityReportJson(null);
@@ -303,6 +317,7 @@ public class AplusImageServiceImpl implements AplusImageService {
         version.setAspectRatio(task.getAspectRatio());
         version.setResolution(task.getResolution());
         version.setModel(task.getModel());
+        version.setRequestedModel(task.getRequestedModel());
         version.setStatus(task.getStatus());
         version.setResultTempUrl(task.getResultTempUrl());
         version.setResultOssUrl(task.getResultOssUrl());
@@ -549,8 +564,11 @@ public class AplusImageServiceImpl implements AplusImageService {
     }
 
     private String effectiveModel(AplusImageTask task) {
+        if (task.getRequestedModel() != null && !task.getRequestedModel().isBlank()) {
+            return task.getRequestedModel().trim();
+        }
         if (task.getModel() != null && !task.getModel().isBlank()) {
-            return task.getModel().trim();
+            return KieImageModels.logicalModel(task.getModel());
         }
         return defaultModel;
     }

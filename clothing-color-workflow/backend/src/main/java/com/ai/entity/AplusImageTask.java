@@ -72,6 +72,10 @@ public class AplusImageTask {
     @Column(length = 64)
     private String model;
 
+    /** Logical model selected in the A+ project; model stores the final KIE endpoint id. */
+    @Column(length = 64)
+    private String requestedModel;
+
     /** 任务状态：PENDING / PROCESSING / SUCCESS / FAILED */
     @Column(nullable = false, length = 20)
     private String status;

@@ -5,6 +5,7 @@ import com.ai.dto.KieCreateTaskRequest;
 import com.ai.dto.KieTaskResult;
 import com.ai.exception.BusinessException;
 import com.ai.service.KieClientService;
+import com.ai.service.KieImageModels;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -16,6 +17,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Map;
 import java.util.List;
 import java.util.Set;
@@ -63,10 +65,10 @@ public class KieClientServiceImpl implements KieClientService {
      * 创建 KIE 任务
      */
     @Override
-    public String createTask(String spu, String prompt, String resolution, String aspectRatio, String model, String inputUrl, String colorUrl, String callBackUrl) {
+    public String createTask(String spu, String prompt, String resolution, String aspectRatio, String model,
+                             String inputUrl, String colorUrl, String background, String callBackUrl) {
         String url = appProperties.getKie().getBaseUrl() + "/jobs/createTask";
         ObjectNode rootNode = objectMapper.createObjectNode();
-        rootNode.put("model", model);
         if (callBackUrl != null && !callBackUrl.isBlank()) {
             rootNode.put("callBackUrl", callBackUrl.trim());
         }
@@ -76,16 +78,32 @@ public class KieClientServiceImpl implements KieClientService {
         ArrayNode imageArray = objectMapper.createArrayNode();
         appendImageUrls(imageArray, inputUrl);
         appendImageUrls(imageArray, colorUrl);
-        if ("gpt-image-2-image-to-image".equals(model)) {
+        String requestedModel = model == null ? "" : model.trim();
+        String actualModel = KieImageModels.resolveActualModel(requestedModel, imageArray.size());
+        rootNode.put("model", actualModel);
+
+        String normalizedAspectRatio = normalizeAspectRatio(aspectRatio);
+        String normalizedResolution = resolution != null && !resolution.trim().isEmpty() ? resolution.trim() : "2K";
+        if (KieImageModels.isImage25(requestedModel)) {
+            List<String> imageUrls = new ArrayList<>();
+            imageArray.forEach(node -> imageUrls.add(node.asText()));
+            KieImageModels.validateImage25ReferenceFormats(imageUrls);
+            KieImageModels.Image25Parameters params = KieImageModels.validateImage25(
+                    requestedModel, imageArray.size(), resolution, aspectRatio, background);
+            actualModel = params.actualModel();
+            rootNode.put("model", actualModel);
+            normalizedAspectRatio = params.aspectRatio();
+            normalizedResolution = params.resolution();
+            if (imageArray.size() > 0) inputNode.set("input_urls", imageArray);
+            inputNode.put("background", params.background());
+        } else if (KieImageModels.usesInputUrls(actualModel)) {
             inputNode.set("input_urls", imageArray);
         } else {
             inputNode.set("image_input", imageArray);
         }
-        String normalizedAspectRatio = normalizeAspectRatio(aspectRatio);
-        String normalizedResolution = resolution != null && !resolution.trim().isEmpty() ? resolution.trim() : "2K";
         inputNode.put("aspect_ratio", normalizedAspectRatio);
         inputNode.put("resolution", normalizedResolution);
-        inputNode.put("output_format", "png");
+        if (!KieImageModels.isImage25(requestedModel)) inputNode.put("output_format", "png");
         rootNode.set("input", inputNode);
 
         final String jsonBody;
@@ -111,7 +129,7 @@ public class KieClientServiceImpl implements KieClientService {
                     lastError = new RuntimeException("KIE 图片任务创建失败：HTTP " + response.code() + "，" + responseBody);
                     if (response.code() < 500 || attempt == 3) throw lastError;
                     log.warn("KIE 图片任务创建返回 HTTP {}，准备第 {}/3 次重试。model={}, resolution={}, aspectRatio={}, refs={}",
-                            response.code(), attempt + 1, model, normalizedResolution, normalizedAspectRatio, imageArray.size());
+                            response.code(), attempt + 1, actualModel, normalizedResolution, normalizedAspectRatio, imageArray.size());
                 } else {
                     JsonNode root = objectMapper.readTree(responseBody);
                     int code = root.has("code") ? root.path("code").asInt(200) : 200;
@@ -125,7 +143,7 @@ public class KieClientServiceImpl implements KieClientService {
                     lastError = new RuntimeException("KIE 图片任务未受理（业务码 " + code + "）：" + detail);
                     if (code < 500 || attempt == 3) throw lastError;
                     log.warn("KIE 图片任务返回业务码 {}，准备第 {}/3 次重试。model={}, resolution={}, aspectRatio={}, refs={}, response={}",
-                            code, attempt + 1, model, normalizedResolution, normalizedAspectRatio, imageArray.size(), responseBody);
+                            code, attempt + 1, actualModel, normalizedResolution, normalizedAspectRatio, imageArray.size(), responseBody);
                 }
             } catch (IOException e) {
                 lastError = new RuntimeException("KIE 图片任务网络请求异常: " + e.getMessage(), e);

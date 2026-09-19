@@ -18,6 +18,7 @@ const apiKindToggle = document.getElementById('apiKindToggle');
 const inputThumbsRow = document.getElementById('inputThumbsRow');
 const SMART_UPLOAD_MAX = 20;
 const SMART_REFERENCE_IMAGE_MAX = 20;
+const GPT_IMAGE_25_REFERENCE_MAX = 16;
 const inputPromptPreview = document.getElementById('inputPromptPreview');
 const minimap = document.getElementById('minimap');
 const minimapContent = document.getElementById('minimapContent');
@@ -316,8 +317,8 @@ let panoramaState = {
 };
 window.__smartCanvasPanoramaState = panoramaState;
 let viewport = {x:0, y:0, scale:1};
-const SMART_VIRTUALIZE_NODE_THRESHOLD = 80;
-const SMART_VIRTUAL_OVERSCAN = 720;
+const SMART_VIRTUALIZE_NODE_THRESHOLD = 20;
+const SMART_VIRTUAL_OVERSCAN = 480;
 let smartViewportRenderQueued = false;
 let smartMountedNodeIds = new Set();
 let settings = {
@@ -327,6 +328,7 @@ let settings = {
     model:'',
     ratio:'square',
     resolution:'4k',
+    imageBackground:'auto',
     customRatio:'',
     customRatioWidth:'',
     customRatioHeight:'',
@@ -346,6 +348,8 @@ let settings = {
     videoGenerateAudio:false,
     videoSeedance25Mode:'text',
     videoReturnLastFrame:true,
+    videoReferenceDuration:0,
+    videoReferenceSourceUrl:'',
     videoMultimodal:true,
     _videoMultimodalUserSet:false,
     videoUseFrameRoles:false,
@@ -485,8 +489,10 @@ function smartMediaPreviewUrl(itemOrUrl, size=512){
     const displayItem = typeof itemOrUrl === 'object' && itemOrUrl ? {...itemOrUrl, url:raw} : raw;
     const displayUrl = displayMediaUrl(displayItem);
     if(!raw || raw.startsWith('data:') || raw.startsWith('blob:')) return displayUrl;
-    if(!raw.startsWith('/output/') && !raw.startsWith('/assets/') && !raw.startsWith('/ai-result/')) return displayUrl;
-    if(!/\.(png|jpe?g|webp|gif|bmp|avif|tiff?|mp4|webm|mov|m4v|avi|mkv)(\?|#|$)/i.test(raw)) return displayUrl;
+    if(/\.(mp4|webm|mov|m4v|avi|mkv)(\?|#|$)/i.test(raw)) return displayUrl;
+    const remote = /^https?:\/\//i.test(raw);
+    if(!remote && !raw.startsWith('/output/') && !raw.startsWith('/assets/') && !raw.startsWith('/ai-result/')) return displayUrl;
+    if(!remote && !/\.(png|jpe?g|webp|gif|bmp|avif|tiff?|mp4|webm|mov|m4v|avi|mkv)(\?|#|$)/i.test(raw)) return displayUrl;
     const width = Math.max(64, Math.min(2048, Math.round(Number(size) || 512)));
     return `/api/media-preview?w=${width}&url=${encodeURIComponent(raw)}`;
 }
@@ -576,7 +582,8 @@ function bindSmartPreviewImageFallbacks(root=document){
                 img.replaceWith(tpl.content.firstElementChild);
                 return;
             }
-            if(original && img.getAttribute('src') !== original) img.src = original;
+            const fallback = displayMediaUrl({url:original});
+            if(fallback && img.getAttribute('src') !== fallback) img.src = fallback;
         });
     });
 }
@@ -624,7 +631,7 @@ function smartNodeElementsForHighResSync(root){
     return smartNodeElementsByIds(ids);
 }
 function smartViewportWantsHighRes(){
-    return Number(viewport?.scale || 1) >= SMART_HIGH_RES_ZOOM_THRESHOLD;
+    return selectedNodeIds().length === 1 && Number(viewport?.scale || 1) >= SMART_HIGH_RES_ZOOM_THRESHOLD;
 }
 function smartImageNearViewport(img){
     if(!img?.isConnected || !shell) return false;
@@ -710,9 +717,13 @@ function normalizeSmartVideoModeSettings(target, preferMultimodal=false){
 function isApiLikeEngine(engine){
     return String(engine || '').toLowerCase() === 'api';
 }
-async function confirmKieSmartSubmission(type){
+async function confirmKieSmartSubmission(type, quoteDetails={}){
     if(typeof window.confirmKieSubmission !== 'function') return true;
-    return window.confirmKieSubmission({type});
+    return window.confirmKieSubmission({
+        ...quoteDetails,
+        type,
+        actualCost:typeof currentCanvasCostTotal === 'function' ? currentCanvasCostTotal() : 0
+    });
 }
 function forceKieSmartSettings(target){
     if(!target || typeof target !== 'object') return target;
@@ -738,6 +749,7 @@ function smartLoopRoundSettings(runSettings, ctx=smartLoopContext){
     return next;
 }
 function isGptImageAutoSizeModel(model){
+    if(isKieImage25Model(model)) return false;
     const raw = String(model || '').trim().toLowerCase();
     const normalized = raw.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
     const compact = raw.replace(/[^a-z0-9]+/g, '');
@@ -749,7 +761,21 @@ function isGptImageAutoSizeModel(model){
         || compact.startsWith('gptimage2')
         || compact.endsWith('gptimage2');
 }
+function isKieImage25Model(model){
+    const value = String(model || '').trim().toLowerCase();
+    return value === 'gpt-image-2-5-sunburst'
+        || value.startsWith('gpt-image-2-5-sunburst-');
+}
+function smartImageModelLabel(model){
+    const value = String(model || '').trim();
+    if(value === 'nano-banana-pro') return 'Nano Banana Pro';
+    if(value === 'nano-banana-2') return 'Nano Banana 2';
+    if(value === 'gpt-image-2-image-to-image' || value === 'gpt-image-2') return 'GPT Image 2';
+    if(value === 'gpt-image-2-5-sunburst') return 'GPT Image 2.5';
+    return value;
+}
 function defaultSmartApiResolution(model){
+    if(isKieImage25Model(model)) return '2k';
     return isGptImageAutoSizeModel(model) ? '4k' : '1k';
 }
 function mediaItemForStorage(item){
@@ -2800,6 +2826,10 @@ const KIE_SEEDANCE_2_MODEL = 'bytedance/seedance-2';
 const KIE_MINIMAX_H3_TEXT_MODEL = 'minimax-h3/text-to-video';
 const KIE_MINIMAX_H3_IMAGE_MODEL = 'minimax-h3/image-to-video';
 const KIE_MINIMAX_H3_REFERENCE_MODEL = 'minimax-h3/reference-to-video';
+const MINIMAX_H3_RESOLUTIONS = Object.freeze([
+    {value:'768p', label:'768P', credits:8, cny:'¥0.256 / 秒', description:'快速预览与常规出片'},
+    {value:'2k', label:'2K', credits:13, cny:'¥0.416 / 秒', description:'细节交付与最终成片'}
+]);
 const DEFAULT_VIDEO_MODELS = [
     KIE_SEEDANCE_2_5_MODEL,
     KIE_SEEDANCE_2_MODEL,
@@ -2813,10 +2843,112 @@ function isKieSeedanceVideoModel(model){
 function isSeedance25VideoModel(model){
     return model === KIE_SEEDANCE_2_5_MODEL;
 }
+const SEEDANCE25_MODE_META = Object.freeze({
+    text: {label:'文生视频', helper:'只发送提示词；已连接素材会保留，并清晰标记为本次不参与。'},
+    first_frame: {label:'首帧图', helper:'仅使用“首帧”槽位中的一张图片；不能混用其他图片、视频或音频。'},
+    first_last_frame: {label:'首尾帧', helper:'仅使用固定的首帧和尾帧槽位；不能混用其他图片、视频或音频。'},
+    multimodal: {label:'图片 / 音频参考', helper:'可发送图片和音频参考；视频素材不会参与本次生成。'},
+    video_edit: {label:'视频编辑', helper:'使用一个编辑源视频，可附加图片和音频；输出比例和时长自动跟随源视频。'}
+});
+function seedance25ModeMeta(mode){
+    return SEEDANCE25_MODE_META[mode] || SEEDANCE25_MODE_META.text;
+}
+function isSeedance25VideoEditMode(mode){
+    return mode === 'video_edit';
+}
+function seedance25SourceVideoDuration(videoRefs, fallback=0){
+    return Math.round(Number(videoRefs?.[0]?.durationSeconds) || Number(fallback) || 0);
+}
+const smartVideoDurationReads = new Map();
+function readSmartVideoUrlDurationSeconds(rawUrl){
+    const url = String(rawUrl || '').trim();
+    if(!url || url.startsWith('asset://')) return Promise.resolve(0);
+    if(smartVideoDurationReads.has(url)) return smartVideoDurationReads.get(url);
+    const read = new Promise(resolve => {
+        const video = document.createElement('video');
+        let settled = false;
+        const finish = seconds => {
+            if(settled) return;
+            settled = true;
+            clearTimeout(timeout);
+            video.removeAttribute('src');
+            video.load?.();
+            resolve(Math.max(0, Math.ceil(Number(seconds) || 0)));
+        };
+        const timeout = window.setTimeout(() => finish(0), 12_000);
+        video.preload = 'metadata';
+        video.muted = true;
+        video.playsInline = true;
+        video.onloadedmetadata = () => finish(video.duration);
+        video.onerror = () => finish(0);
+        video.src = url;
+    }).finally(() => smartVideoDurationReads.delete(url));
+    smartVideoDurationReads.set(url, read);
+    return read;
+}
+function smartSeedance25SourceDuration(settingsSource, sourceRef, sourceUrl){
+    const cached = settingsSource?.videoReferenceSourceUrl === sourceUrl ? settingsSource.videoReferenceDuration : 0;
+    return seedance25SourceVideoDuration([sourceRef], cached);
+}
+function cacheSmartSeedance25SourceDuration(settingsSource, sourceRef, sourceUrl, seconds){
+    const value = Math.max(0, Math.round(Number(seconds) || 0));
+    if(!settingsSource || !sourceUrl || value <= 0) return 0;
+    settingsSource.videoReferenceSourceUrl = sourceUrl;
+    settingsSource.videoReferenceDuration = value;
+    if(sourceRef && typeof sourceRef === 'object') sourceRef.durationSeconds = value;
+    return value;
+}
+function queueSmartSeedance25SourceDuration(settingsSource, sourceRef, sourceUrl){
+    if(!settingsSource || !sourceUrl || smartSeedance25SourceDuration(settingsSource, sourceRef, sourceUrl) > 0) return;
+    if(settingsSource._seedance25DurationReading === sourceUrl) return;
+    settingsSource._seedance25DurationReading = sourceUrl;
+    readSmartVideoUrlDurationSeconds(sourceUrl).then(seconds => {
+        if(seconds) {
+            cacheSmartSeedance25SourceDuration(settingsSource, sourceRef, sourceUrl, seconds);
+            if(settingsSource === settings) {
+                persistActiveSmartSettings();
+                scheduleSave();
+                render();
+            }
+        }
+    }).finally(() => {
+        if(settingsSource._seedance25DurationReading === sourceUrl) delete settingsSource._seedance25DurationReading;
+    });
+}
+async function resolveSmartSeedance25SourceDuration(settingsSource, sourceRef, sourceUrl){
+    const cached = smartSeedance25SourceDuration(settingsSource, sourceRef, sourceUrl);
+    if(cached > 0) return cached;
+    const seconds = await readSmartVideoUrlDurationSeconds(sourceUrl);
+    return cacheSmartSeedance25SourceDuration(settingsSource, sourceRef, sourceUrl, seconds);
+}
+function seedance25ReferenceState(mode, kind, ordinal){
+    if(mode === 'text') return {participates:false, label:'本次不参与'};
+    if(mode === 'first_frame') return kind === 'image' && ordinal === 1
+        ? {participates:true, label:'首帧'} : {participates:false, label:'本次不参与'};
+    if(mode === 'first_last_frame') {
+        if(kind === 'image' && ordinal === 1) return {participates:true, label:'首帧'};
+        if(kind === 'image' && ordinal === 2) return {participates:true, label:'尾帧'};
+        return {participates:false, label:'本次不参与'};
+    }
+    if(mode === 'multimodal') return kind === 'video'
+        ? {participates:false, label:'本次不参与'} : {participates:true, label:'参考素材'};
+    if(mode === 'video_edit') return kind === 'video'
+        ? (ordinal === 1 ? {participates:true, label:'编辑源视频'} : {participates:false, label:'本次不参与'})
+        : {participates:true, label:'辅助参考'};
+    return {participates:false, label:'本次不参与'};
+}
 function isMiniMaxH3VideoModel(model){
     return model === KIE_MINIMAX_H3_TEXT_MODEL
         || model === KIE_MINIMAX_H3_IMAGE_MODEL
         || model === KIE_MINIMAX_H3_REFERENCE_MODEL;
+}
+function miniMaxH3ResolutionInfo(value){
+    return MINIMAX_H3_RESOLUTIONS.find(item => item.value === String(value || '').toLowerCase()) || MINIMAX_H3_RESOLUTIONS[0];
+}
+function miniMaxH3ModeDescription(model){
+    if(model === KIE_MINIMAX_H3_TEXT_MODEL) return '文生视频';
+    if(model === KIE_MINIMAX_H3_IMAGE_MODEL) return '图生视频（首帧必填）';
+    return '多模态参考（图片 / 视频 / 音频）';
 }
 function videoModelDisplayName(model){
     if(model === KIE_SEEDANCE_2_5_MODEL) return 'Seedance 2.5';
@@ -2834,7 +2966,7 @@ function videoModelMaxDuration(model){
 }
 function videoModelMinDuration(model){
     if(model === KIE_SEEDANCE_2_5_MODEL) return 4;
-    return isMiniMaxH3VideoModel(model) ? 5 : 1;
+    return isMiniMaxH3VideoModel(model) ? 4 : 1;
 }
 function normalizeKieSeedanceVideoSettings(target=settings){
     if(!target || (!isKieSeedanceVideoModel(target.videoModel) && !isMiniMaxH3VideoModel(target.videoModel))) return target;
@@ -2848,11 +2980,11 @@ function normalizeKieSeedanceVideoSettings(target=settings){
         if(!ratios.includes(target.videoAspect)) target.videoAspect = '16:9';
         if(isSeedance25VideoModel(target.videoModel)){
             const legacyMode = target.videoMultimodal ? 'multimodal' : target.videoUseFrameRoles ? 'first_last_frame' : 'text';
-            if(!['text','first_frame','first_last_frame','multimodal'].includes(target.videoSeedance25Mode)) target.videoSeedance25Mode = legacyMode;
+            if(!Object.hasOwn(SEEDANCE25_MODE_META, target.videoSeedance25Mode)) target.videoSeedance25Mode = legacyMode;
             if(typeof target.videoReturnLastFrame !== 'boolean') target.videoReturnLastFrame = true;
         }
     } else {
-        target.videoResolution = '';
+        if(!MINIMAX_H3_RESOLUTIONS.some(item => item.value === String(target.videoResolution || '').toLowerCase())) target.videoResolution = '768p';
         const allowed = target.videoModel === KIE_MINIMAX_H3_REFERENCE_MODEL
             ? ['16:9','9:16','1:1','adaptive']
             : ['16:9','9:16','1:1'];
@@ -2949,23 +3081,30 @@ function renderVideoAspectControl(){
 }
 function renderSeedance25ModeControl(){
     const mode = settings.videoSeedance25Mode || 'text';
-    const labels = {text:'文生视频', first_frame:'首帧图', first_last_frame:'首尾帧', multimodal:'多模态参考'};
-    const helper = {
-        text:'只发送提示词，已连接素材会保留但不会随本次请求发送。',
-        first_frame:'只取第一张图片作为首帧，不能混用其他图片、视频或音频。',
-        first_last_frame:'只取前两张图片作为首帧和尾帧，不能混用多模态素材。',
-        multimodal:'发送所有图片、视频和音频参考，不能混用首帧或尾帧。'
-    };
+    const meta = seedance25ModeMeta(mode);
     return `<div class="smart-control seedance25-mode-control">
-        <button class="smart-pill" type="button"><i data-lucide="sliders-horizontal"></i><span>${escapeHtml(labels[mode] || labels.text)}</span><i data-lucide="chevron-down" class="pill-caret"></i></button>
+        <button class="smart-pill" type="button" aria-label="Seedance 2.5 输入模式：${escapeHtml(meta.label)}"><i data-lucide="sliders-horizontal"></i><span>${escapeHtml(meta.label)}</span><i data-lucide="chevron-down" class="pill-caret"></i></button>
         <div class="smart-popover compact-popover">
             <div class="smart-popover-title">Seedance 2.5 输入模式</div>
-            <div class="model-list">${Object.entries(labels).map(([value,label]) => `<button type="button" class="direct-option ${mode === value ? 'active' : ''}" data-smart-param="videoSeedance25Mode" data-smart-value="${value}"><span>${escapeHtml(label)}</span></button>`).join('')}</div>
-            <div class="muted-note">${escapeHtml(helper[mode] || helper.text)}</div>
+            <div class="model-list">${Object.entries(SEEDANCE25_MODE_META).map(([value,entry]) => `<button type="button" class="direct-option ${mode === value ? 'active' : ''}" data-smart-param="videoSeedance25Mode" data-smart-value="${value}" aria-pressed="${mode === value}"><span>${escapeHtml(entry.label)}</span></button>`).join('')}</div>
+            <div class="muted-note">${escapeHtml(meta.helper)}</div>
         </div>
     </div>`;
 }
+function renderSeedance25VideoEditLock(){
+    const manual = manualSmartVideoLink(settings);
+    const refs = videoRefsOnly(currentSmartMediaRefs(activeSettingsSubject()));
+    const source = manual || refs[0] || null;
+    const sourceUrl = manual?.url || source?.url || '';
+    const duration = smartSeedance25SourceDuration(settings, source, sourceUrl);
+    if(sourceUrl) queueSmartSeedance25SourceDuration(settings, source, sourceUrl);
+    return `<div class="smart-control seedance25-edit-lock-control" role="status" aria-live="polite">
+        <span><b>比例</b> 跟随源视频</span><span><b>时长</b> 跟随源视频</span>
+        <span><b>源视频时长</b> ${duration ? `${duration} 秒（自动读取）` : (sourceUrl ? '自动读取中…' : '等待连接源视频')}</span>
+    </div>`;
+}
 function renderVideoResolutionControl(){
+    if(isMiniMaxH3VideoModel(settings.videoModel)) return renderMiniMaxH3ProfileControl();
     const options = isKieSeedanceVideoModel(settings.videoModel)
         ? [['480p','480P'], ['720p','720P'], ['1080p','1080P']]
         : [['', tr('smart.videoResAuto')], ['480p','480P'], ['720p','720P'], ['1080p','1080P']];
@@ -2978,6 +3117,20 @@ function renderVideoResolutionControl(){
             <div class="model-list">
                 ${options.map(([v,l]) => `<button type="button" class="direct-option ${v === value ? 'active' : ''}" data-smart-param="videoResolution" data-smart-value="${escapeHtml(v)}"><span>${escapeHtml(l)}</span></button>`).join('')}
             </div>
+        </div>
+    </div>`;
+}
+function renderMiniMaxH3ProfileControl(){
+    const current = miniMaxH3ResolutionInfo(settings.videoResolution);
+    return `<div class="smart-control h3-profile-control">
+        <button class="smart-pill h3-profile-pill" type="button" title="MiniMax H3：${escapeHtml(miniMaxH3ModeDescription(settings.videoModel))}；4–15 秒；当前 ${current.label}，${current.credits} 积分/秒"><i data-lucide="sparkles"></i><span class="sub">H3 · ${current.label}</span><b>${current.credits} 积分/秒</b></button>
+        <div class="smart-popover h3-profile-popover">
+            <div class="smart-popover-title">MiniMax H3 <span>${escapeHtml(miniMaxH3ModeDescription(settings.videoModel))}</span></div>
+            <p class="h3-popover-summary">4–15 秒 · 图片输入 +4 积分/张（¥0.128）</p>
+            <div class="h3-popover-options" role="group" aria-label="MiniMax H3 输出分辨率">
+                ${MINIMAX_H3_RESOLUTIONS.map(item => `<button type="button" class="h3-popover-option ${item.value === current.value ? 'active' : ''}" data-smart-param="videoResolution" data-smart-value="${item.value}" aria-pressed="${item.value === current.value}"><span>${item.label}</span><b>${item.credits} 积分/秒</b><small>${item.cny} · ${item.description}</small></button>`).join('')}
+            </div>
+            <p class="h3-popover-note">视频参考按当前清晰度计价；图生视频的输出比例跟随首帧。</p>
         </div>
     </div>`;
 }
@@ -3042,6 +3195,8 @@ function normalizeApiSizeSettings(prefix=''){
     const ratioKey = prefix ? `${prefix}Ratio` : 'ratio';
     const resKey = prefix ? `${prefix}Resolution` : 'resolution';
     const allowAuto = !prefix && settings.engine === 'api' && settings.apiKind !== 'video' && isGptImageAutoSizeModel(settings.model);
+    if(!prefix && isKieImage25Model(settings.model) && ['auto','custom'].includes(settings[resKey])) settings[resKey] = '2k';
+    if(!prefix && isKieImage25Model(settings.model) && settings[ratioKey] === 'custom') settings[ratioKey] = 'square';
     if(!settings[resKey]) settings[resKey] = allowAuto ? defaultSmartApiResolution(settings.model) : '1k';
     if(!allowAuto && settings[resKey] === 'auto') settings[resKey] = '1k';
     if(settings[resKey] === 'auto' && !settings[ratioKey]) settings[ratioKey] = 'square';
@@ -3178,6 +3333,7 @@ function renderApiParams(){
         ${renderProviderControl(providers)}
         ${renderModelControl(models)}
         ${renderSizePickerControl('', true)}
+        ${isKieImage25Model(settings.model) ? renderImage25BackgroundControl() : ''}
         ${renderCountVisualControl()}
     `;
 }
@@ -3189,14 +3345,14 @@ function renderApiVideoParams(){
     normalizeKieSeedanceVideoSettings(settings);
     const isMiniMaxH3 = isMiniMaxH3VideoModel(settings.videoModel);
     const isSeedance25 = isSeedance25VideoModel(settings.videoModel);
+    const isSeedance25VideoEdit = isSeedance25 && isSeedance25VideoEditMode(settings.videoSeedance25Mode);
     const showAspectControl = settings.videoModel !== KIE_MINIMAX_H3_IMAGE_MODEL;
     dynamicParams.innerHTML = `
         ${renderVideoProviderControl(providers)}
         ${renderVideoModelControl(models)}
-        ${isMiniMaxH3 ? '' : renderVideoResolutionControl()}
-        ${showAspectControl ? renderVideoAspectControl() : ''}
-        ${renderVideoDurationControl()}
+        ${renderVideoResolutionControl()}
         ${isSeedance25 ? renderSeedance25ModeControl() : ''}
+        ${isSeedance25VideoEdit ? renderSeedance25VideoEditLock() : `${showAspectControl ? renderVideoAspectControl() : ''}${renderVideoDurationControl()}`}
         ${isSeedance25 ? renderVideoToggleControl('videoGenerateAudio', tr('smart.videoGenerateAudio')) : isMiniMaxH3 ? '' : renderVideoToggleControl('videoEnhancePrompt', tr('smart.videoEnhancePrompt'))}
         ${isSeedance25 ? renderVideoToggleControl('videoReturnLastFrame', '返回尾帧') : isMiniMaxH3 ? '' : renderVideoToggleControl('videoEnableUpsample', tr('smart.videoUpsample'))}
         ${isSeedance25 || isMiniMaxH3 ? '' : renderVideoToggleControl('videoGenerateAudio', tr('smart.videoGenerateAudio'))}
@@ -3511,13 +3667,30 @@ function renderProviderControl(providers){
     </div>`;
 }
 function renderModelControl(models){
+    const groups = [
+        ['Google', models.filter(model => String(model).toLowerCase().includes('nano'))],
+        ['OpenAI', models.filter(model => String(model).toLowerCase().includes('gpt-image'))],
+        ['其他', models.filter(model => !String(model).toLowerCase().includes('nano') && !String(model).toLowerCase().includes('gpt-image'))]
+    ];
     return `<div class="smart-control model-control">
-        <button class="smart-pill" type="button"><i data-lucide="sparkles"></i><span class="sub">${escapeHtml(settings.model || tr('smart.model'))}</span></button>
+        <button class="smart-pill" type="button"><i data-lucide="sparkles"></i><span class="sub" title="${escapeHtml(smartImageModelLabel(settings.model))}">${escapeHtml(smartImageModelLabel(settings.model) || tr('smart.model'))}</span></button>
         <div class="smart-popover compact-popover">
             <div class="smart-popover-title">${escapeHtml(tr('smart.imageModel'))}</div>
             <div class="model-list">
-                ${models.map(m => `<button type="button" class="direct-option ${m === settings.model ? 'active' : ''}" data-smart-param="model" data-smart-value="${escapeHtml(m)}"><span>${escapeHtml(m)}</span></button>`).join('') || `<div class="muted-note">${escapeHtml(tr('smart.noImageModel'))}</div>`}
+                ${groups.filter(([,items]) => items.length).map(([label, items]) => `<div class="model-list-label">${escapeHtml(label)}<span class="count">${items.length}</span></div>${items.map(m => `<button type="button" class="direct-option ${m === settings.model ? 'active' : ''}" data-smart-param="model" data-smart-value="${escapeHtml(m)}" title="${escapeHtml(smartImageModelLabel(m))}"><span>${escapeHtml(smartImageModelLabel(m))}</span></button>`).join('')}`).join('') || `<div class="muted-note">${escapeHtml(tr('smart.noImageModel'))}</div>`}
             </div>
+        </div>
+    </div>`;
+}
+function renderImage25BackgroundControl(){
+    settings.imageBackground = ['auto','opaque','transparent'].includes(settings.imageBackground) ? settings.imageBackground : 'auto';
+    const labels = {auto:'背景自动', opaque:'不透明背景', transparent:'透明背景'};
+    return `<div class="smart-control image-background-control">
+        <button class="smart-pill" type="button"><i data-lucide="layers-2"></i><span class="sub">${escapeHtml(labels[settings.imageBackground])}</span></button>
+        <div class="smart-popover compact-popover">
+            <div class="smart-popover-title">GPT Image 2.5 输出背景</div>
+            <div class="model-list">${Object.entries(labels).map(([value,label]) => `<button type="button" class="direct-option ${value === settings.imageBackground ? 'active' : ''}" data-smart-param="imageBackground" data-smart-value="${value}"><span>${escapeHtml(label)}</span></button>`).join('')}</div>
+            <div class="muted-note">仅影响 Image 2.5，本参数会原样传给 KIE。</div>
         </div>
     </div>`;
 }
@@ -3622,9 +3795,11 @@ function renderSizePickerControl(prefix='', includeSource=false){
     const currentRatio = settings[ratioKey] || 'square';
     const currentCustomRatio = settings[customRatioKey] || (currentRatio === 'source' ? sourceImageRatioLabel(prefix) : '');
     const allowAuto = !prefix && settings.engine === 'api' && settings.apiKind !== 'video' && isGptImageAutoSizeModel(settings.model);
+    const image25 = !prefix && settings.engine === 'api' && isKieImage25Model(settings.model);
     const ratios = [
         ['square','1:1','正方形'], ['portrait','2:3','竖图'], ['landscape','3:2','横图'], ['portrait43','3:4','竖图'], ['landscape43','4:3','横图'],
         ['story','9:16','竖屏'], ['wide','16:9','宽屏'], ['ultrawide','21:9','超宽'], ['ultratall','9:21','超竖'],
+        ...(image25 ? [['wide2716','27:16','仅 1K'], ['tall1627','16:27','仅 1K'], ['nearSquare98','9:8','仅 1K'], ['nearSquare89','8:9','仅 1K']] : []),
         ...(includeSource ? [['source', sourceImageRatioLabel(prefix) || '原图', '适配输入']] : [])
     ];
     const wKey = prefix ? `${prefix}CustomWidth` : 'customWidth';
@@ -3637,13 +3812,13 @@ function renderSizePickerControl(prefix='', includeSource=false){
                 <div class="size-picker-scope">
                     <button type="button" class="${scope === 'auto' ? 'active' : ''}" data-size-scope="auto" data-size-prefix="${escapeHtml(prefix)}" ${allowAuto ? '' : 'disabled'}>自动</button>
                     <button type="button" class="${scope === 'preset' ? 'active' : ''}" data-size-scope="preset" data-size-prefix="${escapeHtml(prefix)}">系统参数</button>
-                    <button type="button" class="${scope === 'custom' ? 'active' : ''}" data-size-scope="custom" data-size-prefix="${escapeHtml(prefix)}">自定义</button>
+                    <button type="button" class="${scope === 'custom' ? 'active' : ''}" data-size-scope="custom" data-size-prefix="${escapeHtml(prefix)}" ${image25 ? 'disabled' : ''}>自定义</button>
                 </div>
             </div>
             ${scope === 'auto' ? `<div class="size-picker-pane size-picker-auto"><div class="size-picker-note"><strong>自动尺寸</strong><span>使用模型默认尺寸，或由支持自动尺寸的模型自行决定。</span></div></div>` : ''}
             ${scope === 'preset' ? `<div class="size-picker-pane size-picker-preset">
                 <div class="size-picker-list">
-                    ${ratios.map(([value, label, sub]) => `<button type="button" class="size-picker-option ${value === currentRatio ? 'active' : ''}" data-smart-param="${ratioKey}" data-smart-value="${escapeHtml(value)}"><span>${escapeHtml(label)}</span><small>${escapeHtml(sub)}</small></button>`).join('')}
+                    ${ratios.map(([value, label, sub]) => { const disabled = image25 && (value === 'ultratall' || (['wide2716','tall1627','nearSquare98','nearSquare89'].includes(value) && currentRes !== '1k')); return `<button type="button" class="size-picker-option ${value === currentRatio ? 'active' : ''}" data-smart-param="${ratioKey}" data-smart-value="${escapeHtml(value)}" ${disabled ? 'disabled' : ''}><span>${escapeHtml(label)}</span><small>${escapeHtml(sub)}</small></button>`; }).join('')}
                 </div>
                 <div class="size-picker-list">
                     ${options.filter(v => v !== 'auto').map(value => `<button type="button" class="size-picker-option ${value === currentRes ? 'active' : ''}" data-smart-param="${resKey}" data-smart-value="${value}"><span>${value.toUpperCase()}</span><small>${escapeHtml(apiImageSize(currentRatio, value, currentCustomRatio, '') || '')}</small></button>`).join('')}
@@ -4019,7 +4194,7 @@ function applyManualVideoUrlToSmartRef(ref, manualUrl){
     const sourceUrl = mediaRefSourceUrl(ref) || manualUrl;
     settings.videoTempShLinks = [
         ...(settings.videoTempShLinks || []).filter(item => item?.source !== sourceUrl),
-        {source:sourceUrl, url:manualUrl, manual:true}
+        {source:sourceUrl, url:manualUrl, manual:true, durationSeconds:0}
     ];
 }
 async function setCurrentSmartManualVideoUrl(){
@@ -4059,6 +4234,8 @@ async function setCurrentSmartManualVideoUrl(){
         const target = targets[index] || targets[targets.length - 1] || {url};
         applyManualVideoUrlToSmartRef(target, url);
     });
+    const source = manualSmartVideoLink(settings);
+    if(source?.url) queueSmartSeedance25SourceDuration(settings, source, source.url);
     persistActiveSmartSettings();
     scheduleSave();
     render();
@@ -4256,7 +4433,7 @@ function smartComfyRandomValue(field){
 }
 function setDynamicSetting(key, value){
     const numericKeys = new Set(['count','width','height','videoDuration','enhanceStrength','enhanceUpscaleRes','editUpscaleRes','customRatioWidth','customRatioHeight','customWidth','customHeight','msCustomRatioWidth','msCustomRatioHeight','msCustomWidth','msCustomHeight']);
-    const layoutKeys = new Set(['provider_id','model','resolution','ratio','msgenModel','msCustomModel','msResolution','msRatio','videoProvider','videoModel','videoAspect','videoResolution','comfyMode','comfyWorkflow','count','enhanceUpscaleRes','editUpscaleRes','rhConfigKey','rhPayment','rhInstanceType']);
+    const layoutKeys = new Set(['provider_id','model','resolution','ratio','imageBackground','msgenModel','msCustomModel','msResolution','msRatio','videoProvider','videoModel','videoAspect','videoResolution','videoSeedance25Mode','comfyMode','comfyWorkflow','count','enhanceUpscaleRes','editUpscaleRes','rhConfigKey','rhPayment','rhInstanceType']);
     settings[key] = numericKeys.has(key) && value !== '' ? Number(value) : value;
     if(key === 'provider_id') settings.model = '';
     if(key === 'videoProvider') settings.videoModel = '';
@@ -4308,6 +4485,10 @@ function setDynamicSetting(key, value){
     }
     persistActiveSmartSettings();
     rememberRecentSmartSettings(settings, activeSettingsSubject());
+    if(key === 'videoSeedance25Mode') {
+        if(inputThumbsRow) delete inputThumbsRow.dataset.thumbsSig;
+        renderInputThumbsRow(selectedNode());
+    }
     if(layoutKeys.has(key)) renderDynamicParams();
     scheduleSave();
 }
@@ -7218,7 +7399,7 @@ function smartRunTaskLabel(run){
     if(s.engine === 'modelscope'){
         return s.msgenModel === 'custom' ? (s.msCustomModel || 'Modelscope') : (MS_GEN_MODELS[s.msgenModel]?.label || s.msgenModel || 'Modelscope');
     }
-    return s.model || 'API Image';
+    return s.model || 'KIE 图片生成';
 }
 function outputUrlLooksVideo(url){
     return /\.(mp4|webm|mov|m4v|avi|mkv)(\?|$)/.test(smartOriginalMediaUrl(url).toLowerCase());
@@ -7316,9 +7497,95 @@ function previewDownloadGroupItems(){
             return colDiff || a.__index - b.__index;
         });
 }
+function outputGroupDownloadDisplayName(item, index){
+    return String(item?.name || fileNameFromUrl(item?.url || '') || `图片 ${String(index + 1).padStart(2, '0')}`).trim();
+}
+function chooseOutputGroupImagesForDownload(title, items){
+    const list = (items || []).filter(item => item?.url && mediaKindForItem(item) === 'image');
+    if(!list.length){
+        toast('输出组中没有可下载的图片');
+        return Promise.resolve([]);
+    }
+    return new Promise(resolve => {
+        const previousFocus = document.activeElement;
+        const selected = new Set(list.map((_, index) => index));
+        const overlay = document.createElement('div');
+        overlay.className = 'smart-modal-overlay output-group-download-overlay';
+        overlay.innerHTML = `<section class="smart-modal output-group-download-modal" role="dialog" aria-modal="true" aria-labelledby="outputGroupDownloadTitle">
+            <header class="smart-modal-title"><span id="outputGroupDownloadTitle"><i data-lucide="archive" aria-hidden="true"></i> 下载输出组</span><button type="button" class="smart-modal-close" data-act="cancel" aria-label="关闭">×</button></header>
+            <div class="smart-modal-body output-group-download-body">
+                <p class="output-group-download-copy">默认已选全部图片。取消勾选后，只会将保留的图片压缩为一个 ZIP 文件。</p>
+                <div class="output-group-download-toolbar"><label class="output-group-download-select-all"><input type="checkbox" data-act="all" checked> <span>全选</span></label><span class="output-group-download-count" aria-live="polite"></span></div>
+                <div class="output-group-download-grid">${list.map((item, index) => {
+                    const displayItem = imageForDisplay(item);
+                    const name = outputGroupDownloadDisplayName(item, index);
+                    return `<label class="output-group-download-item is-selected" data-output-download-item="${index}"><input type="checkbox" data-output-download-check="${index}" checked aria-label="选择 ${escapeAttr(name)}"><span class="output-group-download-thumb">${smartPreviewImgHtml(displayItem, 192, 'alt="" draggable="false"')}</span><span class="output-group-download-name" title="${escapeAttr(name)}">${escapeHtml(name)}</span></label>`;
+                }).join('')}</div>
+            </div>
+            <footer class="smart-modal-footer output-group-download-footer"><span class="output-group-download-footer-note">仅压缩图片，视频请单独下载</span><div class="output-group-download-actions"><button type="button" class="smart-btn smart-btn--ghost" data-act="cancel">取消</button><button type="button" class="smart-btn smart-btn--primary" data-act="confirm"></button></div></footer>
+        </section>`;
+        document.body.appendChild(overlay);
+        bindSmartPreviewImageFallbacks(overlay);
+        refreshIcons();
+
+        const allCheck = overlay.querySelector('[data-act="all"]');
+        const countText = overlay.querySelector('.output-group-download-count');
+        const confirmButton = overlay.querySelector('[data-act="confirm"]');
+        const checks = [...overlay.querySelectorAll('[data-output-download-check]')];
+        let closed = false;
+        const close = value => {
+            if(closed) return;
+            closed = true;
+            document.removeEventListener('keydown', onKeydown, true);
+            overlay.remove();
+            if(previousFocus?.isConnected && typeof previousFocus.focus === 'function') previousFocus.focus();
+            resolve(value);
+        };
+        const update = () => {
+            const count = selected.size;
+            allCheck.checked = count === list.length;
+            allCheck.indeterminate = count > 0 && count < list.length;
+            countText.textContent = `已选 ${count} / ${list.length} 张`;
+            confirmButton.disabled = count === 0;
+            confirmButton.textContent = count ? `下载 ${count} 张图片（ZIP）` : '请选择图片';
+            checks.forEach(check => {
+                const index = Number(check.dataset.outputDownloadCheck);
+                const checked = selected.has(index);
+                check.checked = checked;
+                check.closest('.output-group-download-item')?.classList.toggle('is-selected', checked);
+            });
+        };
+        const onKeydown = event => {
+            if(event.key === 'Escape'){
+                event.preventDefault();
+                close([]);
+            }
+        };
+        allCheck.addEventListener('change', () => {
+            selected.clear();
+            if(allCheck.checked) list.forEach((_, index) => selected.add(index));
+            update();
+        });
+        checks.forEach(check => check.addEventListener('change', () => {
+            const index = Number(check.dataset.outputDownloadCheck);
+            if(check.checked) selected.add(index);
+            else selected.delete(index);
+            update();
+        }));
+        overlay.addEventListener('click', event => {
+            if(event.target === overlay) return close([]);
+            const action = event.target.closest('[data-act]')?.dataset.act;
+            if(action === 'cancel') return close([]);
+            if(action === 'confirm') return close(list.filter((_, index) => selected.has(index)));
+        });
+        document.addEventListener('keydown', onKeydown, true);
+        update();
+        window.setTimeout(() => confirmButton.focus(), 0);
+    });
+}
 // 把一组图片打包成 zip 下载（预览“下载全部”和分组小菜单“批量下载”共用）。
 async function zipDownloadImageItems(title, items){
-    const list = (items || []).filter(item => item?.url);
+    const list = await chooseOutputGroupImagesForDownload(title, items);
     if(!list.length) return;
     try {
         const filename = safeExportFileName(`${title || 'image-group'}.zip`, 'image-group.zip');
@@ -7341,6 +7608,9 @@ async function zipDownloadImageItems(title, items){
         link.click();
         link.remove();
         setTimeout(() => URL.revokeObjectURL(href), 1200);
+        const skipped = Number(response.headers.get('X-AI-Canvas-Archive-Skipped') || 0);
+        const packed = Number(response.headers.get('X-AI-Canvas-Archive-Items') || list.length);
+        toast(skipped > 0 ? `已打包 ${packed} 张图片，跳过 ${skipped} 张无法读取的图片` : `已开始下载 ${packed} 张图片`);
     } catch(e) {
         toast((e.message || '批量下载失败').slice(0, 160));
     }
@@ -8183,6 +8453,7 @@ function smartNodeToolbarHtml(node){
         {key:'brush', icon:'paintbrush', label:'画笔', enabled:canEditImage},
         {key:'grid', icon:'grid-3x3', label:gridLabel, enabled:canEditImage},
         {key:'versions', icon:'history', label:'版本', enabled:(item.local_versions || []).length > 0},
+        {key:'batch-download', icon:'archive', label:'批量下载', enabled:imageCount > 1},
         {key:'download', icon:'download', label:'下载', enabled:true}
     ];
     return `<div class="smart-node-floating-menu" data-smart-node-menu="1">${actions.map(action => `
@@ -8208,6 +8479,17 @@ function duplicateSmartNodeMediaToCanvas(node, imageIndex){
 function runSmartNodeToolbarAction(nodeId, action){
     const node = nodes.find(n => n.id === nodeId);
     if(!node) return;
+    if(action === 'batch-download'){
+        const images = (node.images || [])
+            .map(imageForDisplay)
+            .filter(item => item?.url && mediaKindForItem(item) === 'image');
+        if(images.length < 2){
+            toast('至少需要两张图片才能批量下载');
+            return;
+        }
+        zipDownloadImageItems(node.title || '循环结果', images);
+        return;
+    }
     const index = smartNodeToolbarImageIndex(node);
     const item = imageForDisplay(node.images?.[index]);
     if(!item?.url) return;
@@ -8351,6 +8633,57 @@ function updateCanvasCostDisplay(){
         el.title = `本画布暂未产生生成费用，实际以 KIE 账单为准，点击查看明细`;
     }
     el.onclick = openCanvasCostDetail;
+}
+function confirmSmartLoopSubmission(loop, plan){
+    return new Promise(resolve => {
+        const overlay = document.createElement('div');
+        overlay.className = 'smart-modal-overlay smart-loop-submission-overlay';
+        const rows = (plan.rounds || []).map(round => {
+            const imageRefs = (round.refs || []).filter(ref => mediaKindForItem(ref) === 'image');
+            const currentCount = imageRefs.filter(ref => ref.loopInput || ref.loopNodeId === loop.id).length;
+            const fixedCount = imageRefs.length - currentCount;
+            const thumbnails = imageRefs.map((ref, imageIndex) => {
+                const current = ref.loopInput || ref.loopNodeId === loop.id;
+                const badge = current ? '本轮' : '固定';
+                const name = ref.name || `输入图 ${imageIndex + 1}`;
+                return `<figure class="smart-loop-submit-thumb ${current ? 'is-current' : 'is-fixed'}" title="${escapeAttr(`${badge}：${name}`)}"><img src="${escapeAttr(ref.url)}" alt="第 ${round.position} 轮${badge}输入图 ${imageIndex + 1}" loading="lazy" draggable="false"><figcaption>${escapeHtml(badge)}</figcaption></figure>`;
+            }).join('') || '<span class="smart-loop-submit-empty">无图片输入</span>';
+            const summary = imageRefs.length
+                ? `<div class="smart-loop-submit-summary"><b>${imageRefs.length} 张</b><span>固定 ${fixedCount} + 本轮 ${currentCount}</span></div>`
+                : '';
+            return `<article class="smart-loop-submit-row"><div class="smart-loop-submit-index">${round.position}</div><div class="smart-loop-submit-images"><div class="smart-loop-submit-thumbs">${thumbnails}</div>${summary}</div><div class="smart-loop-submit-prompt"><b>${escapeHtml(round.targetLabel || '生成节点')}</b><p title="${escapeAttr(round.displayPrompt || round.prompt || '')}">${escapeHtml(round.displayPrompt || round.prompt || '未提供提示词')}</p></div></article>`;
+        }).join('');
+        let closed = false;
+        const close = confirmed => {
+            if(closed) return;
+            closed = true;
+            document.removeEventListener('keydown', onKeydown, true);
+            overlay.remove();
+            resolve(confirmed ? plan : null);
+        };
+        const onKeydown = event => {
+            if(event.key === 'Escape'){
+                event.preventDefault();
+                close(false);
+            }
+        };
+        overlay.innerHTML = `<section class="smart-modal smart-loop-submission-dialog" role="dialog" aria-modal="true" aria-labelledby="smartLoopSubmissionTitle">
+            <header><div><span class="smart-loop-submission-eyebrow">循环提交清单</span><h2 id="smartLoopSubmissionTitle">确认 ${plan.rounds.length} 轮任务</h2><p>以下图片组合与最终提示词会在确认后冻结，列表内容就是本次实际提交内容。</p></div><div class="smart-loop-submission-limit"><b>并发 ${plan.maxParallel}</b><span>最多同时提交</span></div></header>
+            <div class="smart-loop-submit-columns"><span>轮次</span><span>完整输入组合</span><span>最终提示词</span></div>
+            <div class="smart-loop-submit-list">${rows}</div>
+            <footer class="smart-modal-actions"><button type="button" class="smart-btn smart-btn--ghost" data-act="cancel">取消</button><button type="button" class="smart-btn smart-btn--primary" data-act="confirm">确认并提交 ${plan.rounds.length} 轮</button></footer>
+        </section>`;
+        overlay.addEventListener('click', event => {
+            if(event.target === overlay) return close(false);
+            const action = event.target.closest('[data-act]')?.dataset.act;
+            if(action === 'cancel') close(false);
+            if(action === 'confirm') close(true);
+        });
+        document.addEventListener('keydown', onKeydown, true);
+        document.body.appendChild(overlay);
+        bindSmartPreviewImageFallbacks(overlay);
+        window.setTimeout(() => overlay.querySelector('[data-act="confirm"]')?.focus(), 0);
+    });
 }
 // 提交前费用确认弹窗（原生实现，对齐视频生成风格）
 function smartCostConfirm(currentTotal){
@@ -12702,7 +13035,9 @@ function renderInputThumbsRow(node){
         items: dedup.map(img => `${inputRefKey(img)}@${img.url || ''}`),
         manual: [...manualRefKeys],
         add: addActive,
-        mode: node ? smartImageMode(node) : ''
+        mode: node ? smartImageMode(node) : '',
+        seedance25Mode: settings.engine === 'api' && settings.apiKind === 'video' && isSeedance25VideoModel(settings.videoModel)
+            ? settings.videoSeedance25Mode : ''
     });
     if(inputThumbsRow.dataset.thumbsSig === thumbsSignature) return;
     inputThumbsRow.dataset.thumbsSig = thumbsSignature;
@@ -12730,11 +13065,15 @@ function renderInputThumbsRow(node){
             : smartPreviewImgHtml(img, 256, 'draggable="false"');
         const count = (mediaCounters[kind] = (mediaCounters[kind] || 0) + 1);
         const label = kind === 'audio' ? `音频${count}` : kind === 'video' ? `视频${count}` : `图${count}`;
+        const seedance25State = settings.engine === 'api' && settings.apiKind === 'video' && isSeedance25VideoModel(settings.videoModel)
+            ? seedance25ReferenceState(settings.videoSeedance25Mode || 'text', kind, count)
+            : {participates:true, label:''};
         const sourceUrl = img.originalLocalUrl || img.url || '';
         const key = inputRefKey(img);
         const removable = manualRefKeys.has(key);
         const removeBtn = removable ? `<button class="input-thumb-remove" type="button" data-input-remove-reference="${escapeHtml(inputRefKey(img))}" title="删除参考图" aria-label="删除参考图">×</button>` : '';
-        return `<div class="input-thumb ${isSelf ? 'input-self' : ''} ${removable ? 'input-manual-ref' : ''}" draggable="false" data-thumb-index="${i}" data-node-id="${escapeHtml(img.nodeId || '')}" data-image-index="${img.imageIndex ?? ''}" data-url="${escapeHtml(img.url || '')}" data-source-url="${escapeHtml(sourceUrl)}" title="${escapeHtml(`${img.name || tr('smart.inputNum').replace('{n}', String(i + 1))} · ${title}`)}">${inner}<span class="input-thumb-label">${escapeHtml(label)}</span>${removeBtn}</div>`;
+        const stateLabel = seedance25State.label ? `<span class="input-thumb-mode-state">${escapeHtml(seedance25State.label)}</span>` : '';
+        return `<div class="input-thumb ${isSelf ? 'input-self' : ''} ${removable ? 'input-manual-ref' : ''} ${seedance25State.participates ? '' : 'input-thumb-inactive'}" draggable="false" data-thumb-index="${i}" data-node-id="${escapeHtml(img.nodeId || '')}" data-image-index="${img.imageIndex ?? ''}" data-url="${escapeHtml(img.url || '')}" data-source-url="${escapeHtml(sourceUrl)}" title="${escapeHtml(`${img.name || tr('smart.inputNum').replace('{n}', String(i + 1))} · ${seedance25State.label || title}`)}">${inner}<span class="input-thumb-label">${escapeHtml(label)}</span>${stateLabel}${removeBtn}</div>`;
     }).join('');
     inputThumbsRow.innerHTML = `<div class="input-thumb-list">${thumbsHtml}${dedup.length > 1 ? `<span class="input-thumb-count">${escapeHtml(tr('smart.inputCount').replace('{n}', String(dedup.length)))}</span>` : ''}</div><div class="input-thumb-actions">${addButton}</div>`;
     bindSmartPreviewImageFallbacks(inputThumbsRow);
@@ -13276,11 +13615,28 @@ async function compressSmartOversizedImage(file, maxBytes){
     if(best && best.size < Number(file.size || 0)) return pack(best);
     throw new Error(smartLangIsEn() ? `Image still exceeds ${Math.round(maxBytes / 1024 / 1024)}MB after compression` : `图片压缩后仍超过 ${Math.round(maxBytes / 1024 / 1024)}MB`);
 }
+function readVideoDurationSeconds(file){
+    return new Promise(resolve => {
+        try {
+            const url = URL.createObjectURL(file);
+            const v = document.createElement('video');
+            v.preload = 'metadata';
+            v.onloadedmetadata = () => {
+                const secs = Number.isFinite(v.duration) && v.duration > 0 ? Math.ceil(v.duration) : 0;
+                URL.revokeObjectURL(url);
+                resolve(secs);
+            };
+            v.onerror = () => { URL.revokeObjectURL(url); resolve(0); };
+            v.src = url;
+        } catch(e){ resolve(0); }
+    });
+}
 async function uploadFiles(files){
     const supported = [...(files || [])].filter(isSupportedUploadFile).slice(0, SMART_UPLOAD_MAX);
     if(!supported.length) return [];
     // 超过 10MB 的图片前端自动压缩，避免后端/KIE 直接拒收（视频、音频不做处理）
     const prepared = [];
+    const compressedImages = [];
     for(const file of supported){
         const size = Number(file.size || 0);
         if(size <= SMART_IMAGE_UPLOAD_MAX_BYTES || mediaKindForFile(file) !== 'image'){
@@ -13297,6 +13653,7 @@ async function uploadFiles(files){
             const compressed = await compressSmartOversizedImage(file, SMART_IMAGE_UPLOAD_MAX_BYTES);
             if(compressed.size < size){
                 console.info(`[smart-canvas] auto-compressed image: ${(size / 1024 / 1024).toFixed(2)}MB -> ${(compressed.size / 1024 / 1024).toFixed(2)}MB`);
+                compressedImages.push({before:size, after:compressed.size});
             }
             prepared.push(compressed);
         } catch(error){
@@ -13309,9 +13666,19 @@ async function uploadFiles(files){
         if(!r.ok) throw new Error((await r.text()) || tr('smart.toastUploadFail'));
         return r.json();
     });
-    return (data.files || []).map((file, index) => ({
-        ...file,
-        kind:file.kind || mediaKindForFile(supported[index])
+    if(compressedImages.length){
+        const before = compressedImages.reduce((sum, item) => sum + item.before, 0) / 1024 / 1024;
+        const after = compressedImages.reduce((sum, item) => sum + item.after, 0) / 1024 / 1024;
+        const count = compressedImages.length;
+        toast(smartLangIsEn()
+            ? `Auto-optimized ${count} image${count === 1 ? '' : 's'}: ${before.toFixed(1)}MB → ${after.toFixed(1)}MB`
+            : `已自动优化 ${count} 张图片：${before.toFixed(1)}MB → ${after.toFixed(1)}MB`);
+    }
+    return await Promise.all((data.files || []).map(async (file, index) => {
+        const kind = file.kind || mediaKindForFile(supported[index]);
+        const meta = {kind};
+        if(kind === 'video') meta.durationSeconds = await readVideoDurationSeconds(supported[index]);
+        return {...file, ...meta};
     }));
 }
 function appendImagesToSmartNode(uploaded, targetId='', opts={}){
@@ -13392,7 +13759,8 @@ function smartKieImageResolution(value){
 }
 const SMART_KIE_ASPECT_RATIO_BY_PRESET = Object.freeze({
     square:'1:1', portrait:'2:3', portrait43:'3:4', landscape43:'4:3',
-    landscape:'3:2', story:'9:16', wide:'16:9', ultrawide:'21:9', ultratall:'9:21'
+    landscape:'3:2', story:'9:16', wide:'16:9', ultrawide:'21:9', ultratall:'9:21',
+    wide2716:'27:16', tall1627:'16:27', nearSquare98:'9:8', nearSquare89:'8:9'
 });
 function smartAspectRatioFromSize(sizeValue){
     const size = parseSizeValue(sizeValue);
@@ -13402,8 +13770,19 @@ function smartAspectRatioFromSize(sizeValue){
     return `${Number(size.width) / divisor}:${Number(size.height) / divisor}`;
 }
 function smartKieImageAspectRatio(sourceSettings, sizeValue){
+    if(isKieImage25Model(sourceSettings?.model) && sourceSettings?.ratio === 'source') return 'auto';
     return SMART_KIE_ASPECT_RATIO_BY_PRESET[String(sourceSettings?.ratio || '')]
         || smartAspectRatioFromSize(sizeValue);
+}
+function smartImage25ValidationMessage(payload){
+    if(!isKieImage25Model(payload?.model)) return '';
+    const resolution = String(payload?.resolution || '').toUpperCase();
+    const ratio = String(payload?.aspect_ratio || '');
+    if(!['1K','2K','4K'].includes(resolution)) return 'GPT Image 2.5 必须选择 1K、2K 或 4K 分辨率';
+    const ratios = new Set(['auto','1:1','3:2','2:3','16:9','9:16','4:3','3:4','21:9','27:16','16:27','9:8','8:9']);
+    if(!ratios.has(ratio)) return `GPT Image 2.5 不支持画面比例 ${ratio || '空'}`;
+    if(resolution !== '1K' && ['27:16','16:27','9:8','8:9'].includes(ratio)) return `${ratio} 比例仅支持 1K 分辨率`;
+    return '';
 }
 function expectedOutputSize(){
     if(settings.engine === 'comfy'){
@@ -15238,6 +15617,62 @@ function buildPromptRequestForNode(node, defaultImages, ctx=smartLoopContext){
         promptInput.innerHTML = oldHtml;
     }
 }
+function cloneSmartLoopSubmissionRequest(request){
+    if(!request) return null;
+    return {
+        ...request,
+        refs:(request.refs || []).map(ref => ({
+            ...ref,
+            asset_uris:ref?.asset_uris ? {...ref.asset_uris} : {}
+        }))
+    };
+}
+function smartLoopFrozenRequestForNode(ctx, node){
+    const round = ctx?.submissionRound;
+    if(!round?.request || round.requestNodeId !== node?.id) return null;
+    return cloneSmartLoopSubmissionRequest(round.request);
+}
+function smartLoopRoundTargetLabel(node){
+    const runSettings = smartSettingsForNode(node) || {};
+    if(runSettings.engine === 'comfy') return 'ComfyUI';
+    if(runSettings.engine === 'runninghub') return 'RunningHub';
+    if(runSettings.apiKind === 'video') return 'KIE 视频生成';
+    return 'KIE 图片生成';
+}
+function smartLoopSubmissionRound(loopNode, requestNode, loopIndex, total, position, forceWorkflow=false){
+    const ctx = {index:loopIndex, total, nodeId:loopNode.id, forceWorkflow, roundOutputs:new Map()};
+    const currentRefs = outputImagesForNode(loopNode, true, ctx).filter(ref => ref?.url);
+    const completeRefs = uniqueReferenceImages([
+        ...defaultReferenceImagesFor(requestNode, true, ctx).filter(ref => ref?.url),
+        ...currentRefs
+    ]);
+    const request = buildPromptRequestForNode(requestNode, completeRefs.length ? completeRefs : null, ctx);
+    const currentUrls = new Set(currentRefs.map(ref => ref.url));
+    const refs = (request.refs || []).map(ref => ({
+        ...ref,
+        loopInput:currentUrls.has(ref.url),
+        loopNodeId:currentUrls.has(ref.url) ? loopNode.id : ''
+    }));
+    return {
+        id:uid('smart-loop-round'),
+        position,
+        index:loopIndex,
+        requestNodeId:requestNode.id,
+        targetLabel:smartLoopRoundTargetLabel(requestNode),
+        prompt:request.prompt || '',
+        displayPrompt:request.displayPrompt || request.prompt || '',
+        refs,
+        request:{...request, refs}
+    };
+}
+function buildSmartLoopSubmissionPlan(loopNode, requestNode, totalRounds, startIndex, batchSize, forceWorkflow, maxParallel){
+    const endIndex = startIndex + (totalRounds - 1) * batchSize;
+    const rounds = Array.from({length:totalRounds}, (_, offset) => {
+        const loopIndex = startIndex + offset * batchSize;
+        return smartLoopSubmissionRound(loopNode, requestNode, loopIndex, endIndex, offset + 1, forceWorkflow);
+    });
+    return {rounds, maxParallel, endIndex, requestNodeId:requestNode.id};
+}
 async function generateUrlsForCurrentSettings(node, prompt, refs, runSettings=settings){
     const activeSettings = forceKieSmartSettings(cloneSmartSettings(runSettings || settings));
     if(activeSettings.engine === 'comfy') return generateComfyUrlsWithSettings(activeSettings, prompt, refs);
@@ -15338,14 +15773,12 @@ async function runCascadeStepIntoNode(sourceNode, targetNode, inputRefs, ctx=sma
     const outpaintSize = validOutpaintSize(requestNode);
     const selfRefs = sourceNode?.type === 'smart-loop' ? [] : selfReferenceImagesForNode(sourceNode, false, ctx).filter(img => img?.url);
     const sourceRefs = (selfRefs.length ? selfRefs : defaultReferenceImagesFor(requestNode, false, ctx)).filter(img => img?.url);
-    const refsForRequest = sourceRefs.length
-        ? sourceRefs
-        : (inputRefs && inputRefs.length ? inputRefs : null);
-    const request = buildPromptRequestForNode(
-        requestNode,
-        refsForRequest,
-        ctx
-    );
+    const refsForRequest = ctx?.nodeId
+        ? uniqueReferenceImages([...sourceRefs, ...(inputRefs || [])])
+        : (sourceRefs.length ? sourceRefs : (inputRefs && inputRefs.length ? inputRefs : null));
+    // 循环确认后，首个任务直接使用确认清单冻结的完整组合，避免运行时重新取图产生偏差。
+    const request = smartLoopFrozenRequestForNode(ctx, requestNode)
+        || buildPromptRequestForNode(requestNode, refsForRequest, ctx);
     const prompt = (request.prompt || '').trim();
     const displayPrompt = (request.displayPrompt || '').trim();
     if((!prompt || !displayPrompt) && smartRunNeedsPrompt(runSettings)){
@@ -15439,8 +15872,13 @@ async function runLoopRoundIntoSlot(loopNode, rootNode, outputSlot, loopIndex, c
     const runSettings = smartLoopRoundSettings({...cloneSmartSettings(settings), ...cloneSmartSettings(smartSettingsForNode(rootNode) || {})}, ctx);
     settings = runSettings;
     try {
-        const refsForRequest = outputImagesForNode(loopNode, true, ctx).filter(img => img?.url);
-        const request = buildPromptRequestForNode(rootNode, refsForRequest.length ? refsForRequest : null, ctx);
+        const currentLoopRefs = outputImagesForNode(loopNode, true, ctx).filter(img => img?.url);
+        const refsForRequest = uniqueReferenceImages([
+            ...defaultReferenceImagesFor(rootNode, true, ctx).filter(img => img?.url),
+            ...currentLoopRefs
+        ]);
+        const request = smartLoopFrozenRequestForNode(ctx, rootNode)
+            || buildPromptRequestForNode(rootNode, refsForRequest.length ? refsForRequest : null, ctx);
         const prompt = (request.prompt || '').trim();
         const displayPrompt = (request.displayPrompt || '').trim();
         if((!prompt || !displayPrompt) && smartRunNeedsPrompt(runSettings)) throw new Error('链路节点缺少提示词');
@@ -15619,13 +16057,9 @@ async function runSmartCascadeRoundsWithLimit(roundIndexes, limit, runner, runSt
 async function runSmartCascade(targetNode=null){
     const tail = targetNode || selectedNode();
     if(!canRunSmartCascade(tail)){ toast('请选择链路结尾图片节点'); return; }
-    const costTotalBefore = nodes.reduce((s,n)=>{ const c=Number(n.cost); return s + (Number.isFinite(c)&&c>0?c:0); },0);
-    if(!(await smartCostConfirm(costTotalBefore))) return;
     savePromptDraftForCurrent();
     const graph = smartCascadeGraphForTail(tail);
     const chain = graph.path;
-    const costResetIds = new Set([tail.id, ...(chain||[]).map(n=>n.id)]);
-    costResetIds.forEach(id => { const n = nodes.find(x=>x.id===id); if(n) resetNodeCost(n); });
     const loop = resolveSmartCascadeLoop(tail.id);
     const loopId = loop?.node?.id || '';
     if(loopId && smartCascadeIsLoopRunning(loopId)){ requestSmartCascadeStop(loopId); return; }
@@ -15633,6 +16067,22 @@ async function runSmartCascade(targetNode=null){
     const directLoopTargetRun = Boolean(loop && isDirectLoopTargetRun(loop, tail, graph));
     const singleNodeLoopRun = Boolean(loop && (chain.length === 1 || directLoopTargetRun));
     if(!graph.edges.length && !singleNodeLoopRun){ toast(tr('smart.loopNoChain')); return; }
+    const totalRounds = loop?.count || 1;
+    const startIndex = Math.max(1, Number(loop?.node?.loopStart) || 1);
+    const batchSize = loop?.node?.imageInput ? Math.max(1, Math.min(100, Number(loop.node.imageBatchSize) || 1)) : 1;
+    const endIndex = startIndex + (totalRounds - 1) * batchSize;
+    const loopMode = loop?.mode === 'parallel' ? 'parallel' : 'serial';
+    const parallelLimit = loopMode === 'parallel' && totalRounds > 1 ? smartCascadeParallelLimit(chain) : 1;
+    const forceWorkflow = chain.length > 1 && !singleNodeLoopRun;
+    const submissionRequestNode = singleNodeLoopRun ? tail : graph.root;
+    const submissionPlan = loop?.node && submissionRequestNode
+        ? buildSmartLoopSubmissionPlan(loop.node, submissionRequestNode, totalRounds, startIndex, batchSize, forceWorkflow, parallelLimit)
+        : null;
+    if(submissionPlan && !await confirmSmartLoopSubmission(loop.node, submissionPlan)) return;
+    const costTotalBefore = nodes.reduce((s,n)=>{ const c=Number(n.cost); return s + (Number.isFinite(c)&&c>0?c:0); },0);
+    if(!(await smartCostConfirm(costTotalBefore))) return;
+    const costResetIds = new Set([tail.id, ...(chain||[]).map(n=>n.id)]);
+    costResetIds.forEach(id => { const n = nodes.find(x=>x.id===id); if(n) resetNodeCost(n); });
     const originalSelected = selectedId;
     const originalSettings = cloneSmartSettings(settings);
     const originalPromptHtml = promptInput.innerHTML;
@@ -15644,12 +16094,7 @@ async function runSmartCascade(targetNode=null){
     runBtn.disabled = true;
     cascadeRunBtn.disabled = false;
     pushUndo();
-    const totalRounds = loop?.count || 1;
-    const startIndex = Math.max(1, Number(loop?.node?.loopStart) || 1);
-    const batchSize = loop?.node?.imageInput ? Math.max(1, Math.min(100, Number(loop.node.imageBatchSize) || 1)) : 1;
-    const endIndex = startIndex + (totalRounds - 1) * batchSize;
-    const loopMode = loop?.mode === 'parallel' ? 'parallel' : 'serial';
-    const parallelLimit = loopMode === 'parallel' && totalRounds > 1 ? smartCascadeParallelLimit(chain) : 1;
+    const submissionRoundsByIndex = new Map((submissionPlan?.rounds || []).map(round => [round.index, round]));
     const precreateSingleSlots = singleNodeLoopRun && loopMode === 'parallel' && totalRounds > 1 && parallelLimit > 1;
     let singleLoopSlots = [];
     if(singleNodeLoopRun){
@@ -15685,7 +16130,7 @@ async function runSmartCascade(targetNode=null){
         const runRound = async (loopIndex=startIndex, options={}) => {
             throwIfSmartCascadeStopRequested(runState);
             const ctx = loop
-                ? {index:loopIndex, total:endIndex, nodeId:loop.node.id, forceWorkflow:chain.length > 1 && !singleNodeLoopRun, runState, roundOutputs:new Map()}
+                ? {index:loopIndex, total:endIndex, nodeId:loop.node.id, forceWorkflow, runState, roundOutputs:new Map(), submissionRound:submissionRoundsByIndex.get(loopIndex) || null}
                 : {runState, roundOutputs:new Map()};
             if(parallelLimit === 1) smartLoopContext = ctx;
             if(singleNodeLoopRun){
@@ -15857,12 +16302,8 @@ async function runGeneration(){
         toast(tr('smart.toastNeedPrompt'));
         return;
     }
-    const needsKieConfirmation = isApiLikeEngine(settings.engine)
-        || (settings.engine === 'runninghub' && Boolean(runningHubSelectedModel(settings)));
-    if(needsKieConfirmation && !await confirmKieSmartSubmission(settings.apiKind === 'video' ? '视频生成' : '图片生成')){
-        settings = previousSettings;
-        return;
-    }
+    // API 图片 / 视频须先完成完整参数组装，才能向报价接口传递真实模型、规格和数量。
+    // 具体确认动作在 runApiGeneration / submitApiVideoGeneration 中执行，避免报价前出现第二张空参数确认卡。
     const outpaintSize = node?.outpaintSize && Number(node.outpaintSize.width) > 0 && Number(node.outpaintSize.height) > 0
         ? {width:Math.round(Number(node.outpaintSize.width)), height:Math.round(Number(node.outpaintSize.height))}
         : null;
@@ -16135,8 +16576,29 @@ async function runApiGeneration(prompt, refs, runSettings=settings){
     // 让后端能从 WxH 推导出合法比例（1:1），避免 "aspect_ratio is not within the range of allowed"。对齐批量换色路径。
     const rawSize = sizeForRun(runSettings);
     const safeSize = rawSize === 'auto' ? '1024x1024' : rawSize;
-    const payload = {prompt, provider_id:runSettings.provider_id, model:runSettings.model, resolution:smartKieImageResolution(runSettings.resolution), aspect_ratio:smartKieImageAspectRatio(runSettings, safeSize), size:safeSize, n:1, reference_images:imageRefsOnly(refs).slice(0, SMART_REFERENCE_IMAGE_MAX)};
-    const tasks = await Promise.all(Array.from({length:count}, () => enqueueSmartTaskSubmission(() => fetch('/api/canvas-image-tasks', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)}).then(async r => {
+    const imageRefs = imageRefsOnly(refs);
+    if(isKieImage25Model(runSettings.model) && imageRefs.length > GPT_IMAGE_25_REFERENCE_MAX){
+        throw new Error(`GPT Image 2.5 最多支持 ${GPT_IMAGE_25_REFERENCE_MAX} 张参考图，当前连接了 ${imageRefs.length} 张`);
+    }
+    const payload = {
+        prompt,
+        provider_id:runSettings.provider_id,
+        model:runSettings.model,
+        resolution:smartKieImageResolution(runSettings.resolution),
+        aspect_ratio:smartKieImageAspectRatio(runSettings, safeSize),
+        background:isKieImage25Model(runSettings.model) ? (runSettings.imageBackground || 'auto') : 'auto',
+        size:safeSize,
+        n:1,
+        reference_images:imageRefs.slice(0, isKieImage25Model(runSettings.model) ? GPT_IMAGE_25_REFERENCE_MAX : SMART_REFERENCE_IMAGE_MAX)
+    };
+    const image25Error = smartImage25ValidationMessage(payload);
+    if(image25Error) throw new Error(image25Error);
+    if(!await confirmKieSmartSubmission('KIE 图片生成', {mediaType:'image', payload, quantity:count})){
+        const error = new Error('已取消 KIE 图片生成提交');
+        error.kieSubmissionCancelled = true;
+        throw error;
+    }
+    const tasks = await Promise.all(Array.from({length:count}, () => enqueueSmartTaskSubmission(() => fetch('/api/canvas-image-tasks', {method:'POST', headers:{'Content-Type':'application/json','X-Canvas-Cost-Confirmed':'1'}, body:JSON.stringify(payload)}).then(async r => {
         if(!r.ok) throw new Error(await r.text());
         return r.json();
     }))));
@@ -16211,8 +16673,10 @@ async function submitApiVideoGeneration(prompt, refs, runSettings=settings){
             }
             return item;
         });
-        const manualVideo = manualSmartVideoLink(runSettings)?.url || '';
+        const manualVideoLink = manualSmartVideoLink(runSettings);
+        const manualVideo = manualVideoLink?.url || '';
         const refVideos = manualVideo ? manualSmartMediaLinks(runSettings).map(item => item.url).filter(Boolean) : videoRefsOnly(uploadedRefs).map(ref => effUrl(ref)).filter(Boolean);
+        const sourceVideoRefs = videoRefsOnly(uploadedRefs);
         const refAudios = audioRefsOnly(uploadedRefs).map(ref => effUrl(ref)).filter(Boolean).slice(0, 3);
         if(mismatchedAsset) toast('部分认证素材属于其它平台，已回退为普通素材。切换到对应平台的视频接口才能用 asset:// 认证地址。');
         const selectedVideoModel = runSettings.videoModel || KIE_SEEDANCE_2_5_MODEL;
@@ -16225,13 +16689,14 @@ async function submitApiVideoGeneration(prompt, refs, runSettings=settings){
         let payload;
         if(isSeedance25VideoModel(selectedVideoModel)){
             const mode = runSettings.videoSeedance25Mode || 'text';
+            const videoEdit = isSeedance25VideoEditMode(mode);
             payload = {
                 prompt,
                 provider_id: runSettings.videoProvider || 'comfly',
                 model:selectedVideoModel,
                 seedance_mode:mode,
-                duration:Math.max(4, Math.min(30, Number(runSettings.videoDuration) || 4)),
-                aspect_ratio:runSettings.videoAspect || '16:9',
+                duration:videoEdit ? -1 : Math.max(4, Math.min(30, Number(runSettings.videoDuration) || 4)),
+                aspect_ratio:videoEdit ? 'adaptive' : (runSettings.videoAspect || '16:9'),
                 resolution:runSettings.videoResolution || '720p',
                 generate_audio:Boolean(runSettings.videoGenerateAudio),
                 return_last_frame:runSettings.videoReturnLastFrame !== false,
@@ -16245,10 +16710,18 @@ async function submitApiVideoGeneration(prompt, refs, runSettings=settings){
                 payload.first_frame_url = refImages[0].url;
                 payload.last_frame_url = refImages[1].url;
             } else if(mode === 'multimodal') {
-                if(!refImages.length && !refVideos.length && !refAudios.length) throw new Error('Seedance 2.5 多模态模式至少需要一项图片、视频或音频素材');
+                if(!refImages.length && !refAudios.length) throw new Error('Seedance 2.5 图片 / 音频参考模式至少需要一项图片或音频素材');
                 if(refImages.length) payload.images = refImages;
-                if(refVideos.length) payload.videos = refVideos;
                 if(refAudios.length) payload.audios = refAudios;
+            } else if(videoEdit) {
+                if(!refVideos.length) throw new Error('Seedance 2.5 视频编辑模式需要一个编辑源视频');
+                const sourceVideoRef = manualVideoLink || sourceVideoRefs[0];
+                const realSecs = await resolveSmartSeedance25SourceDuration(runSettings, sourceVideoRef, refVideos[0]);
+                if(realSecs < 4 || realSecs > 30) throw new Error('未能自动读取编辑源视频时长，或视频不在 4–30 秒范围内。请选择可播放的 MP4 / MOV 视频后重试。');
+                if(refImages.length) payload.images = refImages;
+                payload.videos = [refVideos[0]];
+                if(refAudios.length) payload.audios = refAudios;
+                payload.video_duration_seconds = realSecs;
             }
         } else {
             payload = {
@@ -16270,9 +16743,14 @@ async function submitApiVideoGeneration(prompt, refs, runSettings=settings){
                 trusted_asset: useAssetUris
             };
         }
+        if(!await confirmKieSmartSubmission('KIE 视频生成', {mediaType:'video', payload, quantity:1})){
+            const error = new Error('已取消 KIE 视频生成提交');
+            error.kieSubmissionCancelled = true;
+            throw error;
+        }
         const result = await enqueueSmartTaskSubmission(() => fetch('/api/canvas-video-tasks', {
             method:'POST',
-            headers:{'Content-Type':'application/json'},
+            headers:{'Content-Type':'application/json','X-Canvas-Cost-Confirmed':'1'},
             body:JSON.stringify(payload)
         }).then(async r => { if(!r.ok) throw new Error(await smartResponseErrorMessage(r, tr('smart.errRunFailed'))); return r.json(); }));
         if(result && result.jimeng_pending) throw new JimengPendingSignal({submitId:result.submit_id, kind:result.kind || 'video', queueInfo:result.queue_info, message:result.message});

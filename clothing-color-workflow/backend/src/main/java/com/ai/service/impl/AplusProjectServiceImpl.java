@@ -16,6 +16,7 @@ import com.ai.repository.AplusProjectRepository;
 import com.ai.repository.AplusTemplateRepository;
 import com.ai.service.AplusCopyService;
 import com.ai.service.AplusProjectService;
+import com.ai.service.KieImageModels;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -91,6 +92,7 @@ public class AplusProjectServiceImpl implements AplusProjectService {
             task.setStatus(AplusTaskStatus.PENDING.name());
             task.setAspectRatio("21:9");
             task.setModel(imageModel);
+            task.setRequestedModel(imageModel);
             task.setResolution(resolution);
             task.setVersionNumber(1);
             task.setQualityStatus("NOT_EVALUATED");
@@ -393,13 +395,9 @@ public class AplusProjectServiceImpl implements AplusProjectService {
     }
 
     private String normalizeImageModel(String imageModel) {
-        if (imageModel == null || imageModel.isBlank()) {
-            return "nano-banana-pro";
-        }
+        if (imageModel == null || imageModel.isBlank()) return KieImageModels.NANO_BANANA_PRO;
         String normalized = imageModel.trim();
-        if ("nano-banana-pro".equals(normalized) || "gpt-image-2-image-to-image".equals(normalized)) {
-            return normalized;
-        }
+        if (KieImageModels.isSelectable(normalized)) return normalized;
         throw new RuntimeException("不支持的图片模型: " + imageModel);
     }
 

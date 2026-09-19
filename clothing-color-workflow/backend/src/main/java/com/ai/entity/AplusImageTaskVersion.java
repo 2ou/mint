@@ -45,6 +45,9 @@ public class AplusImageTaskVersion {
     @Column(length = 64)
     private String model;
 
+    @Column(length = 64)
+    private String requestedModel;
+
     @Column(length = 20)
     private String status;
 

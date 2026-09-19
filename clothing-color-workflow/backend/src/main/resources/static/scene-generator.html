@@ -271,8 +271,14 @@
                                 <el-col :span="8">
                                     <el-form-item label="生图模型">
                                         <el-select v-model="genModel" size="small" style="width: 100%;">
-                                            <el-option label="🍌 nano-banana-pro" value="nano-banana-pro"></el-option>
-                                            <el-option label="🤖 gpt-image-2-image" value="gpt-image-2-image-to-image"></el-option>
+                                            <el-option-group label="Google">
+                                                <el-option label="Nano Banana Pro" value="nano-banana-pro"></el-option>
+                                                <el-option label="Nano Banana 2" value="nano-banana-2"></el-option>
+                                            </el-option-group>
+                                            <el-option-group label="OpenAI">
+                                                <el-option label="GPT Image 2" value="gpt-image-2-image-to-image"></el-option>
+                                                <el-option label="GPT Image 2.5" value="gpt-image-2-5-sunburst"></el-option>
+                                            </el-option-group>
                                         </el-select>
                                     </el-form-item>
                                 </el-col>
@@ -694,7 +700,7 @@
             const refreshPriceQuote = async () => {
                 try {
                     const response = await axios.post('/api/tasks/model-pricing/quote', {
-                        media_type: 'image', payload: {model: genModel.value, resolution: genResolution.value}, quantity: 1
+                        media_type: 'image', payload: {model: genModel.value, resolution: genResolution.value, reference_images: ['module-input']}, quantity: 1
                     });
                     quotedUnitPrice.value = response.data?.available ? Number(response.data.amount_cny) : null;
                 } catch (error) {

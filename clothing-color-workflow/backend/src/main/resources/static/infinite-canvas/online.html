@@ -190,6 +190,15 @@
                             </span>
                         </label>
                     </div>
+                    <div id="image25BackgroundRow" class="size-row" style="display:none;margin-top:2px;">
+                        <label class="size-field">
+                            <select id="image25BackgroundSelect" class="size-select" onchange="setImage25Background(this.value)" aria-label="GPT Image 2.5 输出背景">
+                                <option value="auto">背景自动</option>
+                                <option value="opaque">不透明背景</option>
+                                <option value="transparent">透明背景</option>
+                            </select>
+                        </label>
+                    </div>
                 </div>
 
                 <button id="genBtn" onclick="submitImage()" class="glass-btn w-full py-5 text-white rounded-3xl font-bold flex items-center justify-center gap-3 shadow-lg">
@@ -267,6 +276,7 @@
         let customWidth = '';
         let customHeight = '';
         let outputCount = 1;
+        let image25Background = 'auto';
         let models = {gpt:'gpt-image-2-image-to-image', nano:'nano-banana-pro'};
         let allHistory = [], currentIndex = 0, currentResult = null, currentLightboxData = null, isLoading = false;
         const PAGE_SIZE = 24;
@@ -326,6 +336,14 @@
         function providerModels(id){
             return uniqueModels(providerById(id)?.image_models || [models.gpt]);
         }
+        function isImage25(model){ return /^gpt-image-2-5-sunburst(-|$)/i.test(String(model || '')); }
+        function modelLabel(model){
+            if(model === 'nano-banana-pro') return 'Nano Banana Pro';
+            if(model === 'nano-banana-2') return 'Nano Banana 2';
+            if(model === 'gpt-image-2-image-to-image') return 'GPT Image 2';
+            if(model === 'gpt-image-2-5-sunburst') return 'GPT Image 2.5';
+            return model;
+        }
         /* ---- RunningHub：同一平台下同步模型 API / 工作流 / AI 应用。
          * 模型 API 直接提交原始模型名；value=app:ID / workflow:ID 走 RH 应用/工作流路径。 */
         function runningHubEntryId(entry, kind){
@@ -366,8 +384,15 @@
             } else {
                 const modelsForProvider = providerModels(provider);
                 if(!modelsForProvider.includes(selectedModel)) selectedModel = modelsForProvider[0] || models.gpt;
-                modelSelect.innerHTML = modelsForProvider.map(m => `<option value="${escapeHtml(m)}" ${m === selectedModel ? 'selected' : ''}>${escapeHtml(m)}</option>`).join('');
+                const groups = [
+                    ['Google', modelsForProvider.filter(m => String(m).includes('nano'))],
+                    ['OpenAI', modelsForProvider.filter(m => String(m).includes('gpt-image'))],
+                    ['其他', modelsForProvider.filter(m => !String(m).includes('nano') && !String(m).includes('gpt-image'))]
+                ];
+                modelSelect.innerHTML = groups.filter(([,items]) => items.length).map(([label,items]) => `<optgroup label="${escapeHtml(label)}">${items.map(m => `<option value="${escapeHtml(m)}" ${m === selectedModel ? 'selected' : ''}>${escapeHtml(modelLabel(m))}</option>`).join('')}</optgroup>`).join('');
             }
+            const bgRow = document.getElementById('image25BackgroundRow');
+            if(bgRow) bgRow.style.display = isImage25(selectedModel) ? 'flex' : 'none';
             updateAdaptivePanel();
         }
 
@@ -450,7 +475,9 @@
         }
         function setModel(next){
             selectedModel = next;
+            renderProviderControls();
         }
+        function setImage25Background(next){ image25Background = ['auto','opaque','transparent'].includes(next) ? next : 'auto'; }
         function escapeHtml(str){ return String(str || '').replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s])); }
 
         function parseSizeValue(value){
@@ -618,7 +645,21 @@
             const btn = document.getElementById('genBtn'), loader = document.getElementById('loader'), placeholder = document.getElementById('placeholder'), out = document.getElementById('outputImg'), dl = document.getElementById('downloadBtn');
             btn.disabled = true; placeholder.classList.add('hidden'); out.classList.add('hidden'); dl.classList.add('hidden'); loader.classList.remove('hidden');
             try {
-                const reqBody = { prompt, provider_id:provider, model:selectedModel, size:currentSize(), n:outputCount, reference_images:Object.values(refs).filter(Boolean) };
+                const ratioMap = {square:'1:1', portrait:'2:3', landscape:'3:2', portrait43:'3:4', landscape43:'4:3', story:'9:16', wide:'16:9'};
+                if(isImage25(selectedModel) && (resolution === 'custom' || ratio === 'custom' || !ratioMap[ratio])) {
+                    throw new Error('GPT Image 2.5 请选择系统提供的分辨率和画面比例');
+                }
+                const reqBody = {
+                    prompt,
+                    provider_id:provider,
+                    model:selectedModel,
+                    size:currentSize(),
+                    resolution:String(resolution || '').toUpperCase(),
+                    aspect_ratio:ratioMap[ratio] || '',
+                    background:isImage25(selectedModel) ? image25Background : 'auto',
+                    n:outputCount,
+                    reference_images:Object.values(refs).filter(Boolean)
+                };
                 const result = await fetch('/api/online-image', {
                     method:'POST', headers:{'Content-Type':'application/json'},
                     body:JSON.stringify(reqBody)

@@ -141,40 +141,98 @@
             '.ai-project-kie-confirm-kicker{margin:0 0 8px;color:#b45309;font-size:12px;font-weight:800;letter-spacing:.04em;}' +
             '.ai-project-kie-confirm-title{margin:0;color:#172033;font-size:20px;line-height:1.35;}' +
             '.ai-project-kie-confirm-copy{margin:12px 0 0;color:#475569;font-size:14px;line-height:1.65;}' +
+            '.ai-project-kie-confirm-cost{margin-top:18px;padding:16px;border:1px solid #fed7aa;border-radius:12px;background:linear-gradient(135deg,#fff7ed,#fffbeb);}' +
+            '.ai-project-kie-confirm-cost-label{display:block;color:#9a3412;font-size:12px;font-weight:800;letter-spacing:.03em;}' +
+            '.ai-project-kie-confirm-cost-value{display:block;margin-top:5px;color:#9a3412;font-variant-numeric:tabular-nums;font-size:28px;font-weight:800;line-height:1.15;}' +
+            '.ai-project-kie-confirm-cost-value.is-unavailable{font-size:18px;line-height:1.5;}' +
+            '.ai-project-kie-confirm-spec{margin:12px 0 0;padding:0;list-style:none;color:#475569;font-size:12px;line-height:1.6;}' +
+            '.ai-project-kie-confirm-spec li{display:flex;justify-content:space-between;gap:14px;}' +
+            '.ai-project-kie-confirm-spec span:last-child{color:#334155;font-weight:700;text-align:right;}' +
+            '.ai-project-kie-confirm-message{min-height:18px;margin:12px 0 0;color:#64748b;font-size:12px;line-height:1.5;}' +
+            '.ai-project-kie-confirm-actual{margin:10px 0 0;color:#64748b;font-size:12px;font-variant-numeric:tabular-nums;}' +
             '.ai-project-kie-confirm-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:22px;}' +
             '.ai-project-kie-confirm-actions button{min-height:40px;border-radius:9px;padding:0 15px;font:inherit;font-size:14px;font-weight:700;cursor:pointer;transition:background-color .16s ease,border-color .16s ease,box-shadow .16s ease;}' +
             '.ai-project-kie-confirm-cancel{border:1px solid #cbd5e1;background:#fff;color:#334155;}' +
             '.ai-project-kie-confirm-cancel:hover{background:#f8fafc;}' +
             '.ai-project-kie-confirm-submit{border:1px solid #b45309;background:#b45309;color:#fff;}' +
             '.ai-project-kie-confirm-submit:hover{background:#92400e;border-color:#92400e;}' +
+            '.ai-project-kie-confirm-submit:disabled{cursor:wait;border-color:#cbd5e1;background:#cbd5e1;color:#64748b;}' +
             '.ai-project-kie-confirm-actions button:focus-visible{outline:3px solid rgba(37,99,235,.42);outline-offset:2px;}' +
             'html.studio-theme-dark #ai-project-kie-confirmation,html.theme-dark #ai-project-kie-confirmation{background:rgba(2,6,23,.72);}' +
             'html.studio-theme-dark .ai-project-kie-confirm-panel,html.theme-dark .ai-project-kie-confirm-panel{border-color:#334155;background:#182235;color:#f8fafc;}' +
             'html.studio-theme-dark .ai-project-kie-confirm-title,html.theme-dark .ai-project-kie-confirm-title{color:#f8fafc;}' +
             'html.studio-theme-dark .ai-project-kie-confirm-copy,html.theme-dark .ai-project-kie-confirm-copy{color:#cbd5e1;}' +
+            'html.studio-theme-dark .ai-project-kie-confirm-cost,html.theme-dark .ai-project-kie-confirm-cost{border-color:#7c2d12;background:linear-gradient(135deg,#33210f,#2a2314);}' +
+            'html.studio-theme-dark .ai-project-kie-confirm-cost-label,html.theme-dark .ai-project-kie-confirm-cost-label,html.studio-theme-dark .ai-project-kie-confirm-cost-value,html.theme-dark .ai-project-kie-confirm-cost-value{color:#fed7aa;}' +
+            'html.studio-theme-dark .ai-project-kie-confirm-spec,html.theme-dark .ai-project-kie-confirm-spec,html.studio-theme-dark .ai-project-kie-confirm-message,html.theme-dark .ai-project-kie-confirm-message,html.studio-theme-dark .ai-project-kie-confirm-actual,html.theme-dark .ai-project-kie-confirm-actual{color:#94a3b8;}' +
+            'html.studio-theme-dark .ai-project-kie-confirm-spec span:last-child,html.theme-dark .ai-project-kie-confirm-spec span:last-child{color:#e2e8f0;}' +
             'html.studio-theme-dark .ai-project-kie-confirm-cancel,html.theme-dark .ai-project-kie-confirm-cancel{border-color:#475569;background:#243044;color:#e2e8f0;}' +
             'html.studio-theme-dark .ai-project-kie-confirm-cancel:hover,html.theme-dark .ai-project-kie-confirm-cancel:hover{background:#334155;}' +
             '@media(max-width:480px){#ai-project-kie-confirmation{padding:16px}.ai-project-kie-confirm-panel{padding:20px}.ai-project-kie-confirm-actions{flex-direction:column-reverse}.ai-project-kie-confirm-actions button{width:100%;}}';
         (document.head || document.documentElement).appendChild(style);
     }
 
-    function showKieSubmissionConfirmation(type) {
+    function formatKieQuoteAmount(value) {
+        var amount = Number(value);
+        return Number.isFinite(amount) ? '¥' + amount.toFixed(2) : '预估暂不可用';
+    }
+
+    function loadKieSubmissionQuote(details) {
+        var payload = details && details.payload;
+        var quantity = Math.max(1, Number((details && details.quantity) || (payload && payload.n) || 1) || 1);
+        if (!payload || typeof payload !== 'object') {
+            return Promise.resolve({available: false, quantity: quantity, message: '当前操作未提供完整计费参数，实际以服务商账单为准'});
+        }
+        return fetch('/api/canvas-billing/quote', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                media_type: (details && details.mediaType) || 'image',
+                payload: payload,
+                quantity: quantity
+            })
+        }).then(function (response) {
+            if (!response.ok) throw new Error('报价请求失败');
+            return response.json();
+        }).catch(function () {
+            return {available: false, quantity: quantity, message: '预估暂不可用，实际以服务商账单为准'};
+        });
+    }
+
+    function showKieSubmissionConfirmation(details) {
         return new Promise(function (resolve) {
             ensureKieConfirmationStyles();
+            details = details || {};
+            var type = details.type || 'AI 生成';
             var previousFocus = document.activeElement;
             var overlay = document.createElement('div');
             overlay.id = 'ai-project-kie-confirmation';
             overlay.innerHTML = '<div class="ai-project-kie-confirm-panel" role="dialog" aria-modal="true" aria-labelledby="ai-project-kie-confirm-title" aria-describedby="ai-project-kie-confirm-copy">' +
                 '<p class="ai-project-kie-confirm-kicker">KIE 额度操作</p>' +
-                '<h2 id="ai-project-kie-confirm-title" class="ai-project-kie-confirm-title">确认提交到 Kie？</h2>' +
-                '<p id="ai-project-kie-confirm-copy" class="ai-project-kie-confirm-copy">本次将提交' + type + '请求，可能消耗 Kie 额度。确认后任务会立即创建，已提交的任务无法撤回。</p>' +
-                '<div class="ai-project-kie-confirm-actions"><button class="ai-project-kie-confirm-cancel" type="button">取消</button><button class="ai-project-kie-confirm-submit" type="button">确认提交</button></div>' +
+                '<h2 id="ai-project-kie-confirm-title" class="ai-project-kie-confirm-title"></h2>' +
+                '<p id="ai-project-kie-confirm-copy" class="ai-project-kie-confirm-copy">正在按当前模型与参数获取报价；报价完成前不会创建任务。</p>' +
+                '<div class="ai-project-kie-confirm-cost"><span class="ai-project-kie-confirm-cost-label">本次预估消费</span><strong class="ai-project-kie-confirm-cost-value" aria-live="polite">正在计算…</strong><ul class="ai-project-kie-confirm-spec"><li><span>计费规格</span><span class="ai-project-kie-confirm-spec-value">正在读取报价…</span></li><li><span>生成数量</span><span class="ai-project-kie-confirm-quantity">—</span></li></ul></div>' +
+                '<p class="ai-project-kie-confirm-message" aria-live="polite">正在读取价格目录…</p>' +
+                '<p class="ai-project-kie-confirm-actual"></p>' +
+                '<div class="ai-project-kie-confirm-actions"><button class="ai-project-kie-confirm-cancel" type="button">取消</button><button class="ai-project-kie-confirm-submit" type="button" disabled>正在获取报价</button></div>' +
                 '</div>';
             document.body.appendChild(overlay);
 
             var cancelButton = overlay.querySelector('.ai-project-kie-confirm-cancel');
             var submitButton = overlay.querySelector('.ai-project-kie-confirm-submit');
+            var title = overlay.querySelector('.ai-project-kie-confirm-title');
+            var amount = overlay.querySelector('.ai-project-kie-confirm-cost-value');
+            var specification = overlay.querySelector('.ai-project-kie-confirm-spec-value');
+            var quantity = overlay.querySelector('.ai-project-kie-confirm-quantity');
+            var message = overlay.querySelector('.ai-project-kie-confirm-message');
+            var actual = overlay.querySelector('.ai-project-kie-confirm-actual');
             var closed = false;
+            title.textContent = '确认提交 ' + type + '？';
+
+            var currentActualCost = Number(details.actualCost);
+            if (Number.isFinite(currentActualCost) && currentActualCost > 0) {
+                actual.textContent = '画布已累计实际消费 ' + formatKieQuoteAmount(currentActualCost);
+            }
 
             function close(approved) {
                 if (closed) return;
@@ -193,7 +251,7 @@
                 }
                 if (event.key !== 'Tab') return;
                 event.preventDefault();
-                if (event.shiftKey) cancelButton.focus();
+                if (event.shiftKey || submitButton.disabled) cancelButton.focus();
                 else submitButton.focus();
             }
 
@@ -203,7 +261,26 @@
                 if (event.target === overlay) close(false);
             });
             document.addEventListener('keydown', onKeydown, true);
-            window.setTimeout(function () { submitButton.focus(); }, 0);
+            window.setTimeout(function () { cancelButton.focus(); }, 0);
+
+            loadKieSubmissionQuote(details).then(function (quote) {
+                if (closed) return;
+                var available = Boolean(quote && quote.available) && Number.isFinite(Number(quote.amount_cny));
+                var displayName = quote && (quote.display_name || quote.model);
+                var resolution = quote && quote.resolution;
+                var inputMode = quote && quote.input_mode;
+                var specParts = [displayName || '待服务商账单'];
+                if (resolution && String(displayName || '').toLowerCase().indexOf(String(resolution).toLowerCase()) === -1) specParts.push(resolution);
+                if (inputMode) specParts.push(inputMode);
+                amount.textContent = available ? formatKieQuoteAmount(quote.amount_cny) : '预估暂不可用';
+                amount.classList.toggle('is-unavailable', !available);
+                specification.textContent = specParts.filter(Boolean).join(' · ');
+                quantity.textContent = Math.max(1, Number(quote && quote.quantity) || Number(details.quantity) || 1) + ' 项';
+                message.textContent = (quote && quote.message) || '实际费用以服务商账单为准';
+                submitButton.disabled = false;
+                submitButton.textContent = available ? '确认并提交' : '仍要提交';
+                submitButton.focus();
+            });
         });
     }
 
@@ -216,11 +293,30 @@
 
         current = {state: 'pending', promise: null};
         kieActionConfirmations[key] = current;
-        current.promise = showKieSubmissionConfirmation((details && details.type) || 'AI').then(function (approved) {
+        current.promise = showKieSubmissionConfirmation(details || {type: 'AI 生成'}).then(function (approved) {
             current.state = approved ? 'approved' : 'rejected';
             return approved;
         });
         return current.promise;
+    }
+
+    function kieSubmissionDetails(input, init) {
+        var type = kieSubmissionType(input);
+        var details = {
+            type: type,
+            mediaType: type === '视频生成' ? 'video' : 'image'
+        };
+        var body = init && init.body;
+        if (typeof body !== 'string') return details;
+        try {
+            var payload = JSON.parse(body);
+            if (!payload || typeof payload !== 'object') return details;
+            details.payload = payload;
+            details.quantity = Math.max(1, Number(payload.n || payload.quantity || 1) || 1);
+        } catch (error) {
+            // 非 JSON 的请求仍保留风险确认，但不伪造价格。
+        }
+        return details;
     }
 
     function patchKieSubmissionConfirmation() {
@@ -229,7 +325,7 @@
 
         var patched = function (input, init) {
             if (!isKieSubmissionRequest(input, init) || hasCanvasCostConfirmation(input, init)) return rawFetch(input, init);
-            return confirmKieSubmission({type: kieSubmissionType(input)}).then(function (approved) {
+            return confirmKieSubmission(kieSubmissionDetails(input, init)).then(function (approved) {
                 if (approved) return rawFetch(input, init);
                 var error = new Error('已取消 Kie 提交');
                 error.name = 'KieSubmissionCancelledError';

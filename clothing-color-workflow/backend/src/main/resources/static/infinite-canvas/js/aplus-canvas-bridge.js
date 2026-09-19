@@ -83,7 +83,8 @@
                 moduleName: task.moduleName,
                 kieTaskId: task.kieTaskId || '',
                 prompt: task.prompt || '',
-                model: task.model || 'nano-banana-pro',
+                model: task.requestedModel || task.model || 'nano-banana-pro',
+                providerModel: task.model || '',
                 resolution: task.resolution || '2K',
                 versionNumber: task.versionNumber || 1,
                 qualityStatus: task.qualityStatus || 'NOT_EVALUATED',
@@ -126,7 +127,8 @@
         node.aplus.moduleName = task.moduleName;
         node.aplus.kieTaskId = task.kieTaskId || node.aplus.kieTaskId || '';
         node.aplus.prompt = task.prompt || node.aplus.prompt || '';
-        node.aplus.model = task.model || node.aplus.model || 'nano-banana-pro';
+        node.aplus.model = task.requestedModel || task.model || node.aplus.model || 'nano-banana-pro';
+        node.aplus.providerModel = task.model || node.aplus.providerModel || '';
         node.aplus.resolution = task.resolution || node.aplus.resolution || '2K';
         node.aplus.versionNumber = task.versionNumber || node.aplus.versionNumber || 1;
         node.aplus.qualityStatus = task.qualityStatus || node.aplus.qualityStatus || 'NOT_EVALUATED';

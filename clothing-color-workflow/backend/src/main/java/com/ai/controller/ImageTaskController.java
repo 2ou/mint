@@ -8,6 +8,7 @@ import com.ai.repository.ImageTaskRepository;
 import com.ai.repository.UserSessionRepository;
 import com.ai.service.ImageTaskService;
 import com.ai.service.ModelPricingService;
+import com.ai.service.KieImageModels;
 import com.ai.service.OssService;
 import com.ai.service.Seedance25VideoRequestService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -48,11 +49,6 @@ public class ImageTaskController {
                                                         jakarta.servlet.http.HttpServletRequest httpServletRequest) {
         List<TaskCreateResponse> responses = new ArrayList<>();
 
-        Map<String, Object> pricePayload = new LinkedHashMap<>();
-        pricePayload.put("model", request.getModel());
-        pricePayload.put("resolution", request.getResolution());
-        BigDecimal serverCost = modelPricingService.quote("image", pricePayload, 1).amountCny();
-
         // 🔴 1. 确保从拦截器放入 Request 域的属性被正确取出
         String operator = (String) httpServletRequest.getAttribute("operator");
         String shopName = (String) httpServletRequest.getAttribute("shopName");
@@ -61,6 +57,12 @@ public class ImageTaskController {
 
         if (request.getPairs() != null) {
             for (BatchTaskRequest.TaskPair pair : request.getPairs()) {
+                String actualModel = KieImageModels.resolveActualModel(
+                        request.getModel(), KieImageModels.referenceCount(pair.getInputUrl(), pair.getColorUrl()));
+                Map<String, Object> pricePayload = new LinkedHashMap<>();
+                pricePayload.put("model", actualModel);
+                pricePayload.put("resolution", request.getResolution());
+                BigDecimal serverCost = modelPricingService.quote("image", pricePayload, 1).amountCny();
                 TaskCreateResponse response = imageTaskService.createWithUrl(
                         request.getSpu(),
                         request.getPrompt(),
@@ -236,6 +238,11 @@ public class ImageTaskController {
             return ApiResponse.fail("未登录或 Token 已失效");
         }
 
+        // Billing needs the source-video duration, but that internal helper
+        // must not be forwarded to KIE after Seedance 2.5 normalization.
+        Map<String, Object> pricePayload = new LinkedHashMap<>();
+        if (req.getInput() != null) pricePayload.putAll(req.getInput());
+
         if (Seedance25VideoRequestService.MODEL.equals(req.getModel())) {
             try {
                 // 独立视频页默认不返回尾帧；前端可显式开启。
@@ -250,8 +257,6 @@ public class ImageTaskController {
         task.setModel(req.getModel());
 
         // 🔴 1. 保存预估费用
-        Map<String, Object> pricePayload = new LinkedHashMap<>();
-        if (req.getInput() != null) pricePayload.putAll(req.getInput());
         pricePayload.put("model", req.getModel());
         task.setCost(modelPricingService.quote("video", pricePayload, 1).amountCny());
 

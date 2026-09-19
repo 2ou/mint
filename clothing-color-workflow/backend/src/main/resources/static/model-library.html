@@ -214,6 +214,17 @@
             max-width: 200px; max-height: 150px; border-radius: 6px; object-fit: contain;
         }
 
+        /* 批量导入拖拽区 */
+        .import-zone {
+            border: 2px dashed #dcdfe6; border-radius: 12px;
+            padding: 40px 20px; text-align: center; cursor: pointer;
+            transition: all 0.2s; background: #fff;
+        }
+        .import-zone:hover, .import-zone.dragover { border-color: #667eea; background: #f8f9ff; }
+        .import-zone .iz-icon { font-size: 48px; }
+        .import-zone .iz-title { font-size: 15px; font-weight: 600; margin-top: 8px; }
+        .import-zone .iz-sub { font-size: 12px; color: #999; margin-top: 4px; }
+
         /* 时间线 */
         .timeline { position: relative; padding-left: 20px; }
 
@@ -263,9 +274,10 @@
             <div class="app-card">
                 <div class="app-card__header app-card__header--module-manage">
                     <span style="font-size: 18px; font-weight: bold;">👤 AI 模特库 - Model Studio</span>
-                    <div style="display: flex; gap: 10px;">
-                        <el-button @click="goToList" color="#f5f7fa" style="color: #606266; font-weight: bold;">📊 任务大盘</el-button>
-                    </div>
+                        <div style="display: flex; gap: 10px;">
+                            <el-button @click="go('import')" color="#f5f7fa" style="color: #606266; font-weight: bold;">📥 批量导入</el-button>
+                            <el-button @click="goToList" color="#f5f7fa" style="color: #606266; font-weight: bold;">📊 任务大盘</el-button>
+                        </div>
                 </div>
                 <div class="app-card__body">
                     <div class="stats">
@@ -453,8 +465,14 @@
                                             <el-col :span="8">
                                                 <el-form-item label="生图模型">
                                                     <el-select v-model="form.imageModel" placeholder="请选择生图模型" style="width:100%">
-                                                        <el-option label="🍌 nano-banana-pro" value="nano-banana-pro"></el-option>
-                                                        <el-option label="🤖 gpt-image-2-image" value="gpt-image-2-image-to-image"></el-option>
+                                                        <el-option-group label="Google">
+                                                            <el-option label="Nano Banana Pro" value="nano-banana-pro"></el-option>
+                                                            <el-option label="Nano Banana 2" value="nano-banana-2"></el-option>
+                                                        </el-option-group>
+                                                        <el-option-group label="OpenAI">
+                                                            <el-option label="GPT Image 2" value="gpt-image-2-image-to-image"></el-option>
+                                                            <el-option label="GPT Image 2.5" value="gpt-image-2-5-sunburst"></el-option>
+                                                        </el-option-group>
                                                     </el-select>
                                                 </el-form-item>
                                             </el-col>
@@ -660,6 +678,49 @@
                         </div>
                     </div>
 
+                    <div class="card" v-if="view==='import'">
+                        <div class="card-head">
+                            <h3>📥 批量导入模特</h3>
+                            <el-button @click="go('library'); loadModels()">查看模特库</el-button>
+                        </div>
+                        <div class="card-body">
+                            <div class="form-block">
+                                <div class="form-block-title">① 选择导入后的模特类型</div>
+                                <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center">
+                                    <el-select v-model="importType" placeholder="请选择模特类型" clearable style="width:240px">
+                                        <el-option v-for="(n,k) in types" :key="k" :label="getTypeCn(k)" :value="k"></el-option>
+                                    </el-select>
+                                    <el-input v-model="importTypeCustom" placeholder="或自定义类型（如：RealModel、Boho）" clearable style="width:260px"></el-input>
+                                </div>
+                                <div style="font-size:11px;color:#999;margin-top:8px">留空默认按 <b>Commercial（商业目录）</b> 入库；可下拉选择或自定义。</div>
+                            </div>
+
+                            <div class="form-block">
+                                <div class="form-block-title">② 拖入 / 选择照片（可多选）</div>
+                                <div class="import-zone" :class="{dragover: dragOver}" @click="triggerFileInput"
+                                     @dragover="onDragOver" @dragleave="onDragLeave" @drop="onDrop">
+                                    <div class="iz-icon">🖼️</div>
+                                    <div class="iz-title">将照片拖到这里，或点击选择</div>
+                                    <div class="iz-sub">支持 JPG / PNG / WebP，单张 ≤ 10MB，可一次选多张</div>
+                                    <input ref="fileInput" type="file" accept="image/*" multiple style="display:none" @change="onFileInput"/>
+                                </div>
+                                <div v-if="importing || importProgress.total" style="margin-top:16px">
+                                    <el-progress :percentage="importProgress.total ? Math.round(importProgress.done/importProgress.total*100) : 0" :stroke-width="10"></el-progress>
+                                    <div style="font-size:12px;color:#666;margin-top:6px">
+                                        已处理 {{ importProgress.done }} / {{ importProgress.total }} · 成功 <b style="color:#67c23a">{{ importProgress.ok }}</b> · 失败 <b style="color:#f56c6c">{{ importProgress.fail }}</b>
+                                    </div>
+                                </div>
+                                <div v-if="importProgress.total && !importing" style="margin-top:12px">
+                                    <el-button type="success" @click="go('library'); loadModels()">去模特库查看（{{ importProgress.ok }} 个）</el-button>
+                                </div>
+                            </div>
+
+                            <div style="font-size:12px;color:#909399;line-height:20px">
+                                📌 规则：每张照片生成 <b>1 条模特记录</b>，名称自动随机生成，照片上传至 <b>永久 OSS 桶</b> 并作为封面图，导入后状态为 <b>已激活</b> 可直接使用。
+                            </div>
+                        </div>
+                    </div>
+
                     <el-drawer v-model="drawer" title="模特详情" size="460px" v-if="detail">
                         <div style="text-align:center;margin-bottom:20px">
                             <template v-if="detail.coverImageUrl">
@@ -711,6 +772,14 @@
             const detail = ref(null);
             const isPolling = ref(false);
             const uploadingClothing = ref(false);
+
+            // ========== 批量导入模特（拖入照片 → 每条随机名 + 永久 OSS 封面） ==========
+            const importType = ref('');
+            const importTypeCustom = ref('');
+            const dragOver = ref(false);
+            const importing = ref(false);
+            const importProgress = reactive({ done: 0, total: 0, ok: 0, fail: 0 });
+            const fileInput = ref(null);
 
             const busy = reactive({submit:false,load:false,hist:false});
             const form = reactive({
@@ -862,6 +931,86 @@
 
             const removeClothingImage = () => {
                 form.clothingImageUrl = '';
+            };
+
+            // ========== 批量导入模特逻辑 ==========
+            // 随机名称：模特-XXXXXX（去掉易混淆字符 0/O/1/I/L）
+            const randomName = () => {
+                const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+                let s = '';
+                for (let i = 0; i < 6; i++) s += chars[Math.floor(Math.random() * chars.length)];
+                return '模特-' + s;
+            };
+
+            // 上传到【永久 OSS 桶】（type=permanent）
+            const uploadToPermanent = async (rawFile) => {
+                const policyRes = await axios.get('/api/oss/policy?type=permanent');
+                const { accessid, policy, signature, dir, host } = policyRes.data.data;
+                const ext = (rawFile.name.split('.').pop() || 'jpg').toLowerCase();
+                const key = dir + 'model_' + Date.now() + '_' + Math.floor(Math.random() * 1e6) + '.' + ext;
+                const formData = new FormData();
+                formData.append('key', key);
+                formData.append('policy', policy);
+                formData.append('OSSAccessKeyId', accessid);
+                formData.append('signature', signature);
+                formData.append('success_action_status', '200');
+                formData.append('file', rawFile);
+                await axios.post(host, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+                return host + '/' + key;
+            };
+
+            const triggerFileInput = () => { if (fileInput.value) fileInput.value.click(); };
+
+            const onDragOver = (e) => { e.preventDefault(); dragOver.value = true; };
+            const onDragLeave = (e) => { dragOver.value = false; };
+            const onDrop = (e) => {
+                e.preventDefault();
+                dragOver.value = false;
+                if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) {
+                    doImport(e.dataTransfer.files);
+                }
+            };
+            const onFileInput = (e) => {
+                if (e.target.files && e.target.files.length) doImport(e.target.files);
+                e.target.value = '';
+            };
+
+            // 每张照片 → 1 条模特记录（随机名 + 永久 OSS 封面 + 已激活）
+            const doImport = async (fileList) => {
+                const files = Array.from(fileList).filter(f => f.type && f.type.startsWith('image/'));
+                if (!files.length) { ElementPlus.ElMessage.warning('请选择图片文件'); return; }
+                const maxSize = 10 * 1024 * 1024;
+                const oversized = files.filter(f => f.size > maxSize);
+                const valid = files.filter(f => f.size <= maxSize);
+                if (oversized.length) ElementPlus.ElMessage.warning(oversized.length + ' 张图片超过 10MB，已跳过');
+                if (!valid.length) return;
+
+                const finalType = (importTypeCustom.value && importTypeCustom.value.trim())
+                    || importType.value || 'Commercial';
+
+                importing.value = true;
+                importProgress.done = 0; importProgress.total = valid.length; importProgress.ok = 0; importProgress.fail = 0;
+                for (const f of valid) {
+                    try {
+                        const url = await uploadToPermanent(f);
+                        const payload = {
+                            modelName: randomName(),
+                            modelType: finalType,
+                            coverImageUrl: url,
+                            status: 'ACTIVE'
+                        };
+                        const r = await axios.post('/api/models/save', payload);
+                        if (r.data && r.data.success) importProgress.ok++;
+                        else importProgress.fail++;
+                    } catch (e) {
+                        console.error('导入失败', e);
+                        importProgress.fail++;
+                    } finally {
+                        importProgress.done++;
+                    }
+                }
+                importing.value = false;
+                ElementPlus.ElMessage.success(`导入完成：成功 ${importProgress.ok} 张，失败 ${importProgress.fail} 张`);
             };
 
             // ========== 统一提交生成 ==========
@@ -1061,7 +1210,9 @@
                 handleClothingFile,removeClothingImage,
                 submitGenerate,approve,approveAll,disableM,deleteM,retry,retryTask,cancelTask,openScene,
                 loadModels,loadHistory,refreshProc,copy,fmtDate,thumb,
-                taskType,taskLabel,mstatusType,mstatusLabel
+                taskType,taskLabel,mstatusType,mstatusLabel,
+                importType,importTypeCustom,dragOver,importing,importProgress,fileInput,
+                triggerFileInput,onDrop,onFileInput,onDragOver,onDragLeave
             };
         }
     }).use(ElementPlus).mount('#app');

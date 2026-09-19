@@ -14,7 +14,13 @@ import com.aliyun.oss.model.ObjectMetadata;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.springframework.mock.web.MockHttpServletResponse;
 
+import javax.imageio.ImageIO;
+import java.awt.Color;
+import java.awt.Graphics2D;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -66,6 +72,36 @@ class InfiniteCanvasVideoReferenceTest {
         assertThatThrownBy(() -> normalizeInputUrl(controller, "/ai-result/canvas/missing.png"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("不存在或不在本地结果目录");
+    }
+
+    @Test
+    void servesCanvasPreviewAtRequestedWidthWithoutChangingOriginal() throws Exception {
+        Path imagePath = localSaveRoot.resolve("canvas/large-preview.png");
+        Files.createDirectories(imagePath.getParent());
+        BufferedImage source = new BufferedImage(800, 400, BufferedImage.TYPE_INT_RGB);
+        Graphics2D graphics = source.createGraphics();
+        graphics.setColor(new Color(32, 96, 180));
+        graphics.fillRect(0, 0, source.getWidth(), source.getHeight());
+        graphics.dispose();
+        ImageIO.write(source, "png", imagePath.toFile());
+        source.flush();
+
+        InfiniteCanvasController controller = controller(mock(OssService.class));
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        controller.mediaPreview("/ai-result/canvas/large-preview.png", 120, response);
+
+        assertThat(response.getStatus()).isEqualTo(200);
+        assertThat(response.getContentType()).isEqualTo("image/jpeg");
+        assertThat(response.getHeader("Cache-Control")).isEqualTo("public, max-age=86400");
+        BufferedImage preview = ImageIO.read(new ByteArrayInputStream(response.getContentAsByteArray()));
+        assertThat(preview.getWidth()).isEqualTo(120);
+        assertThat(preview.getHeight()).isEqualTo(60);
+        preview.flush();
+        BufferedImage original = ImageIO.read(imagePath.toFile());
+        assertThat(original.getWidth()).isEqualTo(800);
+        assertThat(original.getHeight()).isEqualTo(400);
+        original.flush();
     }
 
     private InfiniteCanvasController controller(OssService ossService) {

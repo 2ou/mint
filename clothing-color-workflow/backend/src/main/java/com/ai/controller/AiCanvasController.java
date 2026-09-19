@@ -13,6 +13,7 @@ import com.ai.repository.CanvasProjectRepository;
 import com.ai.repository.CanvasTemplateRepository;
 import com.ai.service.CanvasTaskService;
 import com.ai.service.KieClientService;
+import com.ai.service.KieImageModels;
 import com.ai.service.OssService;
 import com.ai.service.Seedance25VideoRequestService;
 import com.ai.service.impl.KieGptModels;
@@ -44,6 +45,7 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -55,8 +57,8 @@ import java.util.concurrent.TimeUnit;
 @Slf4j
 public class AiCanvasController {
 
-    private static final String PROJECT_IMAGE_MODEL = "nano-banana-pro";
-    private static final List<String> PROJECT_IMAGE_MODELS = List.of(PROJECT_IMAGE_MODEL, "gpt-image-2-image-to-image");
+    private static final String PROJECT_IMAGE_MODEL = KieImageModels.NANO_BANANA_PRO;
+    private static final List<String> PROJECT_IMAGE_MODELS = KieImageModels.SELECTABLE_MODELS;
     private static final String SEEDANCE_2_5_MODEL = "bytedance/seedance-2-5";
     private static final String SEEDANCE_2_MODEL = "bytedance/seedance-2";
     private static final String MINIMAX_H3_TEXT_MODEL = "minimax-h3/text-to-video";
@@ -225,6 +227,8 @@ public class AiCanvasController {
         List<String> images = normalizeImageInputs(payload);
         String inputUrl = images.isEmpty() ? "" : images.get(0);
         String colorUrl = images.size() > 1 ? String.join(",", images.subList(1, images.size())) : "";
+        String background = firstNonBlank(textValue(payload.get("background")), "auto");
+        String actualModel = KieImageModels.resolveActualModel(model, images.size());
 
         String taskId = kieClientService.createTask(
                 "AI_CANVAS",
@@ -234,9 +238,15 @@ public class AiCanvasController {
                 model,
                 inputUrl,
                 colorUrl,
+                background,
                 appProperties.getKie().getCallbackUrl()
         );
-        canvasTaskService.recordCreated(taskId, "image", currentOperator(request), currentShopName(request));
+        Map<String, Object> taskPayload = new LinkedHashMap<>(payload);
+        taskPayload.put("model", actualModel);
+        taskPayload.put("requested_model", KieImageModels.logicalModel(model));
+        taskPayload.put("provider_model", actualModel);
+        taskPayload.put("background", background);
+        canvasTaskService.recordCreated(taskId, "image", currentOperator(request), currentShopName(request), taskPayload);
         return Map.of(
                 "task_id", taskId,
                 "taskId", taskId,
@@ -616,6 +626,7 @@ public class AiCanvasController {
         Map<String, Object> input = new LinkedHashMap<>();
         input.put("prompt", textValue(payload.get("prompt")));
         input.put("duration", miniMaxH3Duration(payload.get("duration")));
+        input.put("resolution", miniMaxH3Resolution(textValue(payload.get("resolution"))));
 
         List<String> firstFrames = mergeUrlInputs(payload.get("first_frame_url"), payload.get("firstFrameUrl"));
         List<String> lastFrames = mergeUrlInputs(payload.get("last_frame_url"), payload.get("lastFrameUrl"));
@@ -687,10 +698,17 @@ public class AiCanvasController {
 
     private int miniMaxH3Duration(Object value) {
         try {
-            return Math.max(5, Math.min(15, Integer.parseInt(textValue(value))));
+            return Math.max(4, Math.min(15, Integer.parseInt(textValue(value))));
         } catch (Exception ignored) {
-            return 6;
+            return 4;
         }
+    }
+
+    private String miniMaxH3Resolution(String value) {
+        String normalized = value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
+        if (normalized.isBlank() || normalized.contains("768")) return "768P";
+        if (normalized.contains("2k") || normalized.contains("2048")) return "2K";
+        throw new IllegalArgumentException("MiniMax H3 resolution must be 768P or 2K");
     }
 
     private String miniMaxH3AspectRatio(String value, boolean referenceMode) {
@@ -776,7 +794,7 @@ public class AiCanvasController {
         if (model == null || model.isBlank() || model.startsWith("project-")) {
             return fallback;
         }
-        return PROJECT_IMAGE_MODELS.contains(model.trim()) ? model.trim() : fallback;
+        return KieImageModels.requireSelectable(model, fallback);
     }
 
     private String normalizeVideoModel(String model) {

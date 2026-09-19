@@ -31,10 +31,10 @@
     <script src="/infinite-canvas/vendor/js/lucide.js?v=2026.07.15.1782696749"></script>
     <script src="/infinite-canvas/js/theme.js?v=2026.07.15.1783117645"></script>
     <script src="/infinite-canvas/js/touch-mouse.js?v=2026.07.15.1783079819"></script>
-    <script src="/infinite-canvas/js/i18n.js?v=2026.08.25.2"></script>
+    <script src="/infinite-canvas/js/i18n.js?v=2026.09.17.1"></script>
     <script src="/infinite-canvas/js/project-bridge.js?v=ai-project-20260828.1"></script>
-    <link rel="stylesheet" href="/infinite-canvas/css/canvas.css?v=2026.08.28.1">
-    <link rel="stylesheet" href="/infinite-canvas/css/price-catalog.css?v=2026.09.03.2">
+    <link rel="stylesheet" href="/infinite-canvas/css/canvas.css?v=2026.09.17.1">
+    <link rel="stylesheet" href="/infinite-canvas/css/price-catalog.css?v=2026.09.07.1">
     <link rel="stylesheet" href="/infinite-canvas/css/theme.css?v=2026.07.15.1782696682">
 </head>
 <body>
@@ -69,6 +69,7 @@
                     <button id="canvasAssetToggle" class="tool-btn toolbar-asset canvas-asset-toggle" type="button" title="资产库" aria-label="资产库"><i data-lucide="library" class="w-4 h-4"></i><span>资产库</span></button>
                     <button id="canvasPriceCatalog" class="tool-btn" type="button" onclick="openPriceCatalog({readOnly: true})" title="模型价格目录" aria-label="模型价格目录"><i data-lucide="wallet-cards" class="w-4 h-4"></i><span>模型价格</span></button>
                     <button id="canvasLogToggle" class="tool-btn toolbar-log" type="button" onclick="openCanvasLog(event)" title="生成历史" aria-label="生成历史" data-i18n-title="canvas.logs"><i data-lucide="list-todo" class="w-4 h-4"></i><span data-i18n="canvas.logs">生成历史</span></button>
+                    <button id="canvasShortcutToggle" class="tool-btn canvas-shortcut-toggle" type="button" onclick="openCanvasShortcuts(event)" title="快捷键" aria-label="快捷键"><i data-lucide="keyboard" class="w-4 h-4"></i><span>快捷键</span></button>
                 </div>
             </div>
         </div>
@@ -232,6 +233,30 @@
                 <div id="logList" class="log-list"></div>
             </div>
         </div>
+        <div id="canvasShortcutModal" class="shortcut-modal" onclick="closeCanvasShortcuts()">
+            <div class="shortcut-panel" role="dialog" aria-modal="true" aria-labelledby="canvasShortcutTitle" onclick="event.stopPropagation()">
+                <div class="shortcut-head">
+                    <div id="canvasShortcutTitle" class="shortcut-title"><i data-lucide="keyboard" class="w-4 h-4" aria-hidden="true"></i><span>快捷键</span></div>
+                    <button class="preview-icon-btn" type="button" onclick="closeCanvasShortcuts()" title="关闭" aria-label="关闭快捷键说明"><i data-lucide="x" class="w-4 h-4" aria-hidden="true"></i></button>
+                </div>
+                <div class="shortcut-list">
+                    <div class="shortcut-item"><span class="shortcut-keys"><kbd>Ctrl</kbd></span><span>按住并拖拽框选节点</span></div>
+                    <div class="shortcut-item"><span class="shortcut-keys"><kbd>R</kbd></span><span>按住并拖拽框选节点</span></div>
+                    <div class="shortcut-item"><span class="shortcut-keys"><kbd>Shift</kbd></span><span>按住进入裁刀模式，拖拽切断连线</span></div>
+                    <div class="shortcut-item"><span class="shortcut-keys"><kbd>空白处</kbd></span><span>拖动画布平移视图</span></div>
+                    <div class="shortcut-item"><span class="shortcut-keys"><kbd>右键</kbd></span><span>在空白处打开快捷菜单</span></div>
+                    <div class="shortcut-item"><span class="shortcut-keys"><kbd>滚轮</kbd></span><span>缩放画布视图</span></div>
+                    <div class="shortcut-item"><span class="shortcut-keys"><kbd>Ctrl</kbd><kbd>G</kbd></span><span>合并选中的图片为组</span></div>
+                    <div class="shortcut-item"><span class="shortcut-keys"><kbd>Ctrl</kbd><kbd>C</kbd></span><span>复制选中的节点</span></div>
+                    <div class="shortcut-item"><span class="shortcut-keys"><kbd>Ctrl</kbd><kbd>V</kbd></span><span>粘贴节点或剪贴板图片</span></div>
+                    <div class="shortcut-item"><span class="shortcut-keys"><kbd>Ctrl</kbd><kbd>Z</kbd></span><span>撤销上一步操作</span></div>
+                    <div class="shortcut-item"><span class="shortcut-keys"><kbd>Z</kbd></span><span>放大预览选中图片</span></div>
+                    <div class="shortcut-item"><span class="shortcut-keys"><kbd>←</kbd><kbd>→</kbd></span><span>预览图片翻页</span></div>
+                    <div class="shortcut-item"><span class="shortcut-keys"><kbd>Del</kbd></span><span>删除选中节点</span></div>
+                    <div class="shortcut-item"><span class="shortcut-keys"><kbd>Esc</kbd></span><span>关闭当前弹窗或预览</span></div>
+                </div>
+            </div>
+        </div>
         <div id="assetManagerModal" class="asset-manager-modal" onclick="closeAssetManager()">
             <div class="asset-manager-panel" onclick="event.stopPropagation()">
                 <div class="asset-manager-head">
@@ -384,8 +409,8 @@
 
     <script src="/infinite-canvas/js/ltx-director-timeline.js?v=2026.07.15.1782696715"></script>
     <script src="/infinite-canvas/js/liblib-canvas-import.js?v=2026.08.18.1"></script>
-    <script src="/infinite-canvas/js/canvas.js?v=2026.08.28.2"></script>
-    <script src="/infinite-canvas/js/price-catalog.js?v=2026.09.03.2"></script>
-    <script src="/infinite-canvas/js/aplus-canvas-bridge.js?v=20260817.1"></script>
+    <script src="/infinite-canvas/js/canvas.js?v=2026.09.17.1"></script>
+    <script src="/infinite-canvas/js/price-catalog.js?v=2026.09.10.1"></script>
+    <script src="/infinite-canvas/js/aplus-canvas-bridge.js?v=2026.09.09.1"></script>
 </body>
 </html>

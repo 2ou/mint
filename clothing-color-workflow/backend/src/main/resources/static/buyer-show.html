@@ -254,7 +254,7 @@
                             <div class="form-section-title">⚙️ 生成设置</div>
                             <el-form label-width="100px">
                                 <el-row :gutter="16">
-                                    <el-col :span="8">
+                                    <el-col :span="6">
                                         <el-form-item label="文本模型">
                                             <el-select v-model="textModel" style="width:100%">
                                                 <el-option label="GPT 5.6 Sol（高质量）" value="gpt-5.6-sol"/>
@@ -263,12 +263,26 @@
                                             </el-select>
                                         </el-form-item>
                                     </el-col>
-                                    <el-col :span="8">
+                                    <el-col :span="6">
+                                        <el-form-item label="图片模型">
+                                            <el-select v-model="imageModel" style="width:100%">
+                                                <el-option-group label="Google">
+                                                    <el-option label="Nano Banana Pro" value="nano-banana-pro"/>
+                                                    <el-option label="Nano Banana 2" value="nano-banana-2"/>
+                                                </el-option-group>
+                                                <el-option-group label="OpenAI">
+                                                    <el-option label="GPT Image 2" value="gpt-image-2-image-to-image"/>
+                                                    <el-option label="GPT Image 2.5" value="gpt-image-2-5-sunburst"/>
+                                                </el-option-group>
+                                            </el-select>
+                                        </el-form-item>
+                                    </el-col>
+                                    <el-col :span="6">
                                         <el-form-item label="每图提示词数">
                                             <el-input-number v-model="countPerImage" :min="1" :max="5" style="width:100%"/>
                                         </el-form-item>
                                     </el-col>
-                                    <el-col :span="8">
+                                    <el-col :span="6">
                                         <div style="padding-top:8px;font-size:13px;color:#606266">
                                             共 {{ fileList.length }} 张图 × {{ countPerImage }} 条 = <b style="color:#667eea">{{ fileList.length * countPerImage }}</b> 条提示词
                                         </div>
@@ -394,6 +408,7 @@
             const clothingDesc = ref('');
             const scenePreference = ref('');
             const textModel = ref('gpt-5.6-terra');
+            const imageModel = ref('nano-banana-pro');
             const countPerImage = ref(1);
             const loading = ref(false);
             const groups = ref([]);
@@ -548,7 +563,7 @@
                         for (let i = 0; i < (prompt.genCount || 1); i++) {
                             const r = await axios.post('/api/models/create-task', {
                                 prompt: prompt.prompt,
-                                model: 'nano-banana-pro',
+                                model: imageModel.value,
                                 resolution: '4K',
                                 aspectRatio: '16:9'
                             });
@@ -603,7 +618,7 @@
             const taskStatusLabel = (s) => ({CREATED:'⏳ 排队中',PROCESSING:'🔄 生图中',GENERATING:'🔄 生图中',SUCCESS:'✅ 已完成',FAILED:'❌ 失败'}[s]||s);
 
             return {
-                step, spu, clothingDesc, scenePreference, textModel, countPerImage, loading,
+                step, spu, clothingDesc, scenePreference, textModel, imageModel, countPerImage, loading,
                 groups, allPrompts, totalGenCount, isDragging,
                 loadingSubmit, submittedTasks,
                 onDragOver, onDragLeave, handleDrop, generate, submitTask, resetAll, copyText,

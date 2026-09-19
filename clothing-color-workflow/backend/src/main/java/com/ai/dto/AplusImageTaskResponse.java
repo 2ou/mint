@@ -25,6 +25,7 @@ public class AplusImageTaskResponse {
     private String resolution;
     private String kieTaskId;
     private String model;
+    private String requestedModel;
     private String status;
     private String resultTempUrl;
     private String resultOssUrl;
@@ -55,6 +56,7 @@ public class AplusImageTaskResponse {
         resp.setResolution(task.getResolution());
         resp.setKieTaskId(task.getKieTaskId());
         resp.setModel(task.getModel());
+        resp.setRequestedModel(task.getRequestedModel());
         resp.setStatus(task.getStatus());
         resp.setResultTempUrl(task.getResultTempUrl());
         resp.setResultOssUrl(task.getResultOssUrl());

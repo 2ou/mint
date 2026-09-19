@@ -19,7 +19,13 @@ public interface KieClientService {
      * @param callBackUrl 回调地址，为空则走轮询
      * @return taskId    KIE 任务ID
      */
-    String createTask(String spu, String prompt, String resolution, String aspectRatio, String model, String inputUrl, String colorUrl, String callBackUrl);
+    default String createTask(String spu, String prompt, String resolution, String aspectRatio, String model,
+                              String inputUrl, String colorUrl, String callBackUrl) {
+        return createTask(spu, prompt, resolution, aspectRatio, model, inputUrl, colorUrl, "auto", callBackUrl);
+    }
+
+    String createTask(String spu, String prompt, String resolution, String aspectRatio, String model,
+                      String inputUrl, String colorUrl, String background, String callBackUrl);
 
     // 🔴 新增：返回完整结果对象的方法
     KieTaskResult getFullResult(String taskId);

@@ -15,11 +15,13 @@ import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * Server-side model price catalogue. Prices are resolved from the request
@@ -32,6 +34,13 @@ public class ModelPricingService {
 
     private static final BigDecimal CREDIT_TO_CNY = new BigDecimal("0.032000");
     private static final String PUBLISHED = "PUBLISHED";
+    private static final String SEEDANCE_25_MODEL = "bytedance/seedance-2-5";
+    private static final String MINIMAX_H3_IMAGE_INPUT_MODEL = "minimax-h3/image-input";
+    private static final List<String> MINIMAX_H3_VIDEO_MODELS = List.of(
+            "minimax-h3/text-to-video",
+            "minimax-h3/image-to-video",
+            "minimax-h3/reference-to-video"
+    );
 
     private final ModelPriceVersionRepository versionRepository;
     private final ModelPriceRuleRepository ruleRepository;
@@ -40,7 +49,11 @@ public class ModelPricingService {
     @PostConstruct
     @Transactional
     public void seedInitialCatalogue() {
-        if (versionRepository.existsByStatus(PUBLISHED)) return;
+        if (versionRepository.existsByStatus(PUBLISHED)) {
+            ensureMiniMaxH3PriceRules();
+            ensureGptImage25PriceRules();
+            return;
+        }
 
         ModelPriceVersion version = new ModelPriceVersion();
         version.setVersionCode("CURRENT");
@@ -90,9 +103,8 @@ public class ModelPricingService {
         rules.add(rule(version, "video", "kling-3.0/video", "pro", "", "PER_SECOND", "0.5700", 100, "Kling 3.0 Pro"));
         rules.add(rule(version, "video", "kling-3.0/video", "standard", "audio", "PER_SECOND", "0.6400", 200, "Kling 3.0 Standard audio"));
         rules.add(rule(version, "video", "kling-3.0/video", "standard", "", "PER_SECOND", "0.4400", 100, "Kling 3.0 Standard"));
-        rules.add(rule(version, "video", "minimax-h3/text-to-video", "", "", "PER_SECOND", "0.8100", 100, "MiniMax H3"));
-        rules.add(rule(version, "video", "minimax-h3/image-to-video", "", "", "PER_SECOND", "0.8100", 100, "MiniMax H3 image-to-video"));
-        rules.add(rule(version, "video", "minimax-h3/reference-to-video", "", "", "PER_SECOND", "0.8100", 100, "MiniMax H3 reference-to-video"));
+        addGptImage25PriceRules(rules, version);
+        addMiniMaxH3PriceRules(rules, version);
         ruleRepository.saveAll(rules);
     }
 
@@ -104,17 +116,14 @@ public class ModelPricingService {
         ModelPriceVersion version = optionalVersion.get();
         String normalizedMediaType = normalize(mediaType);
         String model = normalize(text(payload, "model"));
+        if ("image".equals(normalizedMediaType) && KieImageModels.isImage25(model)) {
+            model = KieImageModels.resolveActualModel(model, imageReferenceCount(payload));
+        }
         String resolution = resolveResolution(normalizedMediaType, payload);
         String inputMode = resolveInputMode(normalizedMediaType, payload);
         int safeQuantity = Math.max(1, quantity);
 
-        Optional<ModelPriceRule> candidate = ruleRepository.findByVersion_IdAndActiveTrueOrderByPriorityDescIdAsc(version.getId())
-                .stream()
-                .filter(rule -> normalize(rule.getMediaType()).equals(normalizedMediaType))
-                .filter(rule -> normalize(rule.getModel()).equals(model))
-                .filter(rule -> matches(rule.getResolution(), resolution))
-                .filter(rule -> matches(rule.getInputMode(), inputMode))
-                .max(Comparator.comparingInt(rule -> matchScore(rule, resolution, inputMode)));
+        Optional<ModelPriceRule> candidate = findBestRule(version, normalizedMediaType, model, resolution, inputMode);
 
         if (candidate.isEmpty()) {
             return PriceQuote.unavailable(version.getVersionCode(), model, resolution, inputMode,
@@ -122,15 +131,134 @@ public class ModelPricingService {
         }
 
         ModelPriceRule rule = candidate.get();
+        boolean seedance25VideoEdit = isSeedance25VideoEdit(model, payload);
+        int secondsPerRun = resolveDuration(model, payload);
         BigDecimal units = switch (normalize(rule.getRateUnit())) {
-            case "per_second" -> BigDecimal.valueOf(resolveDuration(payload)).multiply(BigDecimal.valueOf(safeQuantity));
+            case "per_second" -> BigDecimal.valueOf(secondsPerRun).multiply(BigDecimal.valueOf(safeQuantity));
             case "per_image", "per_task" -> BigDecimal.valueOf(safeQuantity);
             default -> BigDecimal.valueOf(safeQuantity);
         };
-        BigDecimal amount = safeDecimal(rule.getBasePriceCny())
-                .add(safeDecimal(rule.getUnitPriceCny()).multiply(units))
+        List<PriceComponent> components = new ArrayList<>();
+        if (seedance25VideoEdit && "per_second".equals(normalize(rule.getRateUnit()))) {
+            int sourceSeconds = resolveSeedance25VideoEditSourceSeconds(payload);
+            BigDecimal legUnits = BigDecimal.valueOf(sourceSeconds).multiply(BigDecimal.valueOf(safeQuantity));
+            components.add(new PriceComponent(rule.getId(), seedance25VideoEditComponentName(rule, "源视频", sourceSeconds, safeQuantity),
+                    legUnits, priceAmount(rule, legUnits, true)));
+            components.add(new PriceComponent(rule.getId(), seedance25VideoEditComponentName(rule, "等长输出", sourceSeconds, safeQuantity),
+                    legUnits, priceAmount(rule, legUnits, false)));
+        } else {
+            components.add(PriceComponent.from(rule, units, priceAmount(rule, units, true)));
+        }
+
+        if (isMiniMaxH3VideoModel(model)) {
+            int imageInputCount = miniMaxH3ImageInputCount(payload) * safeQuantity;
+            if (imageInputCount > 0) {
+                findBestRule(version, normalizedMediaType, MINIMAX_H3_IMAGE_INPUT_MODEL, resolution, "image_input")
+                        .ifPresent(imageRule -> {
+                            BigDecimal imageUnits = BigDecimal.valueOf(imageInputCount);
+                            BigDecimal imageAmount = safeDecimal(imageRule.getBasePriceCny())
+                                    .add(safeDecimal(imageRule.getUnitPriceCny()).multiply(imageUnits))
+                                    .setScale(4, RoundingMode.HALF_UP);
+                            components.add(PriceComponent.from(imageRule, imageUnits, imageAmount));
+                        });
+            }
+        }
+        BigDecimal totalAmount = components.stream()
+                .map(PriceComponent::amountCny)
+                .reduce(BigDecimal.ZERO, BigDecimal::add)
                 .setScale(4, RoundingMode.HALF_UP);
-        return PriceQuote.available(version, rule, model, resolution, inputMode, safeQuantity, units, amount);
+        String quoteMessage = seedance25VideoEdit
+                ? "Seedance 2.5 视频编辑按源视频与等长输出分别计费；实际以服务商账单为准"
+                : "预估费用，实际以服务商账单为准";
+        return PriceQuote.available(version, rule, model, resolution, inputMode, safeQuantity, units, totalAmount, components, quoteMessage);
+    }
+
+    /** Adds KIE's current H3 768P/2K tiers without overwriting a price that was manually maintained. */
+    private void ensureMiniMaxH3PriceRules() {
+        Optional<ModelPriceVersion> version = versionRepository.findFirstByStatusOrderByPublishedAtDesc(PUBLISHED);
+        if (version.isEmpty()) return;
+        List<ModelPriceRule> existing = ruleRepository.findByVersion_IdOrderByPriorityDescIdAsc(version.get().getId());
+        List<ModelPriceRule> additions = new ArrayList<>();
+        addMiniMaxH3PriceRules(additions, version.get());
+        List<ModelPriceRule> missing = additions.stream()
+                .filter(candidate -> existing.stream().noneMatch(rule -> samePriceRule(rule, candidate)))
+                .toList();
+        if (!missing.isEmpty()) ruleRepository.saveAll(missing);
+    }
+
+    /** Adds the official KIE 1K/2K/4K prices for the GPT Image 2.5 endpoints. */
+    private void ensureGptImage25PriceRules() {
+        Optional<ModelPriceVersion> version = versionRepository.findFirstByStatusOrderByPublishedAtDesc(PUBLISHED);
+        if (version.isEmpty()) return;
+        List<ModelPriceRule> existing = ruleRepository.findByVersion_IdOrderByPriorityDescIdAsc(version.get().getId());
+        List<ModelPriceRule> additions = new ArrayList<>();
+        addGptImage25PriceRules(additions, version.get());
+        List<ModelPriceRule> missing = additions.stream()
+                .filter(candidate -> existing.stream().noneMatch(rule -> samePriceRule(rule, candidate)))
+                .toList();
+        if (!missing.isEmpty()) ruleRepository.saveAll(missing);
+    }
+
+    private void addGptImage25PriceRules(List<ModelPriceRule> rules, ModelPriceVersion version) {
+        Map<String, String> variants = Map.of(
+                KieImageModels.GPT_IMAGE_25_TEXT, "GPT Image 2.5 · 文生图",
+                KieImageModels.GPT_IMAGE_25_IMAGE, "GPT Image 2.5 · 图生图"
+        );
+        for (Map.Entry<String, String> variant : variants.entrySet()) {
+            rules.add(rule(version, "image", variant.getKey(), "1K", "", "PER_IMAGE", "0.1920", 400,
+                    variant.getValue() + " · 1K"));
+            rules.add(rule(version, "image", variant.getKey(), "2K", "", "PER_IMAGE", "0.3200", 400,
+                    variant.getValue() + " · 2K"));
+            rules.add(rule(version, "image", variant.getKey(), "4K", "", "PER_IMAGE", "0.5120", 400,
+                    variant.getValue() + " · 4K"));
+        }
+    }
+
+    private void addMiniMaxH3PriceRules(List<ModelPriceRule> rules, ModelPriceVersion version) {
+        for (String model : MINIMAX_H3_VIDEO_MODELS) {
+            String mode = model.endsWith("text-to-video") ? "文生视频"
+                    : model.endsWith("image-to-video") ? "图生视频"
+                    : "多模态参考";
+            rules.add(rule(version, "video", model, "768p", "", "PER_SECOND", "0.2560", 300,
+                    "MiniMax H3 · " + mode + " · 768P"));
+            rules.add(rule(version, "video", model, "2k", "", "PER_SECOND", "0.4160", 300,
+                    "MiniMax H3 · " + mode + " · 2K"));
+        }
+        rules.add(rule(version, "video", MINIMAX_H3_IMAGE_INPUT_MODEL, "768p", "image_input", "PER_IMAGE", "0.1280", 300,
+                "MiniMax H3 · 图片输入 · 768P"));
+        rules.add(rule(version, "video", MINIMAX_H3_IMAGE_INPUT_MODEL, "2k", "image_input", "PER_IMAGE", "0.1280", 300,
+                "MiniMax H3 · 图片输入 · 2K"));
+    }
+
+    private Optional<ModelPriceRule> findBestRule(ModelPriceVersion version, String mediaType, String model,
+                                                   String resolution, String inputMode) {
+        return ruleRepository.findByVersion_IdAndActiveTrueOrderByPriorityDescIdAsc(version.getId())
+                .stream()
+                .filter(rule -> normalize(rule.getMediaType()).equals(mediaType))
+                .filter(rule -> normalize(rule.getModel()).equals(model))
+                .filter(rule -> matches(rule.getResolution(), resolution))
+                .filter(rule -> matches(rule.getInputMode(), inputMode))
+                .max(Comparator.comparingInt(rule -> matchScore(rule, resolution, inputMode)));
+    }
+
+    private int imageReferenceCount(Map<String, Object> payload) {
+        for (String key : List.of("reference_images", "input_urls", "image_input", "images")) {
+            Object value = payload.get(key);
+            if (value instanceof List<?> list) return (int) list.stream().filter(java.util.Objects::nonNull).count();
+            if (value != null && !String.valueOf(value).isBlank()) {
+                return KieImageModels.referenceCount(String.valueOf(value));
+            }
+        }
+        return KieImageModels.referenceCount(
+                text(payload, "inputImageUrl"), text(payload, "colorImageUrl"),
+                text(payload, "input_url"), text(payload, "color_url"));
+    }
+
+    private boolean samePriceRule(ModelPriceRule left, ModelPriceRule right) {
+        return normalize(left.getMediaType()).equals(normalize(right.getMediaType()))
+                && normalize(left.getModel()).equals(normalize(right.getModel()))
+                && normalize(left.getResolution()).equals(normalize(right.getResolution()))
+                && normalize(left.getInputMode()).equals(normalize(right.getInputMode()));
     }
 
     /** KIE returns its settled charge in credits. The UI and ledger expose CNY only. */
@@ -269,6 +397,7 @@ public class ModelPricingService {
         if (lower.contains("4k") || lower.contains("4096") || lower.contains("3840")) return "4k";
         if (lower.contains("2k") || lower.contains("2048")) return "2k";
         if (lower.contains("1k") || lower.contains("1024")) return "1k";
+        if (lower.contains("768")) return "768p";
         if (lower.contains("1080")) return "1080p";
         if (lower.contains("480")) return "480p";
         if (lower.contains("720")) return "720p";
@@ -286,14 +415,89 @@ public class ModelPricingService {
         return hasValues(payload.get("reference_images")) ? "image" : "text";
     }
 
-    private int resolveDuration(Map<String, Object> payload) {
+    private int resolveDuration(String model, Map<String, Object> payload) {
+        if (isSeedance25VideoEdit(model, payload)) {
+            return resolveSeedance25VideoEditSourceSeconds(payload) * 2;
+        }
+        boolean videoInput = hasVideoInput(payload);
+        if (videoInput) {
+            int real = integer(payload.get("video_duration_seconds"), 0);
+            if (real > 0) return real;
+        }
         return Math.max(1, integer(payload.get("duration"), 1));
+    }
+
+    /**
+     * KIE locks Seedance 2.5 video editing to the source video's duration. Its
+     * billing consumes one per-second leg for source processing and another
+     * equally long leg for the generated output.  Keep this intentionally
+     * narrow: other models with a video reference still bill their own rules.
+     */
+    private boolean isSeedance25VideoEdit(String model, Map<String, Object> payload) {
+        if (!SEEDANCE_25_MODEL.equals(model) || !hasVideoInput(payload)) return false;
+        String mode = normalize(text(payload, "seedance_mode"));
+        if ("video_edit".equals(mode)) return true;
+        return integer(payload.get("duration"), 0) == -1
+                && "adaptive".equals(normalize(text(payload, "aspect_ratio")));
+    }
+
+    private boolean hasVideoInput(Map<String, Object> payload) {
+        return hasValues(payload.get("reference_video_urls"))
+                || hasValues(payload.get("videos")) || hasValues(payload.get("video_urls"));
+    }
+
+    private int resolveSeedance25VideoEditSourceSeconds(Map<String, Object> payload) {
+        return Math.max(1, integer(payload.get("video_duration_seconds"), 0));
+    }
+
+    private BigDecimal priceAmount(ModelPriceRule rule, BigDecimal units, boolean includeBasePrice) {
+        BigDecimal base = includeBasePrice ? safeDecimal(rule.getBasePriceCny()) : BigDecimal.ZERO;
+        return base.add(safeDecimal(rule.getUnitPriceCny()).multiply(units)).setScale(4, RoundingMode.HALF_UP);
+    }
+
+    private String seedance25VideoEditComponentName(ModelPriceRule rule, String leg, int secondsPerRun, int quantity) {
+        String multiplier = quantity > 1 ? " × " + quantity + " 项" : "";
+        return rule.getDisplayName() + " · 视频编辑" + " · " + leg + " " + secondsPerRun + " 秒" + multiplier;
     }
 
     private boolean hasValues(Object value) {
         if (value == null) return false;
         if (value instanceof List<?> list) return !list.isEmpty();
         return !String.valueOf(value).isBlank() && !"[]".equals(String.valueOf(value));
+    }
+
+    private boolean isMiniMaxH3VideoModel(String model) {
+        return MINIMAX_H3_VIDEO_MODELS.contains(model);
+    }
+
+    /** Counts unique image URLs across the request shapes used by both canvas entry points. */
+    private int miniMaxH3ImageInputCount(Map<String, Object> payload) {
+        Set<String> urls = new LinkedHashSet<>();
+        for (String key : List.of("images", "reference_image_urls", "image_urls", "first_frame_url", "last_frame_url")) {
+            collectImageInputUrls(payload == null ? null : payload.get(key), urls);
+        }
+        return urls.size();
+    }
+
+    private void collectImageInputUrls(Object value, Set<String> urls) {
+        if (value == null) return;
+        if (value instanceof String text) {
+            if (!text.isBlank()) urls.add(text.trim());
+            return;
+        }
+        if (value instanceof List<?> list) {
+            list.forEach(item -> collectImageInputUrls(item, urls));
+            return;
+        }
+        if (value instanceof Map<?, ?> map) {
+            for (String key : List.of("url", "image_url", "imageUrl", "src")) {
+                Object nested = map.get(key);
+                if (nested != null) {
+                    collectImageInputUrls(nested, urls);
+                    return;
+                }
+            }
+        }
     }
 
     private boolean bool(Object value) {
@@ -352,13 +556,16 @@ public class ModelPricingService {
                              int quantity,
                              BigDecimal units,
                              BigDecimal amountCny,
+                             List<PriceComponent> components,
                              String message) {
 
         static PriceQuote available(ModelPriceVersion version, ModelPriceRule rule, String model, String resolution,
-                                    String inputMode, int quantity, BigDecimal units, BigDecimal amount) {
+                                    String inputMode, int quantity, BigDecimal units, BigDecimal amount,
+                                    List<PriceComponent> components, String message) {
             return new PriceQuote(true, version.getVersionCode(), rule.getId(), rule.getDisplayName(), model,
                     rule.getMediaType(), resolution, inputMode, quantity, units, amount,
-                    "预估费用，实际以服务商账单为准");
+                    List.copyOf(components),
+                    message);
         }
 
         static PriceQuote unavailable(String message) {
@@ -367,7 +574,7 @@ public class ModelPricingService {
 
         static PriceQuote unavailable(String versionCode, String model, String resolution, String inputMode, String message) {
             return new PriceQuote(false, versionCode, null, "", model, "", resolution, inputMode, 0,
-                    BigDecimal.ZERO, null, message);
+                    BigDecimal.ZERO, null, List.of(), message);
         }
 
         public Map<String, Object> toMap() {
@@ -383,9 +590,25 @@ public class ModelPricingService {
             result.put("quantity", quantity);
             result.put("units", units);
             result.put("amount_cny", amountCny);
+            result.put("components", components.stream().map(PriceComponent::toMap).toList());
             result.put("credit_to_cny", CREDIT_TO_CNY);
             result.put("message", message);
             return result;
+        }
+    }
+
+    public record PriceComponent(Long ruleId, String displayName, BigDecimal units, BigDecimal amountCny) {
+        static PriceComponent from(ModelPriceRule rule, BigDecimal units, BigDecimal amount) {
+            return new PriceComponent(rule.getId(), rule.getDisplayName(), units, amount);
+        }
+
+        Map<String, Object> toMap() {
+            Map<String, Object> component = new LinkedHashMap<>();
+            component.put("rule_id", ruleId);
+            component.put("display_name", displayName);
+            component.put("units", units);
+            component.put("amount_cny", amountCny);
+            return component;
         }
     }
 }
