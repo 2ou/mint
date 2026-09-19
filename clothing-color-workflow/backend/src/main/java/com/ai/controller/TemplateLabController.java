@@ -4,6 +4,7 @@ import com.ai.dto.ApiResponse;
 import com.ai.dto.TemplateLabProjectCreateRequest;
 import com.ai.dto.TemplateLabProjectResponse;
 import com.ai.dto.TemplateLabProjectUpdateRequest;
+import com.ai.dto.TemplateLabTemplateCreateRequest;
 import com.ai.service.TemplateLabService;
 import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.validation.Valid;
@@ -32,8 +33,8 @@ public class TemplateLabController {
     private final TemplateLabService templateLabService;
 
     @GetMapping("/templates")
-    public ApiResponse<List<JsonNode>> templates() {
-        return ApiResponse.ok("查询成功", templateLabService.listTemplates());
+    public ApiResponse<List<JsonNode>> templates(@RequestAttribute("userId") Long userId) {
+        return ApiResponse.ok("查询成功", templateLabService.listTemplates(userId));
     }
 
     @GetMapping("/projects")
@@ -76,6 +77,22 @@ public class TemplateLabController {
                                            @RequestAttribute("userId") Long userId) {
         templateLabService.deleteProject(id, userId);
         return ApiResponse.ok("项目已删除", null);
+    }
+
+    @PostMapping("/projects/{id}/templates")
+    public ApiResponse<JsonNode> createPersonalTemplate(
+            @PathVariable("id") Long id,
+            @RequestAttribute("userId") Long userId,
+            @Valid @RequestBody TemplateLabTemplateCreateRequest request) {
+        return ApiResponse.ok("个人模板已保存", templateLabService.createPersonalTemplate(id, userId, request));
+    }
+
+    @DeleteMapping("/templates/personal/{templateId}")
+    public ApiResponse<Void> deletePersonalTemplate(
+            @PathVariable("templateId") Long templateId,
+            @RequestAttribute("userId") Long userId) {
+        templateLabService.deletePersonalTemplate(templateId, userId);
+        return ApiResponse.ok("个人模板已删除", null);
     }
 
     @PostMapping(value = "/projects/{id}/assets", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)

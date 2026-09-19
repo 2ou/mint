@@ -47,6 +47,10 @@
                     </button>
                 </div>
                 <div class="editor-toolbar__group editor-export-controls">
+                    <button class="editor-button" id="save-as-template" type="button" title="保存当前相框和文字布局">
+                        <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M5 4h12l2 2v14H5z"/><path d="M8 4v6h8V4M8 16h8"/></svg>
+                        保存为模板
+                    </button>
                     <label class="sr-only" for="export-format">导出格式</label>
                     <select id="export-format" title="导出格式"><option value="png">PNG</option><option value="jpeg">JPG</option></select>
                     <label class="sr-only" for="export-scale">导出尺寸</label>
@@ -62,10 +66,17 @@
         <div class="editor-workspace">
             <aside class="editor-panel editor-panel--left" aria-label="素材和文字">
                 <div class="editor-panel__tabs" role="tablist" aria-label="编辑资源">
-                    <button type="button" role="tab" aria-selected="true" data-panel-tab="assets">图片素材</button>
+                    <button type="button" role="tab" aria-selected="true" data-panel-tab="content">内容替换</button>
+                    <button type="button" role="tab" aria-selected="false" data-panel-tab="assets">图片素材</button>
                     <button type="button" role="tab" aria-selected="false" data-panel-tab="text">文字</button>
+                    <button type="button" role="tab" aria-selected="false" data-panel-tab="layers">图层</button>
                 </div>
-                <div class="editor-panel__body" data-panel-content="assets">
+                <div class="editor-panel__body" data-panel-content="content">
+                    <div class="editor-content-summary" id="content-summary"></div>
+                    <p class="editor-panel__hint">按模板字段逐项替换。相框结构保持不变，图片仍可在画布中拖动裁剪。</p>
+                    <div class="editor-content-list" id="content-replace-list"></div>
+                </div>
+                <div class="editor-panel__body" data-panel-content="assets" hidden>
                     <input id="asset-file-input" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden>
                     <button class="editor-upload-zone" id="upload-assets" type="button">
                         <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/></svg>
@@ -91,6 +102,10 @@
                             <div><dt>保存</dt><dd>Ctrl + S</dd></div>
                         </dl>
                     </div>
+                </div>
+                <div class="editor-panel__body" data-panel-content="layers" hidden>
+                    <p class="editor-panel__hint">选择、隐藏、锁定或调整文字层级。按钮操作可替代拖拽。</p>
+                    <div class="editor-layer-list" id="layer-list"></div>
                 </div>
             </aside>
 
@@ -183,10 +198,53 @@
                         <button class="editor-button" id="send-backward" type="button">下移一层</button>
                     </div>
                 </div>
+
+                <div class="editor-properties" id="properties-multi" hidden>
+                    <div class="editor-property-group">
+                        <label>多选文字</label>
+                        <strong id="multi-selection-count">已选择 0 个元素</strong>
+                        <p>对齐以当前选区边界为基准，分布会保留首尾元素位置。</p>
+                    </div>
+                    <div class="editor-align-grid" aria-label="多选对齐">
+                        <button class="editor-button" type="button" data-align-mode="left">左对齐</button>
+                        <button class="editor-button" type="button" data-align-mode="center">水平居中</button>
+                        <button class="editor-button" type="button" data-align-mode="right">右对齐</button>
+                        <button class="editor-button" type="button" data-align-mode="top">顶对齐</button>
+                        <button class="editor-button" type="button" data-align-mode="middle">垂直居中</button>
+                        <button class="editor-button" type="button" data-align-mode="bottom">底对齐</button>
+                        <button class="editor-button" type="button" data-align-mode="distribute-horizontal">水平分布</button>
+                        <button class="editor-button" type="button" data-align-mode="distribute-vertical">垂直分布</button>
+                    </div>
+                </div>
             </aside>
         </div>
     </main>
 </div>
+
+<dialog class="editor-dialog" id="save-template-dialog" aria-labelledby="save-template-title">
+    <form method="dialog" id="save-template-form">
+        <div class="editor-dialog__header">
+            <div>
+                <h2 id="save-template-title">保存为个人模板</h2>
+                <p>只保存相框结构与文字样式，不保存已填入的商品图片。</p>
+            </div>
+            <button class="editor-icon-button" value="cancel" type="submit" aria-label="关闭">
+                <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg>
+            </button>
+        </div>
+        <div class="editor-dialog__body">
+            <div class="editor-template-spec" id="save-template-spec"></div>
+            <label class="editor-dialog-field"><span>模板名称</span><input id="save-template-name" maxlength="160" required></label>
+            <label class="editor-dialog-field"><span>分类</span><input id="save-template-category" maxlength="80" list="template-category-options" placeholder="例如：卖点"></label>
+            <datalist id="template-category-options"><option value="拼图"><option value="详情"><option value="卖点"><option value="场景"><option value="创意"><option value="横幅"></datalist>
+            <label class="editor-dialog-field"><span>模板说明</span><textarea id="save-template-description" rows="3" maxlength="500" placeholder="说明这个模板适合展示什么内容"></textarea></label>
+        </div>
+        <div class="editor-dialog__footer">
+            <button class="editor-button" value="cancel" type="submit">取消</button>
+            <button class="editor-button editor-button--primary" id="confirm-save-template" value="default" type="button">保存模板</button>
+        </div>
+    </form>
+</dialog>
 
 <div class="editor-toast" id="editor-toast" role="status" aria-live="polite"></div>
 <script src="js/template-lab-editor.js"></script>

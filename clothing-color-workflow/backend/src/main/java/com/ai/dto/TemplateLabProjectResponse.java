@@ -12,6 +12,7 @@ public class TemplateLabProjectResponse {
     private Long id;
     private String projectName;
     private String templateId;
+    private String templateDefinitionJson;
     private Integer canvasWidth;
     private Integer canvasHeight;
     private String designJson;
@@ -25,6 +26,7 @@ public class TemplateLabProjectResponse {
                 .id(project.getId())
                 .projectName(project.getProjectName())
                 .templateId(project.getTemplateId())
+                .templateDefinitionJson(includeDesign ? project.getTemplateDefinitionJson() : null)
                 .canvasWidth(project.getCanvasWidth())
                 .canvasHeight(project.getCanvasHeight())
                 .designJson(includeDesign ? project.getDesignJson() : null)

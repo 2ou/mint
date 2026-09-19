@@ -120,9 +120,44 @@
 .editor-panel--right { border-left: 1px solid var(--editor-border); }
 .editor-panel__tabs { height: 52px; padding: 8px; gap: 4px; border-bottom: 1px solid var(--editor-border); }
 .editor-panel__tabs button { flex: 1; height: 36px; border-color: transparent; border-radius: 6px; color: var(--editor-muted); font-size: 13px; font-weight: 650; }
+.editor-panel__tabs button { padding: 0 5px; font-size: 11px; white-space: nowrap; }
 .editor-panel__tabs button[aria-selected="true"] { border-color: rgba(37, 99, 235, .22); background: var(--editor-accent-soft); color: var(--editor-accent-hover); }
 .editor-panel__body { height: calc(100% - 52px); padding: 14px; overflow: auto; }
 .editor-panel__hint { margin: 10px 0 12px; color: var(--editor-muted); font-size: 12px; line-height: 1.5; }
+
+.editor-content-summary {
+    padding: 11px 12px;
+    border: 1px solid rgba(37, 99, 235, .18);
+    border-radius: 7px;
+    background: var(--editor-accent-soft);
+    color: #305b9f;
+    font-size: 12px;
+    line-height: 1.5;
+}
+.editor-content-summary strong { display: block; color: var(--editor-ink); font-size: 13px; }
+.editor-content-list,
+.editor-layer-list { display: grid; gap: 8px; }
+.editor-content-item,
+.editor-layer-item { padding: 10px; border: 1px solid var(--editor-border); border-radius: 7px; background: var(--editor-surface); }
+.editor-content-item__head,
+.editor-layer-item__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.editor-content-item__head strong,
+.editor-layer-item__head strong { min-width: 0; overflow: hidden; color: var(--editor-ink); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.editor-content-status { flex: 0 0 auto; color: #8a5a12; font-size: 10px; font-weight: 700; }
+.editor-content-status.is-ready { color: #217044; }
+.editor-content-item__actions,
+.editor-layer-actions { display: flex; gap: 6px; margin-top: 8px; }
+.editor-content-item button,
+.editor-layer-item button { min-height: 36px; padding: 0 9px; border: 1px solid var(--editor-border); border-radius: 6px; background: var(--editor-surface); color: var(--editor-ink); font: inherit; font-size: 11px; cursor: pointer; }
+.editor-content-item button:hover,
+.editor-layer-item button:hover { border-color: rgba(37, 99, 235, .34); background: var(--editor-accent-soft); color: var(--editor-accent-hover); }
+.editor-content-item button:focus-visible,
+.editor-layer-item button:focus-visible,
+.editor-content-item textarea:focus-visible { outline: 3px solid rgba(37, 99, 235, .23); outline-offset: 2px; }
+.editor-content-item textarea { width: 100%; min-height: 64px; margin-top: 8px; padding: 8px; resize: vertical; border: 1px solid var(--editor-border); border-radius: 6px; background: var(--editor-surface); color: var(--editor-ink); font: inherit; font-size: 12px; line-height: 1.45; }
+.editor-layer-item.is-hidden { opacity: .58; }
+.editor-layer-item.is-selected { border-color: rgba(37, 99, 235, .38); background: var(--editor-accent-soft); }
+.editor-layer-item__meta { margin-top: 3px; color: var(--editor-muted); font-size: 10px; }
 
 .editor-upload-zone { width: 100%; min-height: 116px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; border: 1px dashed rgba(37, 99, 235, .38); border-radius: 8px; background: #f5f8fd; color: #345c9a; cursor: pointer; transition: background 160ms ease, border-color 160ms ease, box-shadow 160ms ease; }
 .editor-upload-zone:hover,
@@ -196,6 +231,35 @@
 .editor-segmented button { flex: 1; min-width: 0; height: 38px; border: 0; border-right: 1px solid var(--editor-border); border-radius: 0; font-size: 12px; }
 .editor-segmented button:last-child { border-right: 0; }
 .editor-segmented button[aria-pressed="true"] { background: var(--editor-accent-soft); color: var(--editor-accent-hover); }
+
+.editor-align-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.editor-align-grid .editor-button { min-width: 0; padding: 0 8px; }
+
+.editor-dialog {
+    width: min(540px, calc(100vw - 32px));
+    padding: 0;
+    border: 1px solid var(--editor-border);
+    border-radius: 10px;
+    background: var(--editor-surface);
+    color: var(--editor-ink);
+    box-shadow: 0 28px 90px rgba(23, 32, 51, .28);
+}
+.editor-dialog::backdrop { background: rgba(23, 32, 51, .54); }
+.editor-dialog__header,
+.editor-dialog__footer { display: flex; align-items: center; }
+.editor-dialog__header { justify-content: space-between; gap: 16px; padding: 18px 20px; border-bottom: 1px solid var(--editor-border); }
+.editor-dialog__header h2 { margin: 0; font-size: 19px; letter-spacing: -.02em; }
+.editor-dialog__header p { margin: 5px 0 0; color: var(--editor-muted); font-size: 12px; }
+.editor-dialog__body { display: grid; gap: 14px; padding: 20px; }
+.editor-dialog__footer { justify-content: flex-end; gap: 8px; padding: 14px 20px; border-top: 1px solid var(--editor-border); background: var(--editor-surface-muted); }
+.editor-template-spec { padding: 10px 12px; border: 1px solid rgba(37, 99, 235, .18); border-radius: 7px; background: var(--editor-accent-soft); color: #305b9f; font-size: 12px; }
+.editor-dialog-field { display: block; }
+.editor-dialog-field > span { display: block; margin-bottom: 7px; color: var(--editor-muted); font-size: 11px; font-weight: 700; }
+.editor-dialog-field input,
+.editor-dialog-field textarea { width: 100%; min-height: 44px; padding: 9px 11px; border: 1px solid var(--editor-border); border-radius: 7px; background: var(--editor-surface); color: var(--editor-ink); font: inherit; }
+.editor-dialog-field textarea { resize: vertical; line-height: 1.5; }
+.editor-dialog-field input:focus-visible,
+.editor-dialog-field textarea:focus-visible { outline: 3px solid rgba(37, 99, 235, .23); outline-offset: 2px; }
 
 .editor-toast { position: fixed; right: 24px; bottom: 24px; z-index: 1200; max-width: min(420px, calc(100vw - 32px)); padding: 12px 15px; border-radius: 8px; background: var(--editor-ink); color: #f4f7fb; box-shadow: 0 18px 46px rgba(23, 32, 51, .24); opacity: 0; transform: translateY(12px); pointer-events: none; transition: opacity 180ms ease, transform 180ms ease; }
 .editor-toast.is-visible { opacity: 1; transform: translateY(0); }

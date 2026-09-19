@@ -1,22 +1,34 @@
 (function () {
     'use strict';
 
+    var FAVORITES_KEY = 'templateLabFavorites';
+    var RECENTS_KEY = 'templateLabRecentTemplates';
     var state = {
         templates: [],
         projects: [],
         selectedTemplate: null,
         category: '全部',
-        search: ''
+        search: '',
+        templateSearch: '',
+        usageType: '全部',
+        ratioGroup: '全部',
+        sourceMode: '全部',
+        favorites: readStoredList(FAVORITES_KEY),
+        recents: readStoredList(RECENTS_KEY)
     };
 
     var els = {
         projectGrid: document.getElementById('project-grid'),
         templateGrid: document.getElementById('template-grid'),
         projectCount: document.getElementById('project-count'),
+        templateCount: document.getElementById('template-count'),
         templateFilter: document.getElementById('template-filter'),
+        usageFilter: document.getElementById('template-usage-filter'),
+        ratioFilter: document.getElementById('template-ratio-filter'),
+        sourceFilter: document.getElementById('template-source-filter'),
         search: document.getElementById('project-search'),
+        templateSearch: document.getElementById('template-search'),
         dialog: document.getElementById('create-dialog'),
-        form: document.getElementById('create-form'),
         name: document.getElementById('project-name'),
         selectedSummary: document.getElementById('selected-template-summary'),
         createButton: document.getElementById('create-project'),
@@ -26,8 +38,22 @@
     var icons = {
         edit: '<svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg>',
         copy: '<svg aria-hidden="true" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>',
-        trash: '<svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>'
+        trash: '<svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>',
+        star: '<svg aria-hidden="true" viewBox="0 0 24 24"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-2.9-5.6 2.9 1.1-6.2L3 9.6l6.2-.9Z"/></svg>'
     };
+
+    function readStoredList(key) {
+        try {
+            var parsed = JSON.parse(localStorage.getItem(key) || '[]');
+            return Array.isArray(parsed) ? parsed.map(String) : [];
+        } catch (ignore) {
+            return [];
+        }
+    }
+
+    function storeList(key, value) {
+        try { localStorage.setItem(key, JSON.stringify(value)); } catch (ignore) { /* storage is optional */ }
+    }
 
     function apiData(response) {
         if (!response || !response.data || response.data.success !== true) {
@@ -38,11 +64,8 @@
 
     function escapeHtml(value) {
         return String(value == null ? '' : value)
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#039;');
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
     }
 
     function showToast(message, error) {
@@ -55,6 +78,14 @@
 
     function templateById(id) {
         return state.templates.find(function (item) { return item.id === id; });
+    }
+
+    function templatePreview(template) {
+        if (template && template.thumbnailDataUrl) {
+            return '<div class="lab-card__preview"><img src="' + escapeHtml(template.thumbnailDataUrl)
+                + '" alt="' + escapeHtml(template.name) + ' 模板预览"></div>';
+        }
+        return miniCanvas(template);
     }
 
     function miniCanvas(template) {
@@ -99,7 +130,7 @@
         els.projectCount.textContent = state.projects.length ? '共 ' + state.projects.length + ' 个草稿，编辑内容会自动保存。' : '还没有项目，从下方模板开始创建。';
         if (!projects.length) {
             els.projectGrid.innerHTML = '<div class="lab-empty"><div><strong>' + (search ? '没有匹配的项目' : '还没有拼图项目') + '</strong><span>'
-                + (search ? '换一个关键词试试。' : '选择一个内置模板即可开始编辑。') + '</span></div></div>';
+                + (search ? '换一个关键词试试。' : '选择一个模板即可开始编辑。') + '</span></div></div>';
             return;
         }
         els.projectGrid.innerHTML = projects.map(function (project) {
@@ -120,34 +151,88 @@
         }).join('');
     }
 
-    function renderFilters() {
-        var categories = ['全部'].concat(Array.from(new Set(state.templates.map(function (item) { return item.category; }))));
-        els.templateFilter.innerHTML = categories.map(function (category) {
-            return '<button type="button" aria-pressed="' + (state.category === category) + '" data-category="'
-                + escapeHtml(category) + '">' + escapeHtml(category) + '</button>';
+    function filterButtons(values, current, attribute) {
+        return values.map(function (value) {
+            return '<button type="button" aria-pressed="' + (current === value) + '" ' + attribute + '="'
+                + escapeHtml(value) + '">' + escapeHtml(value) + '</button>';
         }).join('');
+    }
+
+    function renderFilters() {
+        var categories = ['全部'].concat(Array.from(new Set(state.templates.map(function (item) { return item.category; }).filter(Boolean))));
+        var ratios = state.usageType === '副图' ? ['全部', '1:1', '3:4', '16:9']
+            : state.usageType === '亚马逊 A+' ? ['全部', '2928:1200', '1200:900']
+                : ['全部', '1:1', '3:4', '16:9', '2928:1200', '1200:900'];
+        if (!ratios.includes(state.ratioGroup)) state.ratioGroup = '全部';
+        els.usageFilter.innerHTML = filterButtons(['全部', '副图', '亚马逊 A+'], state.usageType, 'data-usage');
+        els.ratioFilter.innerHTML = filterButtons(ratios, state.ratioGroup, 'data-ratio');
+        els.sourceFilter.innerHTML = filterButtons(['全部', '系统', '个人', '收藏', '最近'], state.sourceMode, 'data-source');
+        els.templateFilter.innerHTML = filterButtons(categories, state.category, 'data-category');
+    }
+
+    function filteredTemplates() {
+        var query = state.templateSearch.trim().toLowerCase();
+        var templates = state.templates.filter(function (template) {
+            var searchable = [template.name, template.description, template.category, template.usageType, template.ratioGroup]
+                .concat(template.tags || []).join(' ').toLowerCase();
+            var sourceMatch = state.sourceMode === '全部'
+                || (state.sourceMode === '系统' && template.source !== 'personal')
+                || (state.sourceMode === '个人' && template.source === 'personal')
+                || (state.sourceMode === '收藏' && state.favorites.includes(String(template.id)))
+                || (state.sourceMode === '最近' && state.recents.includes(String(template.id)));
+            return (!query || searchable.includes(query))
+                && (state.category === '全部' || template.category === state.category)
+                && (state.usageType === '全部' || template.usageType === state.usageType)
+                && (state.ratioGroup === '全部' || template.ratioGroup === state.ratioGroup)
+                && sourceMatch;
+        });
+        if (state.sourceMode === '最近') {
+            templates.sort(function (left, right) { return state.recents.indexOf(String(left.id)) - state.recents.indexOf(String(right.id)); });
+        }
+        return templates;
     }
 
     function renderTemplates() {
         renderFilters();
-        var templates = state.category === '全部' ? state.templates : state.templates.filter(function (item) { return item.category === state.category; });
+        var templates = filteredTemplates();
+        els.templateCount.textContent = '显示 ' + templates.length + ' / ' + state.templates.length + ' 个模板；仅支持副图 1:1、3:4、16:9 与 A+ 2928:1200、1200:900。';
+        if (!templates.length) {
+            els.templateGrid.innerHTML = '<div class="lab-empty"><div><strong>没有符合条件的模板</strong><span>清除搜索或切换用途、比例与来源。</span></div></div>';
+            return;
+        }
         els.templateGrid.innerHTML = templates.map(function (template) {
-            return '<article class="lab-card" data-template-id="' + escapeHtml(template.id) + '">' + miniCanvas(template)
+            var favorite = state.favorites.includes(String(template.id));
+            var personal = template.source === 'personal';
+            return '<article class="lab-card lab-template-card" data-template-id="' + escapeHtml(template.id) + '">'
+                + templatePreview(template)
+                + '<div class="lab-card__floating-actions"><button class="lab-icon-button lab-favorite' + (favorite ? ' is-active' : '')
+                + '" type="button" data-action="favorite-template" aria-pressed="' + favorite + '" aria-label="' + (favorite ? '取消收藏' : '收藏模板') + '">' + icons.star + '</button>'
+                + (personal ? '<button class="lab-icon-button" type="button" data-action="delete-template" aria-label="删除个人模板">' + icons.trash + '</button>' : '') + '</div>'
                 + '<div class="lab-card__body"><div class="lab-card__title-row"><h3 class="lab-card__title">' + escapeHtml(template.name) + '</h3>'
-                + '<span class="lab-card__badge">' + escapeHtml(template.category) + '</span></div>'
-                + '<div class="lab-card__meta">' + template.width + ' × ' + template.height + ' · ' + (template.frames || []).length + ' 个相框</div>'
+                + '<span class="lab-card__badge ' + (personal ? 'lab-card__badge--personal' : '') + '">' + (personal ? '个人' : '系统') + '</span></div>'
+                + '<div class="lab-card__meta"><strong>' + escapeHtml(template.usageType) + '</strong> · ' + escapeHtml(template.ratioGroup)
+                + ' · ' + template.width + ' × ' + template.height + '</div>'
+                + '<div class="lab-card__meta">' + (template.frames || []).length + ' 个相框 · ' + (template.texts || []).length + ' 个文字字段 · ' + escapeHtml(template.category) + '</div>'
                 + '<p class="lab-card__description">' + escapeHtml(template.description) + '</p>'
                 + '<div class="lab-card__actions"><button class="lab-button lab-button--primary" type="button" data-action="use-template">使用此模板</button></div>'
                 + '</div></article>';
         }).join('');
     }
 
+    function rememberTemplate(template) {
+        state.recents = [String(template.id)].concat(state.recents.filter(function (id) { return id !== String(template.id); })).slice(0, 12);
+        storeList(RECENTS_KEY, state.recents);
+    }
+
     function openCreate(template) {
+        if (!template) return;
+        rememberTemplate(template);
         state.selectedTemplate = template;
         els.name.value = '';
-        els.selectedSummary.innerHTML = miniCanvas(template)
-            + '<div><strong>' + escapeHtml(template.name) + '</strong><span>' + template.width + ' × ' + template.height + ' · '
-            + escapeHtml(template.description) + '</span></div>';
+        els.selectedSummary.innerHTML = templatePreview(template)
+            + '<div><strong>' + escapeHtml(template.name) + '</strong><span>' + escapeHtml(template.usageType) + ' · '
+            + escapeHtml(template.ratioGroup) + ' · ' + template.width + ' × ' + template.height + '</span><small>'
+            + escapeHtml(template.description) + '</small></div>';
         els.dialog.showModal();
         setTimeout(function () { els.name.focus(); }, 0);
     }
@@ -211,21 +296,50 @@
         }
     }
 
+    function toggleFavorite(templateId) {
+        var id = String(templateId);
+        state.favorites = state.favorites.includes(id) ? state.favorites.filter(function (item) { return item !== id; }) : [id].concat(state.favorites);
+        storeList(FAVORITES_KEY, state.favorites);
+        renderTemplates();
+    }
+
+    async function deletePersonalTemplate(template) {
+        if (!template || template.source !== 'personal') return;
+        if (!window.confirm('确认删除个人模板“' + template.name + '”？已经创建的项目仍可继续编辑。')) return;
+        try {
+            await axios.delete('/api/template-lab/templates/personal/' + encodeURIComponent(template.personalTemplateId));
+            state.templates = state.templates.filter(function (item) { return item.id !== template.id; });
+            state.favorites = state.favorites.filter(function (id) { return id !== String(template.id); });
+            storeList(FAVORITES_KEY, state.favorites);
+            renderTemplates();
+            showToast('个人模板已删除');
+        } catch (error) {
+            showToast(error.response && error.response.data ? error.response.data.message : error.message, true);
+        }
+    }
+
     document.getElementById('open-template-picker').addEventListener('click', function () {
         document.getElementById('templates-heading').scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
     els.search.addEventListener('input', function (event) { state.search = event.target.value; renderProjects(); });
-    els.templateFilter.addEventListener('click', function (event) {
-        var button = event.target.closest('[data-category]');
+    els.templateSearch.addEventListener('input', function (event) { state.templateSearch = event.target.value; renderTemplates(); });
+    document.querySelector('.lab-template-tools').addEventListener('click', function (event) {
+        var button = event.target.closest('button');
         if (!button) return;
-        state.category = button.dataset.category;
+        if (button.dataset.category) state.category = button.dataset.category;
+        if (button.dataset.usage) { state.usageType = button.dataset.usage; state.ratioGroup = '全部'; }
+        if (button.dataset.ratio) state.ratioGroup = button.dataset.ratio;
+        if (button.dataset.source) state.sourceMode = button.dataset.source;
         renderTemplates();
     });
     els.templateGrid.addEventListener('click', function (event) {
-        var button = event.target.closest('[data-action="use-template"]');
+        var button = event.target.closest('[data-action]');
         if (!button) return;
         var card = button.closest('[data-template-id]');
-        openCreate(templateById(card.dataset.templateId));
+        var template = card ? templateById(card.dataset.templateId) : null;
+        if (button.dataset.action === 'use-template') openCreate(template);
+        if (button.dataset.action === 'favorite-template') toggleFavorite(card.dataset.templateId);
+        if (button.dataset.action === 'delete-template') deletePersonalTemplate(template);
     });
     els.projectGrid.addEventListener('click', function (event) {
         var button = event.target.closest('[data-action]');

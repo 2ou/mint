@@ -1,97 +1,275 @@
 [
   {
+    "schemaVersion": 1,
     "id": "fashion-duo",
     "name": "双面造型",
     "category": "副图",
     "description": "左右双图并列，适合展示正反面或两种搭配。",
+    "tags": ["女装", "双图", "正反面", "竖版"],
+    "usageType": "副图",
+    "ratioGroup": "3:4",
     "width": 1200,
-    "height": 1500,
+    "height": 1600,
     "background": "#f3f5f8",
     "accent": "#183153",
     "frames": [
-      {"id": "left-look", "x": 72, "y": 210, "width": 500, "height": 1110, "shape": "rounded", "radius": 24},
-      {"id": "right-look", "x": 628, "y": 210, "width": 500, "height": 1110, "shape": "rounded", "radius": 24}
+      {"id": "left-look", "slotId": "front", "label": "正面造型", "required": true, "replaceable": true, "x": 72, "y": 210, "width": 500, "height": 1110, "shape": "rounded", "radius": 24},
+      {"id": "right-look", "slotId": "back", "label": "背面造型", "required": true, "replaceable": true, "x": 628, "y": 210, "width": 500, "height": 1110, "shape": "rounded", "radius": 24}
     ],
     "texts": [
-      {"text": "TWO WAYS TO WEAR", "x": 72, "y": 72, "width": 760, "fontSize": 54, "fontWeight": "700", "fill": "#183153"},
-      {"text": "替换图片并修改这段说明", "x": 76, "y": 142, "width": 640, "fontSize": 24, "fill": "#687386"}
+      {"id": "title", "fieldId": "title", "label": "主标题", "editable": true, "text": "TWO WAYS TO WEAR", "x": 72, "y": 72, "width": 760, "fontSize": 54, "fontWeight": "700", "fill": "#183153"},
+      {"id": "subtitle", "fieldId": "subtitle", "label": "副标题", "editable": true, "text": "替换图片并修改这段说明", "x": 76, "y": 142, "width": 640, "fontSize": 24, "fill": "#687386"}
     ]
   },
   {
+    "schemaVersion": 1,
     "id": "detail-focus",
     "name": "主图与细节",
     "category": "详情",
     "description": "一张主视觉搭配三张细节图，适合面料与工艺说明。",
+    "tags": ["细节", "面料", "工艺", "主图"],
+    "usageType": "副图",
+    "ratioGroup": "3:4",
     "width": 1200,
-    "height": 1500,
+    "height": 1600,
     "background": "#f7f7f5",
     "accent": "#24332d",
     "frames": [
-      {"id": "hero", "x": 64, "y": 68, "width": 700, "height": 1120, "shape": "rounded", "radius": 28},
-      {"id": "detail-a", "x": 812, "y": 68, "width": 324, "height": 324, "shape": "circle"},
-      {"id": "detail-b", "x": 812, "y": 438, "width": 324, "height": 324, "shape": "circle"},
-      {"id": "detail-c", "x": 812, "y": 808, "width": 324, "height": 324, "shape": "circle"}
+      {"id": "hero", "slotId": "hero", "label": "主视觉", "required": true, "replaceable": true, "x": 64, "y": 68, "width": 700, "height": 1120, "shape": "rounded", "radius": 28},
+      {"id": "detail-a", "slotId": "detail-a", "label": "细节一", "required": true, "replaceable": true, "x": 812, "y": 68, "width": 324, "height": 324, "shape": "circle"},
+      {"id": "detail-b", "slotId": "detail-b", "label": "细节二", "required": true, "replaceable": true, "x": 812, "y": 438, "width": 324, "height": 324, "shape": "circle"},
+      {"id": "detail-c", "slotId": "detail-c", "label": "细节三", "required": true, "replaceable": true, "x": 812, "y": 808, "width": 324, "height": 324, "shape": "circle"}
     ],
     "texts": [
-      {"text": "DESIGNED IN DETAIL", "x": 64, "y": 1240, "width": 840, "fontSize": 52, "fontWeight": "700", "fill": "#24332d"},
-      {"text": "面料 · 版型 · 工艺", "x": 68, "y": 1310, "width": 520, "fontSize": 26, "fill": "#69766f"}
+      {"id": "title", "fieldId": "title", "label": "主标题", "editable": true, "text": "DESIGNED IN DETAIL", "x": 64, "y": 1240, "width": 840, "fontSize": 52, "fontWeight": "700", "fill": "#24332d"},
+      {"id": "features", "fieldId": "features", "label": "卖点词", "editable": true, "text": "面料 · 版型 · 工艺", "x": 68, "y": 1310, "width": 520, "fontSize": 26, "fill": "#69766f"}
     ]
   },
   {
+    "schemaVersion": 1,
     "id": "lookbook-grid",
     "name": "四格穿搭",
     "category": "拼图",
     "description": "规整四宫格，适合多颜色、多场景和搭配对比。",
-    "width": 1600,
-    "height": 1200,
+    "tags": ["四宫格", "穿搭", "多色", "横版"],
+    "usageType": "亚马逊 A+",
+    "ratioGroup": "1200:900",
+    "width": 1200,
+    "height": 900,
     "background": "#eef2f7",
     "accent": "#16243b",
     "frames": [
-      {"id": "grid-a", "x": 64, "y": 188, "width": 710, "height": 432, "shape": "rounded", "radius": 20},
-      {"id": "grid-b", "x": 826, "y": 188, "width": 710, "height": 432, "shape": "rounded", "radius": 20},
-      {"id": "grid-c", "x": 64, "y": 668, "width": 710, "height": 432, "shape": "rounded", "radius": 20},
-      {"id": "grid-d", "x": 826, "y": 668, "width": 710, "height": 432, "shape": "rounded", "radius": 20}
+      {"id": "grid-a", "slotId": "look-a", "label": "造型一", "required": true, "replaceable": true, "x": 48, "y": 141, "width": 533, "height": 324, "shape": "rounded", "radius": 15},
+      {"id": "grid-b", "slotId": "look-b", "label": "造型二", "required": true, "replaceable": true, "x": 620, "y": 141, "width": 532, "height": 324, "shape": "rounded", "radius": 15},
+      {"id": "grid-c", "slotId": "look-c", "label": "造型三", "required": true, "replaceable": true, "x": 48, "y": 501, "width": 533, "height": 324, "shape": "rounded", "radius": 15},
+      {"id": "grid-d", "slotId": "look-d", "label": "造型四", "required": true, "replaceable": true, "x": 620, "y": 501, "width": 532, "height": 324, "shape": "rounded", "radius": 15}
     ],
     "texts": [
-      {"text": "THE DAILY EDIT", "x": 64, "y": 54, "width": 840, "fontSize": 62, "fontWeight": "700", "fill": "#16243b"},
-      {"text": "四种搭配，一套完整表达", "x": 1010, "y": 82, "width": 520, "fontSize": 25, "textAlign": "right", "fill": "#647186"}
+      {"id": "title", "fieldId": "title", "label": "主标题", "editable": true, "text": "THE DAILY EDIT", "x": 48, "y": 40, "width": 630, "fontSize": 47, "fontWeight": "700", "fill": "#16243b"},
+      {"id": "subtitle", "fieldId": "subtitle", "label": "副标题", "editable": true, "text": "四种搭配，一套完整表达", "x": 758, "y": 62, "width": 390, "fontSize": 19, "textAlign": "right", "fill": "#647186"}
     ]
   },
   {
+    "schemaVersion": 1,
     "id": "shape-story",
     "name": "几何故事板",
     "category": "创意",
     "description": "圆形与切角相框组合，适合更有节奏的商品副图。",
+    "tags": ["几何", "故事板", "创意", "方形"],
+    "usageType": "副图",
+    "ratioGroup": "1:1",
     "width": 1200,
     "height": 1200,
-    "background": "#f5f1ed",
+    "background": "#f2eeea",
     "accent": "#913f35",
     "frames": [
-      {"id": "story-main", "x": 70, "y": 70, "width": 650, "height": 740, "shape": "polygon", "points": [[0,0],[650,0],[650,650],[560,740],[0,740]]},
-      {"id": "story-circle", "x": 772, "y": 116, "width": 352, "height": 352, "shape": "circle"},
-      {"id": "story-detail", "x": 740, "y": 540, "width": 384, "height": 470, "shape": "rounded", "radius": 32}
+      {"id": "story-main", "slotId": "main", "label": "主造型", "required": true, "replaceable": true, "x": 70, "y": 70, "width": 650, "height": 740, "shape": "polygon", "points": [[0,0],[650,0],[650,650],[560,740],[0,740]]},
+      {"id": "story-circle", "slotId": "detail-a", "label": "圆形细节", "required": true, "replaceable": true, "x": 772, "y": 116, "width": 352, "height": 352, "shape": "circle"},
+      {"id": "story-detail", "slotId": "detail-b", "label": "竖版细节", "required": true, "replaceable": true, "x": 740, "y": 540, "width": 384, "height": 470, "shape": "rounded", "radius": 32}
     ],
     "texts": [
-      {"text": "NEW SEASON", "x": 70, "y": 866, "width": 620, "fontSize": 64, "fontWeight": "700", "fill": "#913f35"},
-      {"text": "自由修改文字，模板结构保持整洁", "x": 74, "y": 946, "width": 570, "fontSize": 26, "fill": "#735f59"}
+      {"id": "title", "fieldId": "title", "label": "主标题", "editable": true, "text": "NEW SEASON", "x": 70, "y": 866, "width": 620, "fontSize": 64, "fontWeight": "700", "fill": "#913f35"},
+      {"id": "subtitle", "fieldId": "subtitle", "label": "说明", "editable": true, "text": "自由修改文字，模板结构保持整洁", "x": 74, "y": 946, "width": 570, "fontSize": 26, "fill": "#735f59"}
     ]
   },
   {
+    "schemaVersion": 1,
     "id": "wide-feature",
     "name": "横版卖点",
     "category": "横幅",
-    "description": "21:9 横版构图，适合网页端卖点图和活动横幅。",
-    "width": 1680,
-    "height": 720,
+    "description": "2928 × 1200 横版构图，适合亚马逊 A+ 卖点横幅。",
+    "tags": ["亚马逊A+", "横幅", "网页", "卖点"],
+    "usageType": "亚马逊 A+",
+    "ratioGroup": "2928:1200",
+    "width": 2928,
+    "height": 1200,
     "background": "#edf3f5",
     "accent": "#174b57",
     "frames": [
-      {"id": "wide-main", "x": 840, "y": 40, "width": 800, "height": 640, "shape": "rounded", "radius": 26},
-      {"id": "wide-detail", "x": 642, "y": 420, "width": 224, "height": 224, "shape": "circle"}
+      {"id": "wide-main", "slotId": "hero", "label": "横版主图", "required": true, "replaceable": true, "x": 1464, "y": 64, "width": 1392, "height": 1072, "shape": "rounded", "radius": 42},
+      {"id": "wide-detail", "slotId": "detail", "label": "圆形细节", "required": true, "replaceable": true, "x": 1116, "y": 700, "width": 380, "height": 380, "shape": "circle"}
     ],
     "texts": [
-      {"text": "LIGHTWEIGHT\nALL DAY", "x": 72, "y": 116, "width": 660, "fontSize": 78, "fontWeight": "700", "lineHeight": 0.95, "fill": "#174b57"},
-      {"text": "在这里输入商品卖点与场景说明", "x": 78, "y": 344, "width": 520, "fontSize": 30, "fill": "#5c747b"}
+      {"id": "title", "fieldId": "title", "label": "主标题", "editable": true, "text": "LIGHTWEIGHT\nALL DAY", "x": 120, "y": 190, "width": 1100, "fontSize": 130, "fontWeight": "700", "lineHeight": 0.95, "fill": "#174b57"},
+      {"id": "subtitle", "fieldId": "subtitle", "label": "卖点说明", "editable": true, "text": "在这里输入商品卖点与场景说明", "x": 130, "y": 575, "width": 900, "fontSize": 52, "fill": "#5c747b"}
+    ]
+  },
+  {
+    "schemaVersion": 1,
+    "id": "selling-points",
+    "name": "三项核心卖点",
+    "category": "卖点",
+    "description": "主图配三条结构化卖点，适合强调面料、版型和穿着体验。",
+    "tags": ["卖点", "说明", "面料", "竖版"],
+    "usageType": "副图",
+    "ratioGroup": "3:4",
+    "width": 1200,
+    "height": 1600,
+    "background": "#f1f3f6",
+    "accent": "#26364d",
+    "frames": [
+      {"id": "selling-hero", "slotId": "hero", "label": "商品主图", "required": true, "replaceable": true, "x": 54, "y": 58, "width": 1092, "height": 860, "shape": "rounded", "radius": 24}
+    ],
+    "texts": [
+      {"id": "title", "fieldId": "title", "label": "主标题", "editable": true, "text": "WHY YOU'LL LOVE IT", "x": 62, "y": 974, "width": 850, "fontSize": 54, "fontWeight": "700", "fill": "#26364d"},
+      {"id": "point-a", "fieldId": "point-a", "label": "卖点一", "editable": true, "text": "01  轻盈透气面料", "x": 66, "y": 1060, "width": 900, "fontSize": 31, "fontWeight": "700", "fill": "#26364d"},
+      {"id": "point-b", "fieldId": "point-b", "label": "卖点二", "editable": true, "text": "02  利落修身版型", "x": 66, "y": 1135, "width": 900, "fontSize": 31, "fontWeight": "700", "fill": "#26364d"},
+      {"id": "point-c", "fieldId": "point-c", "label": "卖点三", "editable": true, "text": "03  通勤与休闲皆宜", "x": 66, "y": 1210, "width": 900, "fontSize": 31, "fontWeight": "700", "fill": "#26364d"}
+    ]
+  },
+  {
+    "schemaVersion": 1,
+    "id": "color-lineup",
+    "name": "三色陈列",
+    "category": "颜色",
+    "description": "三列同款不同颜色并排展示，便于对比配色和库存主推色。",
+    "tags": ["颜色", "同款", "三图", "对比"],
+    "usageType": "副图",
+    "ratioGroup": "16:9",
+    "width": 1600,
+    "height": 900,
+    "background": "#f4f4f2",
+    "accent": "#292b31",
+    "frames": [
+      {"id": "color-a", "slotId": "color-a", "label": "颜色一", "required": true, "replaceable": true, "x": 58, "y": 150, "width": 468, "height": 690, "shape": "rounded", "radius": 18},
+      {"id": "color-b", "slotId": "color-b", "label": "颜色二", "required": true, "replaceable": true, "x": 566, "y": 150, "width": 468, "height": 690, "shape": "rounded", "radius": 18},
+      {"id": "color-c", "slotId": "color-c", "label": "颜色三", "required": true, "replaceable": true, "x": 1074, "y": 150, "width": 468, "height": 690, "shape": "rounded", "radius": 18}
+    ],
+    "texts": [
+      {"id": "title", "fieldId": "title", "label": "主标题", "editable": true, "text": "CHOOSE YOUR COLOR", "x": 58, "y": 62, "width": 900, "fontSize": 64, "fontWeight": "700", "fill": "#292b31"},
+      {"id": "subtitle", "fieldId": "subtitle", "label": "说明", "editable": true, "text": "一款，多种日常表达", "x": 1070, "y": 92, "width": 470, "fontSize": 26, "textAlign": "right", "fill": "#65676d"}
+    ]
+  },
+  {
+    "schemaVersion": 1,
+    "id": "lifestyle-stack",
+    "name": "场景叠放",
+    "category": "场景",
+    "description": "主场景配两张局部图，适合通勤、度假或街拍风格表达。",
+    "tags": ["场景", "生活方式", "街拍", "叠放"],
+    "usageType": "副图",
+    "ratioGroup": "3:4",
+    "width": 1200,
+    "height": 1600,
+    "background": "#eef1f0",
+    "accent": "#24413d",
+    "frames": [
+      {"id": "scene-main", "slotId": "scene", "label": "场景主图", "required": true, "replaceable": true, "x": 48, "y": 48, "width": 1104, "height": 1040, "shape": "rounded", "radius": 22},
+      {"id": "scene-detail-a", "slotId": "detail-a", "label": "搭配细节", "required": true, "replaceable": true, "x": 86, "y": 1000, "width": 360, "height": 360, "shape": "circle"},
+      {"id": "scene-detail-b", "slotId": "detail-b", "label": "材质细节", "required": true, "replaceable": true, "x": 760, "y": 1030, "width": 350, "height": 360, "shape": "rounded", "radius": 20}
+    ],
+    "texts": [
+      {"id": "title", "fieldId": "title", "label": "主标题", "editable": true, "text": "MADE FOR THE MOMENT", "x": 470, "y": 1140, "width": 520, "fontSize": 43, "fontWeight": "700", "fill": "#24413d"},
+      {"id": "subtitle", "fieldId": "subtitle", "label": "场景说明", "editable": true, "text": "从工作日到周末，都能自然切换", "x": 470, "y": 1205, "width": 520, "fontSize": 24, "fill": "#60736f"}
+    ]
+  },
+  {
+    "schemaVersion": 1,
+    "id": "texture-closeup",
+    "name": "面料特写",
+    "category": "详情",
+    "description": "三张高占比特写图，集中说明纹理、弹性和制作工艺。",
+    "tags": ["面料", "纹理", "特写", "工艺"],
+    "usageType": "副图",
+    "ratioGroup": "1:1",
+    "width": 1200,
+    "height": 1200,
+    "background": "#f0f2f4",
+    "accent": "#29384f",
+    "frames": [
+      {"id": "texture-main", "slotId": "texture-main", "label": "主面料", "required": true, "replaceable": true, "x": 58, "y": 210, "width": 680, "height": 900, "shape": "rounded", "radius": 20},
+      {"id": "texture-a", "slotId": "texture-a", "label": "纹理细节", "required": true, "replaceable": true, "x": 780, "y": 210, "width": 362, "height": 420, "shape": "rounded", "radius": 20},
+      {"id": "texture-b", "slotId": "texture-b", "label": "工艺细节", "required": true, "replaceable": true, "x": 780, "y": 674, "width": 362, "height": 436, "shape": "rounded", "radius": 20}
+    ],
+    "texts": [
+      {"id": "title", "fieldId": "title", "label": "主标题", "editable": true, "text": "FEEL THE DIFFERENCE", "x": 58, "y": 54, "width": 900, "fontSize": 58, "fontWeight": "700", "fill": "#29384f"},
+      {"id": "subtitle", "fieldId": "subtitle", "label": "面料说明", "editable": true, "text": "柔软触感，轻盈垂顺", "x": 790, "y": 108, "width": 350, "fontSize": 24, "textAlign": "right", "fill": "#687487"}
+    ]
+  },
+  {
+    "schemaVersion": 1,
+    "id": "comparison-board",
+    "name": "款式对比板",
+    "category": "拼图",
+    "description": "左右对比两个款式或两种穿法，中部文字区说明差异。",
+    "tags": ["对比", "款式", "双图", "穿法"],
+    "usageType": "亚马逊 A+",
+    "ratioGroup": "1200:900",
+    "width": 1200,
+    "height": 900,
+    "background": "#f3f5f7",
+    "accent": "#1f334f",
+    "frames": [
+      {"id": "compare-left", "slotId": "option-a", "label": "方案一", "required": true, "replaceable": true, "x": 39, "y": 45, "width": 488, "height": 810, "shape": "rounded", "radius": 15},
+      {"id": "compare-right", "slotId": "option-b", "label": "方案二", "required": true, "replaceable": true, "x": 674, "y": 45, "width": 488, "height": 810, "shape": "rounded", "radius": 15}
+    ],
+    "texts": [
+      {"id": "title", "fieldId": "title", "label": "对比标题", "editable": true, "text": "ONE PIECE\nTWO MOODS", "x": 540, "y": 323, "width": 120, "fontSize": 29, "fontWeight": "700", "textAlign": "center", "lineHeight": 1.05, "fill": "#1f334f"},
+      {"id": "subtitle", "fieldId": "subtitle", "label": "对比说明", "editable": true, "text": "选择适合今天的表达", "x": 540, "y": 469, "width": 120, "fontSize": 15, "textAlign": "center", "fill": "#6a7788"}
+    ]
+  },
+  {
+    "schemaVersion": 1,
+    "id": "square-social",
+    "name": "方形新品卡",
+    "category": "创意",
+    "description": "适合社交平台和商品集合封面，主图与标题层级清晰。",
+    "tags": ["方形", "新品", "社交", "封面"],
+    "usageType": "副图",
+    "ratioGroup": "1:1",
+    "width": 1200,
+    "height": 1200,
+    "background": "#edf0f4",
+    "accent": "#23324a",
+    "frames": [
+      {"id": "social-hero", "slotId": "hero", "label": "新品主图", "required": true, "replaceable": true, "x": 360, "y": 54, "width": 786, "height": 1092, "shape": "rounded", "radius": 28}
+    ],
+    "texts": [
+      {"id": "title", "fieldId": "title", "label": "主标题", "editable": true, "text": "NEW\nDROP", "x": 54, "y": 110, "width": 280, "fontSize": 88, "fontWeight": "700", "lineHeight": 0.88, "fill": "#23324a"},
+      {"id": "subtitle", "fieldId": "subtitle", "label": "副标题", "editable": true, "text": "SPRING / SUMMER", "x": 58, "y": 328, "width": 260, "fontSize": 23, "fontWeight": "700", "fill": "#69758a"},
+      {"id": "caption", "fieldId": "caption", "label": "说明", "editable": true, "text": "轻盈廓形与日常色彩", "x": 58, "y": 940, "width": 260, "fontSize": 25, "fill": "#526076"}
+    ]
+  },
+  {
+    "schemaVersion": 1,
+    "id": "wide-triptych",
+    "name": "横版三联图",
+    "category": "横幅",
+    "description": "三幅连续画面组成网页端横幅，适合场景、动作和细节串联。",
+    "tags": ["亚马逊A+", "三联图", "横幅", "场景"],
+    "usageType": "亚马逊 A+",
+    "ratioGroup": "2928:1200",
+    "width": 2928,
+    "height": 1200,
+    "background": "#eff2f5",
+    "accent": "#1c3652",
+    "frames": [
+      {"id": "triptych-a", "slotId": "scene-a", "label": "画面一", "required": true, "replaceable": true, "x": 64, "y": 60, "width": 896, "height": 1080, "shape": "rounded", "radius": 30},
+      {"id": "triptych-b", "slotId": "scene-b", "label": "画面二", "required": true, "replaceable": true, "x": 1016, "y": 60, "width": 896, "height": 1080, "shape": "rounded", "radius": 30},
+      {"id": "triptych-c", "slotId": "scene-c", "label": "画面三", "required": true, "replaceable": true, "x": 1968, "y": 60, "width": 896, "height": 1080, "shape": "rounded", "radius": 30}
+    ],
+    "texts": [
+      {"id": "title", "fieldId": "title", "label": "叠加标题", "editable": true, "text": "MOVE WITH EASE", "x": 994, "y": 510, "width": 940, "fontSize": 98, "fontWeight": "700", "textAlign": "center", "fill": "#1c3652"}
     ]
   }
 ]

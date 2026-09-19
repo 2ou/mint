@@ -3,7 +3,8 @@
 
     var CUSTOM_PROPS = [
         'labType', 'frameId', 'frameName', 'frameBounds', 'frameShape', 'coverScale',
-        'cropZoom', 'assetUrl', 'assetName', 'isTemplateText', 'excludeFromExport'
+        'cropZoom', 'assetUrl', 'assetName', 'isTemplateText', 'fieldId', 'fieldLabel',
+        'lockedByUser', 'excludeFromExport'
     ];
 
     var state = {
@@ -23,7 +24,8 @@
         saveQueue: Promise.resolve(),
         dirty: false,
         pendingFrameId: null,
-        guideLines: []
+        guideLines: [],
+        fieldSequence: 0
     };
 
     var els = {
@@ -72,6 +74,18 @@
         deleteText: document.getElementById('delete-text'),
         bringForward: document.getElementById('bring-forward'),
         sendBackward: document.getElementById('send-backward'),
+        propsMulti: document.getElementById('properties-multi'),
+        multiSelectionCount: document.getElementById('multi-selection-count'),
+        contentSummary: document.getElementById('content-summary'),
+        contentList: document.getElementById('content-replace-list'),
+        layerList: document.getElementById('layer-list'),
+        saveAsTemplate: document.getElementById('save-as-template'),
+        saveTemplateDialog: document.getElementById('save-template-dialog'),
+        saveTemplateName: document.getElementById('save-template-name'),
+        saveTemplateCategory: document.getElementById('save-template-category'),
+        saveTemplateDescription: document.getElementById('save-template-description'),
+        saveTemplateSpec: document.getElementById('save-template-spec'),
+        confirmSaveTemplate: document.getElementById('confirm-save-template'),
         toast: document.getElementById('editor-toast')
     };
 
@@ -103,10 +117,15 @@
         return (state.template.frames || []).find(function (item) { return item.id === frameId; });
     }
 
+    function uniqueFieldId(prefix) {
+        state.fieldSequence += 1;
+        return (prefix || 'field') + '-' + Date.now() + '-' + state.fieldSequence;
+    }
+
     function frameLabel(frameId) {
         var frames = state.template.frames || [];
         var index = frames.findIndex(function (item) { return item.id === frameId; });
-        return index >= 0 ? '相框 ' + (index + 1) : '相框';
+        return index >= 0 ? (frames[index].label || '相框 ' + (index + 1)) : '相框';
     }
 
     function makeFrameShape(frame, options) {
@@ -194,8 +213,14 @@
             textAlign: definition.textAlign || 'left',
             lineHeight: definition.lineHeight || 1.12,
             charSpacing: definition.charSpacing || 0,
+            angle: definition.angle || 0,
+            opacity: definition.opacity == null ? 1 : definition.opacity,
+            scaleX: definition.scaleX || 1,
+            scaleY: definition.scaleY || 1,
             labType: 'text',
             isTemplateText: true,
+            fieldId: definition.fieldId || definition.id || uniqueFieldId('field'),
+            fieldLabel: definition.label || '文字字段',
             editable: true,
             splitByGrapheme: true
         });
@@ -215,12 +240,21 @@
 
     function rehydrateCanvasObjects() {
         var imagesByFrame = {};
+        var templateTextIndex = 0;
         state.canvas.getObjects().forEach(function (object) {
             if (object.labType === 'frameImage') imagesByFrame[object.frameId] = object;
         });
         state.canvas.getObjects().forEach(function (object) {
             if (object.labType === 'text') {
-                object.set({ selectable: true, evented: true, editable: true, splitByGrapheme: true });
+                var definition = object.isTemplateText ? (state.template.texts || [])[templateTextIndex++] : null;
+                object.set({
+                    fieldId: object.fieldId || (definition && (definition.fieldId || definition.id)) || uniqueFieldId('free'),
+                    fieldLabel: object.fieldLabel || (definition && definition.label) || (object.isTemplateText ? '模板文字' : '自由文字'),
+                    selectable: !object.lockedByUser,
+                    evented: !object.lockedByUser,
+                    editable: !object.lockedByUser,
+                    splitByGrapheme: true
+                });
                 styleInteractiveObject(object);
             } else if (object.labType === 'frameImage') {
                 object.set({ selectable: true, evented: true, hasControls: false, hasBorders: false, lockScalingX: true, lockScalingY: true, lockRotation: true, objectCaching: false });
@@ -264,8 +298,12 @@
         updateHistoryButtons();
     }
 
-    function queueMutation(immediate) {
+    function queueMutation(immediate, skipPanelRefresh) {
         if (state.suppressHistory) return;
+        if (!skipPanelRefresh) {
+            renderContentPanel();
+            renderLayerPanel();
+        }
         clearTimeout(state.historyTimer);
         var commit = function () {
             pushHistory();
@@ -445,6 +483,16 @@
         return active && active.labType === 'text' ? active : null;
     }
 
+    function selectedTextObjects() {
+        var active = state.canvas && state.canvas.getActiveObject();
+        if (!active) return [];
+        if (active.labType === 'text') return [active];
+        if (active.type === 'activeSelection' && typeof active.getObjects === 'function') {
+            return active.getObjects().filter(function (object) { return object.labType === 'text'; });
+        }
+        return [];
+    }
+
     function resetCrop() {
         var image = selectedFrameImage();
         if (!image) return;
@@ -491,6 +539,8 @@
             splitByGrapheme: true,
             labType: 'text',
             isTemplateText: false,
+            fieldId: uniqueFieldId('free'),
+            fieldLabel: preset === 'heading' ? '自由标题' : (preset === 'caption' ? '自由标注' : '自由正文'),
             editable: true
         });
         styleInteractiveObject(text);
@@ -508,7 +558,14 @@
         var text = selectedText();
         if (!text) return;
         text.clone(function (copy) {
-            copy.set({ left: text.left + 28, top: text.top + 28, labType: 'text', isTemplateText: false });
+            copy.set({
+                left: text.left + 28,
+                top: text.top + 28,
+                labType: 'text',
+                isTemplateText: false,
+                fieldId: uniqueFieldId('free'),
+                fieldLabel: (text.fieldLabel || '自由文字') + ' 副本'
+            });
             styleInteractiveObject(copy);
             state.canvas.add(copy);
             state.canvas.setActiveObject(copy);
@@ -543,9 +600,19 @@
         els.propsEmpty.hidden = true;
         els.propsFrame.hidden = true;
         els.propsText.hidden = true;
+        els.propsMulti.hidden = true;
         if (!active || !active.labType) {
+            var selectedTexts = selectedTextObjects();
+            if (selectedTexts.length > 1) {
+                els.propsMulti.hidden = false;
+                els.multiSelectionCount.textContent = '已选择 ' + selectedTexts.length + ' 个文字元素';
+                els.selectionKind.textContent = '多选文字';
+                renderLayerPanel();
+                return;
+            }
             els.propsEmpty.hidden = false;
             els.selectionKind.textContent = '未选择元素';
+            renderLayerPanel();
             return;
         }
         if (active.labType === 'framePlaceholder' || active.labType === 'frameImage') {
@@ -561,6 +628,7 @@
                 els.imageZoomValue.value = zoomValue + '%';
                 els.imageZoomValue.textContent = zoomValue + '%';
             }
+            renderLayerPanel();
             return;
         }
         if (active.labType === 'text') {
@@ -581,10 +649,12 @@
             els.textOpacity.value = opacity;
             els.textOpacityValue.value = opacity + '%';
             els.textOpacityValue.textContent = opacity + '%';
+            renderLayerPanel();
             return;
         }
         els.propsEmpty.hidden = false;
         els.selectionKind.textContent = '未选择元素';
+        renderLayerPanel();
     }
 
     function normalizeColor(value) {
@@ -644,6 +714,205 @@
         }).join('');
     }
 
+    function findTextByFieldId(fieldId) {
+        return state.canvas && state.canvas.getObjects().find(function (object) {
+            return object.labType === 'text' && String(object.fieldId) === String(fieldId);
+        });
+    }
+
+    function renderContentPanel() {
+        if (!state.canvas || !state.template || !els.contentList) return;
+        var frames = state.template.frames || [];
+        var definitions = state.template.texts || [];
+        var filled = frames.filter(function (frame) { return Boolean(getFrameImage(frame.id)); }).length;
+        els.contentSummary.innerHTML = '<strong>内容完成度 ' + filled + ' / ' + frames.length + ' 个相框</strong>'
+            + '模板规格：' + escapeHtml(state.template.usageType) + ' · ' + escapeHtml(state.template.ratioGroup)
+            + ' · ' + state.logicalWidth + ' × ' + state.logicalHeight;
+        var frameRows = frames.map(function (frame) {
+            var image = getFrameImage(frame.id);
+            return '<section class="editor-content-item" data-content-frame="' + escapeHtml(frame.id) + '">'
+                + '<div class="editor-content-item__head"><strong>' + escapeHtml(frame.label || frameLabel(frame.id)) + '</strong>'
+                + '<span class="editor-content-status' + (image ? ' is-ready' : '') + '">' + (image ? '已填入' : '待替换') + '</span></div>'
+                + '<div class="editor-layer-item__meta">' + escapeHtml(image ? (image.assetName || '已上传图片') : '选择图片后可在画布中调整裁剪') + '</div>'
+                + '<div class="editor-content-item__actions"><button type="button" data-content-action="upload-frame">' + (image ? '替换图片' : '选择图片') + '</button>'
+                + '<button type="button" data-content-action="select-frame">定位画布</button>'
+                + (image ? '<button type="button" data-content-action="remove-frame">移除</button>' : '') + '</div></section>';
+        }).join('');
+        var textRows = definitions.map(function (definition) {
+            var fieldId = definition.fieldId || definition.id;
+            var object = findTextByFieldId(fieldId);
+            return '<section class="editor-content-item" data-content-text-item="' + escapeHtml(fieldId) + '">'
+                + '<div class="editor-content-item__head"><strong>' + escapeHtml(definition.label || '文字字段') + '</strong>'
+                + '<span class="editor-content-status' + (object ? ' is-ready' : '') + '">' + (object ? '可编辑' : '已删除') + '</span></div>'
+                + (object ? '<textarea data-content-text="' + escapeHtml(fieldId) + '" aria-label="编辑' + escapeHtml(definition.label || '文字字段') + '">' + escapeHtml(object.text || '') + '</textarea>'
+                    : '<div class="editor-content-item__actions"><button type="button" data-content-action="restore-text">恢复文字字段</button></div>')
+                + '</section>';
+        }).join('');
+        els.contentList.innerHTML = frameRows + textRows;
+    }
+
+    function layerTextLabel(object, index) {
+        var fallback = '文字 ' + (index + 1);
+        return object.fieldLabel || (object.text ? object.text.replace(/\s+/g, ' ').slice(0, 18) : fallback);
+    }
+
+    function renderLayerPanel() {
+        if (!state.canvas || !els.layerList) return;
+        var activeObjects = selectedTextObjects();
+        var texts = state.canvas.getObjects().filter(function (object) { return object.labType === 'text'; }).reverse();
+        var textRows = texts.map(function (object, index) {
+            var selected = activeObjects.includes(object);
+            return '<section class="editor-layer-item' + (!object.visible ? ' is-hidden' : '') + (selected ? ' is-selected' : '')
+                + '" data-layer-field="' + escapeHtml(object.fieldId) + '"><div class="editor-layer-item__head"><strong>'
+                + escapeHtml(layerTextLabel(object, index)) + '</strong><span class="editor-content-status">文字</span></div>'
+                + '<div class="editor-layer-item__meta">' + (object.lockedByUser ? '已锁定' : '可编辑') + (object.visible ? '' : ' · 已隐藏') + '</div>'
+                + '<div class="editor-layer-actions"><button type="button" data-layer-action="select">选择</button>'
+                + '<button type="button" data-layer-action="visibility">' + (object.visible ? '隐藏' : '显示') + '</button>'
+                + '<button type="button" data-layer-action="lock">' + (object.lockedByUser ? '解锁' : '锁定') + '</button>'
+                + '<button type="button" data-layer-action="up" aria-label="上移一层">上移</button>'
+                + '<button type="button" data-layer-action="down" aria-label="下移一层">下移</button></div></section>';
+        }).join('');
+        var frameRows = (state.template.frames || []).map(function (frame) {
+            return '<section class="editor-layer-item" data-layer-frame="' + escapeHtml(frame.id) + '"><div class="editor-layer-item__head"><strong>'
+                + escapeHtml(frame.label || frameLabel(frame.id)) + '</strong><span class="editor-content-status' + (getFrameImage(frame.id) ? ' is-ready' : '') + '">相框</span></div>'
+                + '<div class="editor-layer-actions"><button type="button" data-layer-action="select-frame">定位</button></div></section>';
+        }).join('');
+        els.layerList.innerHTML = textRows + frameRows;
+    }
+
+    function selectFrame(frameId) {
+        var object = getFrameImage(frameId) || getFramePlaceholder(frameId);
+        if (!object) return;
+        state.canvas.setActiveObject(object);
+        state.canvas.requestRenderAll();
+        renderProperties();
+    }
+
+    function alignSelectedTexts(mode) {
+        var objects = selectedTextObjects();
+        if (objects.length < 2) return;
+        var measurements = objects.map(function (object) {
+            return { object: object, rect: object.getBoundingRect(true, true) };
+        });
+        var left = Math.min.apply(null, measurements.map(function (item) { return item.rect.left; }));
+        var top = Math.min.apply(null, measurements.map(function (item) { return item.rect.top; }));
+        var right = Math.max.apply(null, measurements.map(function (item) { return item.rect.left + item.rect.width; }));
+        var bottom = Math.max.apply(null, measurements.map(function (item) { return item.rect.top + item.rect.height; }));
+        if (mode.indexOf('distribute-') === 0 && objects.length > 2) {
+            var horizontal = mode === 'distribute-horizontal';
+            var sorted = measurements.slice().sort(function (a, b) { return horizontal ? a.rect.left - b.rect.left : a.rect.top - b.rect.top; });
+            var start = horizontal ? sorted[0].rect.left : sorted[0].rect.top;
+            var end = horizontal
+                ? sorted[sorted.length - 1].rect.left + sorted[sorted.length - 1].rect.width
+                : sorted[sorted.length - 1].rect.top + sorted[sorted.length - 1].rect.height;
+            var totalSize = sorted.reduce(function (sum, item) { return sum + (horizontal ? item.rect.width : item.rect.height); }, 0);
+            var gap = (end - start - totalSize) / (sorted.length - 1);
+            var cursor = start;
+            sorted.forEach(function (item) {
+                var current = horizontal ? item.rect.left : item.rect.top;
+                if (horizontal) item.object.left += cursor - current;
+                else item.object.top += cursor - current;
+                cursor += (horizontal ? item.rect.width : item.rect.height) + gap;
+                item.object.setCoords();
+            });
+        } else {
+            measurements.forEach(function (item) {
+                var dx = 0;
+                var dy = 0;
+                if (mode === 'left') dx = left - item.rect.left;
+                if (mode === 'center') dx = (left + right) / 2 - (item.rect.left + item.rect.width / 2);
+                if (mode === 'right') dx = right - item.rect.left - item.rect.width;
+                if (mode === 'top') dy = top - item.rect.top;
+                if (mode === 'middle') dy = (top + bottom) / 2 - (item.rect.top + item.rect.height / 2);
+                if (mode === 'bottom') dy = bottom - item.rect.top - item.rect.height;
+                item.object.left += dx;
+                item.object.top += dy;
+                item.object.setCoords();
+            });
+        }
+        var active = state.canvas.getActiveObject();
+        if (active && typeof active.setCoords === 'function') active.setCoords();
+        state.canvas.requestRenderAll();
+        queueMutation(true);
+        renderProperties();
+    }
+
+    function buildTemplateDefinition() {
+        state.canvas.discardActiveObject();
+        state.canvas.requestRenderAll();
+        var texts = state.canvas.getObjects().filter(function (object) { return object.labType === 'text' && object.visible !== false; }).map(function (object, index) {
+            return {
+                id: object.fieldId || ('text-' + (index + 1)),
+                fieldId: object.fieldId || ('text-' + (index + 1)),
+                label: object.fieldLabel || ('文字 ' + (index + 1)),
+                editable: true,
+                text: object.text || '',
+                x: Math.round(object.left || 0),
+                y: Math.round(object.top || 0),
+                width: Math.round(object.width || 320),
+                fontSize: Math.round(object.fontSize || 32),
+                fontWeight: String(object.fontWeight || '400'),
+                fontStyle: object.fontStyle || 'normal',
+                fontFamily: object.fontFamily || 'Arial',
+                fill: normalizeColor(object.fill),
+                textAlign: object.textAlign || 'left',
+                lineHeight: object.lineHeight || 1.16,
+                charSpacing: object.charSpacing || 0,
+                angle: object.angle || 0,
+                opacity: object.opacity == null ? 1 : object.opacity,
+                scaleX: object.scaleX || 1,
+                scaleY: object.scaleY || 1
+            };
+        });
+        return {
+            schemaVersion: 1,
+            usageType: state.template.usageType,
+            ratioGroup: state.template.ratioGroup,
+            width: state.logicalWidth,
+            height: state.logicalHeight,
+            background: state.canvas.backgroundColor || state.template.background || '#f5f7fa',
+            accent: state.template.accent || '#172033',
+            tags: Array.from(new Set([state.template.usageType, state.template.ratioGroup, '个人模板'])),
+            frames: JSON.parse(JSON.stringify(state.template.frames || [])),
+            texts: texts
+        };
+    }
+
+    function openSaveTemplateDialog() {
+        els.saveTemplateName.value = (els.projectName.value.trim() || state.project.projectName) + ' 模板';
+        els.saveTemplateCategory.value = state.template.category || '个人模板';
+        els.saveTemplateDescription.value = '复用当前相框结构与文字布局。';
+        els.saveTemplateSpec.textContent = state.template.usageType + ' · ' + state.template.ratioGroup + ' · '
+            + state.logicalWidth + ' × ' + state.logicalHeight + ' · ' + (state.template.frames || []).length + ' 个相框';
+        els.saveTemplateDialog.showModal();
+        setTimeout(function () { els.saveTemplateName.focus(); els.saveTemplateName.select(); }, 0);
+    }
+
+    async function savePersonalTemplate() {
+        var name = els.saveTemplateName.value.trim();
+        if (!name) return showToast('请输入模板名称', true);
+        els.confirmSaveTemplate.disabled = true;
+        els.confirmSaveTemplate.textContent = '正在保存...';
+        try {
+            await saveNow();
+            var definition = buildTemplateDefinition();
+            apiData(await axios.post('/api/template-lab/projects/' + state.project.id + '/templates', {
+                name: name,
+                category: els.saveTemplateCategory.value.trim() || '个人模板',
+                description: els.saveTemplateDescription.value.trim(),
+                definitionJson: JSON.stringify(definition),
+                thumbnailDataUrl: createThumbnail()
+            }));
+            els.saveTemplateDialog.close();
+            showToast('个人模板已保存，可在模板库的“个人”中使用');
+        } catch (error) {
+            showToast(error.response && error.response.data ? error.response.data.message : error.message, true);
+        } finally {
+            els.confirmSaveTemplate.disabled = false;
+            els.confirmSaveTemplate.textContent = '保存模板';
+        }
+    }
+
     function escapeHtml(value) {
         return String(value == null ? '' : value)
             .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -684,7 +953,7 @@
 
     function serializedDesign() {
         return JSON.stringify({
-            schemaVersion: 1,
+            schemaVersion: 2,
             templateId: state.template.id,
             assets: state.assets,
             fabric: state.canvas.toDatalessJSON(CUSTOM_PROPS)
@@ -861,7 +1130,10 @@
             ]);
             state.project = apiData(responses[0]);
             var templates = apiData(responses[1]) || [];
-            state.template = templates.find(function (item) { return item.id === state.project.templateId; });
+            if (state.project.templateDefinitionJson) {
+                try { state.template = JSON.parse(state.project.templateDefinitionJson); } catch (ignore) { state.template = null; }
+            }
+            if (!state.template) state.template = templates.find(function (item) { return item.id === state.project.templateId; });
             if (!state.template) throw new Error('项目使用的模板不存在');
             state.logicalWidth = state.project.canvasWidth || state.template.width;
             state.logicalHeight = state.project.canvasHeight || state.template.height;
@@ -900,6 +1172,8 @@
     function finishInitialization() {
         state.suppressHistory = false;
         renderAssets();
+        renderContentPanel();
+        renderLayerPanel();
         applyViewportScale();
         pushHistory();
         renderProperties();
@@ -916,6 +1190,82 @@
                 document.querySelectorAll('[data-panel-content]').forEach(function (panel) { panel.hidden = panel.dataset.panelContent !== button.dataset.panelTab; });
             });
         });
+        els.contentList.addEventListener('input', function (event) {
+            var textarea = event.target.closest('[data-content-text]');
+            if (!textarea) return;
+            var object = findTextByFieldId(textarea.dataset.contentText);
+            if (!object) return;
+            object.set('text', textarea.value);
+            object.setCoords();
+            state.canvas.requestRenderAll();
+            queueMutation(false, true);
+        });
+        els.contentList.addEventListener('click', function (event) {
+            var button = event.target.closest('[data-content-action]');
+            if (!button) return;
+            var frameRow = button.closest('[data-content-frame]');
+            var textRow = button.closest('[data-content-text-item]');
+            var action = button.dataset.contentAction;
+            if (frameRow) {
+                var frameId = frameRow.dataset.contentFrame;
+                if (action === 'upload-frame') { state.pendingFrameId = frameId; els.assetInput.click(); }
+                if (action === 'select-frame') selectFrame(frameId);
+                if (action === 'remove-frame') {
+                    var image = getFrameImage(frameId);
+                    if (image) { state.canvas.setActiveObject(image); removeFrameImage(); }
+                }
+            }
+            if (textRow && action === 'restore-text') {
+                var fieldId = textRow.dataset.contentTextItem;
+                var definition = (state.template.texts || []).find(function (item) { return String(item.fieldId || item.id) === String(fieldId); });
+                if (definition) {
+                    addTemplateText(definition);
+                    var restored = findTextByFieldId(fieldId);
+                    if (restored) { restored.bringToFront(); state.canvas.setActiveObject(restored); }
+                    state.canvas.requestRenderAll();
+                    queueMutation(true);
+                    renderProperties();
+                }
+            }
+        });
+        els.layerList.addEventListener('click', function (event) {
+            var button = event.target.closest('[data-layer-action]');
+            if (!button) return;
+            var textRow = button.closest('[data-layer-field]');
+            var frameRow = button.closest('[data-layer-frame]');
+            var action = button.dataset.layerAction;
+            if (frameRow && action === 'select-frame') return selectFrame(frameRow.dataset.layerFrame);
+            if (!textRow) return;
+            var object = findTextByFieldId(textRow.dataset.layerField);
+            if (!object) return;
+            if (action === 'select') {
+                if (object.visible === false) object.visible = true;
+                state.canvas.setActiveObject(object);
+            }
+            if (action === 'visibility') {
+                object.visible = object.visible === false;
+                if (!object.visible) state.canvas.discardActiveObject();
+            }
+            if (action === 'lock') {
+                object.lockedByUser = !object.lockedByUser;
+                object.set({ selectable: !object.lockedByUser, evented: !object.lockedByUser, editable: !object.lockedByUser });
+                if (object.lockedByUser) state.canvas.discardActiveObject();
+            }
+            if (action === 'up') object.bringForward();
+            if (action === 'down') object.sendBackwards();
+            object.setCoords();
+            state.canvas.requestRenderAll();
+            queueMutation(true);
+            renderProperties();
+        });
+        document.querySelectorAll('[data-align-mode]').forEach(function (button) {
+            button.addEventListener('click', function () { alignSelectedTexts(button.dataset.alignMode); });
+        });
+        els.saveAsTemplate.addEventListener('click', function () {
+            if (!state.canvas || !state.project) return showToast('项目尚未加载完成', true);
+            openSaveTemplateDialog();
+        });
+        els.confirmSaveTemplate.addEventListener('click', savePersonalTemplate);
         document.querySelectorAll('[data-add-text]').forEach(function (button) {
             button.addEventListener('click', function () { addText(button.dataset.addText); });
         });

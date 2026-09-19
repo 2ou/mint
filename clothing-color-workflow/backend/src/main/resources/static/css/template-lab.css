@@ -193,6 +193,29 @@
 .lab-search input::placeholder,
 .lab-field input::placeholder { color: #8b96a5; }
 
+.lab-template-tools {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px 18px;
+    margin: -2px 0 18px;
+    padding: 14px;
+    border: 1px solid var(--lab-border);
+    border-radius: 8px;
+    background: var(--lab-surface-strong);
+}
+
+.lab-filter-group { min-width: 0; }
+.lab-filter-group--category { grid-column: 1 / -1; }
+.lab-filter-group > span {
+    display: block;
+    margin-bottom: 7px;
+    color: var(--lab-muted);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .04em;
+}
+.lab-template-tools .lab-filter { justify-content: flex-start; }
+
 .lab-project-grid,
 .lab-template-grid {
     display: grid;
@@ -233,6 +256,26 @@
     object-fit: cover;
 }
 
+.lab-card__floating-actions {
+    position: absolute;
+    z-index: 3;
+    top: 10px;
+    right: 10px;
+    display: flex;
+    gap: 6px;
+}
+
+.lab-card__floating-actions .lab-icon-button {
+    width: 40px;
+    min-height: 40px;
+    border-color: rgba(23, 32, 51, .14);
+    background: rgba(251, 252, 255, .94);
+    box-shadow: 0 4px 14px rgba(23, 32, 51, .12);
+}
+
+.lab-favorite.is-active { color: #b55a09; background: #fff6e8; }
+.lab-favorite.is-active svg { fill: currentColor; }
+
 .lab-mini-canvas {
     position: absolute;
     left: 50%;
@@ -260,7 +303,9 @@
 .lab-card__title-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .lab-card__title { overflow: hidden; margin: 0; font-size: 15px; font-weight: 720; text-overflow: ellipsis; white-space: nowrap; }
 .lab-card__badge { flex: 0 0 auto; padding: 4px 7px; border-radius: 999px; background: var(--lab-accent-soft); color: #2456a6; font-size: 11px; font-weight: 700; }
+.lab-card__badge--personal { background: #eef7f2; color: #276447; }
 .lab-card__meta { margin-top: 7px; color: var(--lab-muted); font-size: 12px; line-height: 1.45; }
+.lab-card__meta strong { color: var(--lab-ink); font-weight: 700; }
 .lab-card__description { min-height: 38px; margin: 8px 0 0; color: #526071; font-size: 13px; line-height: 1.5; text-wrap: pretty; }
 .lab-card__actions { gap: 8px; margin-top: 13px; }
 .lab-card__actions .lab-button { flex: 1; min-height: 40px; padding: 0 10px; font-size: 12px; }
@@ -268,7 +313,7 @@
 .lab-icon-button { display: inline-flex; width: 44px; align-items: center; justify-content: center; padding: 0; }
 
 .lab-filter { gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
-.lab-filter button { min-height: 36px; padding: 0 12px; font-size: 12px; font-weight: 650; }
+.lab-filter button { min-height: 40px; padding: 0 12px; font-size: 12px; font-weight: 650; }
 .lab-filter button[aria-pressed="true"] { border-color: rgba(37, 99, 235, .3); background: var(--lab-accent-soft); color: var(--lab-accent-hover); }
 
 .lab-empty,
@@ -319,6 +364,7 @@
 .lab-selected-template .lab-card__preview { height: 76px; border: 0; border-radius: 6px; }
 .lab-selected-template strong { display: block; font-size: 14px; }
 .lab-selected-template span { display: block; margin-top: 4px; color: var(--lab-muted); font-size: 12px; }
+.lab-selected-template small { display: block; margin-top: 5px; color: #526071; font-size: 12px; line-height: 1.45; }
 .lab-field { display: block; }
 .lab-field > span { display: block; margin-bottom: 7px; font-size: 13px; font-weight: 650; }
 .lab-field input { padding: 0 12px; }
@@ -354,6 +400,8 @@
     .lab-section__header { align-items: stretch; flex-direction: column; }
     .lab-search { width: 100%; }
     .lab-filter { justify-content: flex-start; }
+    .lab-template-tools { grid-template-columns: 1fr; }
+    .lab-filter-group--category { grid-column: auto; }
 }
 
 @media (max-width: 580px) {
