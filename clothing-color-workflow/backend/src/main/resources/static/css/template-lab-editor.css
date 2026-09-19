@@ -60,7 +60,6 @@
 .editor-toolbar__group:first-child { padding-left: 0; border-left: 0; }
 .editor-icon-button,
 .editor-button,
-.editor-zoom-value,
 .editor-toolbar select,
 .editor-panel__tabs button,
 .editor-text-presets button,
@@ -72,7 +71,6 @@
 }
 
 .editor-icon-button,
-.editor-zoom-value,
 .editor-button,
 .editor-panel__tabs button,
 .editor-text-presets button,
@@ -90,12 +88,10 @@
 .editor-upload-zone svg,
 .editor-property-empty svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .editor-icon-button:hover,
-.editor-zoom-value:hover,
 .editor-button:hover,
 .editor-segmented button:hover { border-color: rgba(37, 99, 235, .34); background: var(--editor-accent-soft); color: var(--editor-accent-hover); }
 .editor-icon-button:disabled { opacity: .38; cursor: not-allowed; background: #f4f6f9; }
 .editor-icon-button:focus-visible,
-.editor-zoom-value:focus-visible,
 .editor-button:focus-visible,
 .editor-panel__tabs button:focus-visible,
 .editor-text-presets button:focus-visible,
@@ -106,7 +102,38 @@
 .editor-upload-zone:focus-visible,
 .editor-asset-card:focus-visible { outline: 3px solid rgba(37, 99, 235, .23); outline-offset: 2px; }
 
-.editor-zoom-value { width: 58px; height: 38px; border: 0; border-radius: 5px; font-size: 12px; font-variant-numeric: tabular-nums; }
+.editor-zoom-input {
+    width: 76px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: var(--editor-surface);
+    color: var(--editor-ink);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+}
+.editor-zoom-input:hover { border-color: var(--editor-border); }
+.editor-zoom-input:focus-within { outline: 3px solid rgba(37, 99, 235, .23); outline-offset: 1px; border-color: rgba(37, 99, 235, .38); }
+.editor-zoom-input input {
+    width: 44px;
+    height: 40px;
+    padding: 0;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-weight: 650;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    appearance: textfield;
+}
+.editor-zoom-input input::-webkit-inner-spin-button,
+.editor-zoom-input input::-webkit-outer-spin-button { margin: 0; appearance: none; }
 .editor-toolbar select { height: 44px; padding: 0 28px 0 10px; border: 1px solid var(--editor-border); border-radius: 7px; background: var(--editor-surface); color: var(--editor-ink); font-size: 12px; }
 .editor-button { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 13px; border-radius: 7px; font-size: 13px; font-weight: 650; white-space: nowrap; }
 .editor-button--primary { border-color: var(--editor-accent); background: var(--editor-accent); color: #f7faff; }

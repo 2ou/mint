@@ -1032,17 +1032,29 @@
         var availableWidth = Math.max(320, els.stage.clientWidth - 80);
         var availableHeight = Math.max(320, els.stage.clientHeight - 80);
         state.fitScale = Math.min(availableWidth / state.logicalWidth, availableHeight / state.logicalHeight, 1);
-        var scale = Math.max(.12, Math.min(2.5, state.fitScale * state.manualZoom));
+        var scale = Math.max(.01, Math.min(5, state.fitScale * state.manualZoom));
         state.canvas.setDimensions({ width: Math.round(state.logicalWidth * scale), height: Math.round(state.logicalHeight * scale) });
         state.canvas.setZoom(scale);
         state.canvas.calcOffset();
         state.canvas.renderAll();
-        els.zoomValue.textContent = Math.round(state.manualZoom * 100) + '%';
+        els.zoomValue.value = String(Math.round(state.manualZoom * 100));
     }
 
     function setManualZoom(value) {
-        state.manualZoom = Math.max(.5, Math.min(2, value));
+        state.manualZoom = Math.max(.1, Math.min(5, Math.round(value * 100) / 100));
         applyViewportScale();
+    }
+
+    function applyZoomInput() {
+        var raw = Number(els.zoomValue.value);
+        if (!Number.isFinite(raw)) {
+            els.zoomValue.value = String(Math.round(state.manualZoom * 100));
+            return;
+        }
+        var rounded = Math.round(raw);
+        var clamped = Math.max(10, Math.min(500, rounded));
+        setManualZoom(clamped / 100);
+        if (clamped !== raw) showToast('缩放比例已调整为 ' + clamped + '%');
     }
 
     async function exportImage() {
@@ -1311,7 +1323,14 @@
         els.redo.addEventListener('click', redo);
         els.zoomOut.addEventListener('click', function () { setManualZoom(state.manualZoom - .1); });
         els.zoomIn.addEventListener('click', function () { setManualZoom(state.manualZoom + .1); });
-        els.zoomValue.addEventListener('click', function () { setManualZoom(1); });
+        els.zoomValue.addEventListener('change', applyZoomInput);
+        els.zoomValue.addEventListener('keydown', function (event) {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                applyZoomInput();
+                els.zoomValue.select();
+            }
+        });
         els.exportButton.addEventListener('click', exportImage);
         els.imageZoom.addEventListener('input', function () {
             els.imageZoomValue.value = els.imageZoom.value + '%';
