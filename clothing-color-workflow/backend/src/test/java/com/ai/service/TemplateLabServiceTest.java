@@ -3,17 +3,22 @@ package com.ai.service;
 import com.ai.config.AppProperties;
 import com.ai.dto.TemplateLabProjectCreateRequest;
 import com.ai.dto.TemplateLabTemplateCreateRequest;
+import com.ai.dto.KieTaskResult;
 import com.ai.entity.TemplateLabPersonalTemplate;
 import com.ai.entity.TemplateLabProject;
 import com.ai.exception.BusinessException;
 import com.ai.repository.TemplateLabPersonalTemplateRepository;
 import com.ai.repository.TemplateLabProjectRepository;
+import com.aliyun.oss.OSS;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
+import org.springframework.mock.web.MockMultipartFile;
 
+import java.math.BigDecimal;
+import java.util.Map;
 import java.util.Optional;
 import java.util.List;
 
@@ -22,25 +27,38 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class TemplateLabServiceTest {
 
     private TemplateLabProjectRepository repository;
     private TemplateLabPersonalTemplateRepository personalTemplateRepository;
+    private OssService ossService;
+    private KieClientService kieClientService;
+    private CanvasTaskService canvasTaskService;
+    private ModelPricingService modelPricingService;
     private TemplateLabService service;
 
     @BeforeEach
     void setUp() {
         repository = Mockito.mock(TemplateLabProjectRepository.class);
         personalTemplateRepository = Mockito.mock(TemplateLabPersonalTemplateRepository.class);
+        ossService = Mockito.mock(OssService.class);
+        kieClientService = Mockito.mock(KieClientService.class);
+        canvasTaskService = Mockito.mock(CanvasTaskService.class);
+        modelPricingService = Mockito.mock(ModelPricingService.class);
         when(personalTemplateRepository.findByOwnerUserIdOrderByUpdatedAtDesc(any())).thenReturn(List.of());
         service = new TemplateLabService(
                 repository,
                 personalTemplateRepository,
                 new ObjectMapper(),
-                Mockito.mock(OssService.class),
-                new AppProperties());
+                ossService,
+                new AppProperties(),
+                kieClientService,
+                canvasTaskService,
+                modelPricingService);
         service.loadTemplates();
     }
 
@@ -129,5 +147,51 @@ class TemplateLabServiceTest {
                 () -> service.createPersonalTemplate(91L, 7L, request));
 
         assertTrue(error.getMessage().contains("副图仅支持"));
+    }
+
+    @Test
+    void createsRecraftCutoutWithOnlyOfficialImageInput() {
+        TemplateLabProject project = new TemplateLabProject();
+        project.setId(81L);
+        project.setOwnerUserId(7L);
+        project.setShopName("PINKSIR");
+        when(repository.findByIdAndOwnerUserId(81L, 7L)).thenReturn(Optional.of(project));
+        OSS oss = Mockito.mock(OSS.class);
+        when(ossService.getOssClient()).thenReturn(oss);
+        KieTaskResult created = new KieTaskResult();
+        created.setTaskId("task-cutout-1");
+        when(kieClientService.createMarketTask(eq("recraft/remove-background"), any())).thenReturn(created);
+        when(canvasTaskService.billingFields("task-cutout-1")).thenReturn(Map.of(
+                "estimated_cost", new BigDecimal("0.0320")));
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "cutout-input.jpg", "image/jpeg", new byte[]{1, 2, 3});
+
+        Map<String, Object> response = service.createCutout(
+                81L, 7L, "PINKSIR", "PINKSIR", "image-7", "https://example.com/source.png", file);
+
+        assertEquals("task-cutout-1", response.get("task_id"));
+        var inputCaptor = org.mockito.ArgumentCaptor.forClass(Map.class);
+        verify(kieClientService).createMarketTask(eq("recraft/remove-background"), inputCaptor.capture());
+        assertEquals(1, inputCaptor.getValue().size());
+        assertTrue(inputCaptor.getValue().containsKey("image"));
+        var payloadCaptor = org.mockito.ArgumentCaptor.forClass(Map.class);
+        verify(canvasTaskService).recordCreated(eq("task-cutout-1"), eq("image"), eq("PINKSIR"), eq("PINKSIR"), payloadCaptor.capture());
+        assertEquals("template-lab:81", payloadCaptor.getValue().get("canvas_id"));
+        assertEquals("image-7", payloadCaptor.getValue().get("canvas_node_id"));
+    }
+
+    @Test
+    void rejectsCutoutInputLargerThanFiveMegabytes() {
+        TemplateLabProject project = new TemplateLabProject();
+        project.setId(81L);
+        project.setOwnerUserId(7L);
+        when(repository.findByIdAndOwnerUserId(81L, 7L)).thenReturn(Optional.of(project));
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "too-large.jpg", "image/jpeg", new byte[5 * 1024 * 1024 + 1]);
+
+        BusinessException error = assertThrows(BusinessException.class, () -> service.createCutout(
+                81L, 7L, "PINKSIR", "PINKSIR", "image-7", "", file));
+
+        assertTrue(error.getMessage().contains("5MB"));
     }
 }

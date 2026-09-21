@@ -52,6 +52,7 @@ public class ModelPricingService {
         if (versionRepository.existsByStatus(PUBLISHED)) {
             ensureMiniMaxH3PriceRules();
             ensureGptImage25PriceRules();
+            ensureRecraftRemoveBackgroundPriceRule();
             return;
         }
 
@@ -73,6 +74,8 @@ public class ModelPricingService {
         rules.add(rule(version, "image", "gpt-image-2-image-to-image", "4K", "", "PER_IMAGE", "0.4400", 100, "GPT Image 2 · 4K"));
         rules.add(rule(version, "image", "gpt-image-2-image-to-image", "2K", "", "PER_IMAGE", "0.2500", 100, "GPT Image 2 · 2K"));
         rules.add(rule(version, "image", "gpt-image-2-image-to-image", "1K", "", "PER_IMAGE", "0.0900", 100, "GPT Image 2 · 1K"));
+        rules.add(rule(version, "image", "recraft/remove-background", "", "", "PER_IMAGE", "0.0320", 500,
+                "Recraft · 背景移除"));
 
         // Seedance 2.5 price is maintained in KIE credits in the old module;
         // the catalogue stores the resulting CNY per billed second.
@@ -197,6 +200,20 @@ public class ModelPricingService {
                 .filter(candidate -> existing.stream().noneMatch(rule -> samePriceRule(rule, candidate)))
                 .toList();
         if (!missing.isEmpty()) ruleRepository.saveAll(missing);
+    }
+
+    /** Adds the Template Lab cutout rule without overwriting an admin-maintained price. */
+    private void ensureRecraftRemoveBackgroundPriceRule() {
+        Optional<ModelPriceVersion> version = versionRepository.findFirstByStatusOrderByPublishedAtDesc(PUBLISHED);
+        if (version.isEmpty()) return;
+        List<ModelPriceRule> existing = ruleRepository.findByVersion_IdOrderByPriorityDescIdAsc(version.get().getId());
+        boolean present = existing.stream().anyMatch(rule ->
+                "image".equals(normalize(rule.getMediaType()))
+                        && "recraft/remove-background".equals(normalize(rule.getModel())));
+        if (!present) {
+            ruleRepository.save(rule(version.get(), "image", "recraft/remove-background", "", "", "PER_IMAGE",
+                    "0.0320", 500, "Recraft · 背景移除"));
+        }
     }
 
     private void addGptImage25PriceRules(List<ModelPriceRule> rules, ModelPriceVersion version) {

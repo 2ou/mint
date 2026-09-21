@@ -102,4 +102,35 @@ public class TemplateLabController {
             @RequestParam("file") MultipartFile file) {
         return ApiResponse.ok("图片已上传", templateLabService.uploadAsset(id, userId, file));
     }
+
+    @GetMapping("/projects/{id}/cutout-quote")
+    public ApiResponse<Map<String, Object>> cutoutQuote(
+            @PathVariable("id") Long id,
+            @RequestAttribute("userId") Long userId) {
+        return ApiResponse.ok("查询成功", templateLabService.cutoutQuote(id, userId));
+    }
+
+    @PostMapping(value = "/projects/{id}/cutouts", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ApiResponse<Map<String, Object>> createCutout(
+            @PathVariable("id") Long id,
+            @RequestAttribute("userId") Long userId,
+            @RequestAttribute("operator") String operator,
+            @RequestAttribute("shopName") String shopName,
+            @RequestParam("elementId") String elementId,
+            @RequestParam(value = "sourceUrl", required = false) String sourceUrl,
+            @RequestParam("file") MultipartFile file) {
+        return ApiResponse.ok("抠图任务已提交", templateLabService.createCutout(
+                id, userId, operator, shopName, elementId, sourceUrl, file));
+    }
+
+    @GetMapping("/projects/{id}/cutouts/{taskId}")
+    public ApiResponse<Map<String, Object>> cutoutResult(
+            @PathVariable("id") Long id,
+            @PathVariable("taskId") String taskId,
+            @RequestAttribute("userId") Long userId,
+            @RequestAttribute("operator") String operator,
+            @RequestAttribute("shopName") String shopName) {
+        return ApiResponse.ok("查询成功", templateLabService.cutoutResult(
+                id, userId, operator, shopName, taskId));
+    }
 }

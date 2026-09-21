@@ -88,7 +88,7 @@
                         <strong>上传图片</strong>
                         <span>JPG、PNG、WebP，单张不超过 25MB</span>
                     </button>
-                    <p class="editor-panel__hint">选择相框后点击素材，或直接把素材拖到相框中。</p>
+                    <p class="editor-panel__hint">点击素材可添加为自由图片；拖到相框内会填充相框，拖到空白处可自由移动。</p>
                     <div class="editor-asset-grid" id="asset-grid"></div>
                 </div>
                 <div class="editor-panel__body" data-panel-content="text" hidden>
@@ -109,7 +109,7 @@
                     </div>
                 </div>
                 <div class="editor-panel__body" data-panel-content="layers" hidden>
-                    <p class="editor-panel__hint">选择、隐藏、锁定或调整文字层级。按钮操作可替代拖拽。</p>
+                    <p class="editor-panel__hint">选择、隐藏、锁定或调整图片与文字层级。按钮操作可替代拖拽。</p>
                     <div class="editor-layer-list" id="layer-list"></div>
                 </div>
             </aside>
@@ -123,7 +123,7 @@
                 <div class="editor-canvas-viewport" id="canvas-viewport" hidden>
                     <canvas id="template-canvas"></canvas>
                 </div>
-                <div class="editor-stage__tip" id="stage-tip" hidden>点击相框选择图片，拖动画面调整裁剪区域</div>
+                <div class="editor-stage__tip" id="stage-tip" hidden>图片拖到相框内会填充相框，拖到空白处会成为自由图片</div>
             </section>
 
             <aside class="editor-panel editor-panel--right" aria-label="属性设置">
@@ -135,7 +135,7 @@
                     <div class="editor-property-empty">
                         <svg aria-hidden="true" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/></svg>
                         <strong>选择画布元素</strong>
-                        <span>选择图片可调整裁剪，选择文字可修改样式。</span>
+                        <span>双击自由图片可编辑；图片也可拖入相框或在整个画布移动。</span>
                     </div>
                     <div class="editor-document-info">
                         <div><span>模板</span><strong id="document-template">-</strong></div>
@@ -158,6 +158,105 @@
                             <button class="editor-button editor-button--danger" id="remove-frame-image" type="button">移除图片</button>
                         </div>
                     </div>
+                    <button class="editor-button editor-button--block" id="frame-to-free-image" type="button" hidden>转为自由图片</button>
+                </div>
+
+                <div class="editor-properties editor-image-properties" id="properties-image" hidden>
+                    <div class="editor-image-heading">
+                        <div>
+                            <span class="editor-eyebrow">自由图片</span>
+                            <strong id="free-image-name">图片</strong>
+                        </div>
+                        <span class="editor-status-badge" id="free-image-status">可编辑</span>
+                    </div>
+
+                    <div class="editor-segmented editor-version-switch" aria-label="图片版本">
+                        <button id="show-original-image" type="button" aria-pressed="true">原图</button>
+                        <button id="show-cutout-image" type="button" aria-pressed="false" disabled>KIE 抠图</button>
+                    </div>
+
+                    <div class="editor-task-card" id="cutout-task-card" hidden role="status" aria-live="polite">
+                        <span class="editor-task-card__indicator" aria-hidden="true"></span>
+                        <div><strong id="cutout-task-title">正在抠图</strong><span id="cutout-task-detail">KIE 正在识别主体边缘...</span></div>
+                    </div>
+
+                    <section class="editor-property-section" aria-labelledby="image-basic-title">
+                        <div class="editor-property-section__title"><strong id="image-basic-title">基础调整</strong><span>双击图片可快速打开</span></div>
+                        <div class="editor-property-group">
+                            <label for="free-image-opacity">整体透明度 <output id="free-image-opacity-value">100%</output></label>
+                            <input id="free-image-opacity" type="range" min="0" max="100" step="1" value="100">
+                        </div>
+                        <div class="editor-tool-grid">
+                            <button class="editor-button" id="flip-image-horizontal" type="button">水平翻转</button>
+                            <button class="editor-button" id="flip-image-vertical" type="button">垂直翻转</button>
+                            <button class="editor-button" id="rotate-image" type="button">旋转 90°</button>
+                            <button class="editor-button" id="reset-free-image" type="button">复位变换</button>
+                        </div>
+                        <div id="free-image-crop-controls">
+                            <div class="editor-property-row">
+                                <label class="editor-property-group" for="free-image-crop-width"><span>保留宽度 <output id="free-image-crop-width-value">100%</output></span><input id="free-image-crop-width" type="range" min="10" max="100" step="1" value="100"></label>
+                                <label class="editor-property-group" for="free-image-crop-height"><span>保留高度 <output id="free-image-crop-height-value">100%</output></span><input id="free-image-crop-height" type="range" min="10" max="100" step="1" value="100"></label>
+                            </div>
+                            <div class="editor-property-row">
+                                <label class="editor-property-group" for="free-image-crop-x"><span>水平位置 <output id="free-image-crop-x-value">50%</output></span><input id="free-image-crop-x" type="range" min="0" max="100" step="1" value="50"></label>
+                                <label class="editor-property-group" for="free-image-crop-y"><span>垂直位置 <output id="free-image-crop-y-value">50%</output></span><input id="free-image-crop-y" type="range" min="0" max="100" step="1" value="50"></label>
+                            </div>
+                            <button class="editor-button editor-button--block" id="reset-free-image-crop" type="button">恢复完整画面</button>
+                        </div>
+                        <p class="editor-section-help" id="composition-crop-note" hidden>图片组合请先拆分主体与背景，再单独裁剪。</p>
+                        <label class="editor-property-group" for="image-template-role">
+                            <span>保存模板时</span>
+                            <select id="image-template-role">
+                                <option value="replaceable">作为可替换图片</option>
+                                <option value="fixed">作为固定模板素材</option>
+                            </select>
+                        </label>
+                    </section>
+
+                    <section class="editor-property-section" aria-labelledby="cutout-title">
+                        <div class="editor-property-section__title"><strong id="cutout-title">KIE 智能抠图</strong><span id="cutout-price">预计 ¥0.032/张</span></div>
+                        <p class="editor-section-help">仅点击抠图时产生费用。原图会一直保留，可随时免费切换。</p>
+                        <button class="editor-button editor-button--primary editor-button--block" id="start-cutout" type="button">开始抠图</button>
+                    </section>
+
+                    <section class="editor-property-section" aria-labelledby="background-title">
+                        <div class="editor-property-section__title"><strong id="background-title">背景图片</strong><span>普通图层合成 · 免费</span></div>
+                        <p class="editor-section-help" id="background-help">把素材放到当前图片下方，不会调用 KIE。</p>
+                        <button class="editor-button editor-button--block" id="choose-background" type="button">添加背景图片</button>
+                        <div id="background-controls" hidden>
+                            <div class="editor-property-group">
+                                <label for="background-opacity">背景透明度 <output id="background-opacity-value">100%</output></label>
+                                <input id="background-opacity" type="range" min="0" max="100" step="1" value="100">
+                            </div>
+                            <div class="editor-property-group">
+                                <label for="background-zoom">背景缩放 <output id="background-zoom-value">100%</output></label>
+                                <input id="background-zoom" type="range" min="100" max="300" step="1" value="100">
+                            </div>
+                            <button class="editor-button editor-button--block" id="edit-background-position" type="button" aria-pressed="false">拖动调整背景位置</button>
+                            <div class="editor-two-buttons">
+                                <button class="editor-button" id="change-background" type="button">更换背景</button>
+                                <button class="editor-button editor-button--danger" id="remove-background" type="button">移除背景</button>
+                            </div>
+                            <button class="editor-button editor-button--block" id="split-image-composition" type="button">拆分主体与背景</button>
+                        </div>
+                    </section>
+
+                    <section class="editor-property-section" aria-labelledby="image-layout-title">
+                        <div class="editor-property-section__title"><strong id="image-layout-title">画布与层级</strong></div>
+                        <label class="editor-property-group" for="free-image-frame-target">
+                            <span>填入相框</span>
+                            <select id="free-image-frame-target"></select>
+                        </label>
+                        <button class="editor-button editor-button--block" id="place-image-in-frame" type="button">填入所选相框</button>
+                        <div class="editor-two-buttons">
+                            <button class="editor-button" id="duplicate-free-image" type="button">复制图片</button>
+                            <button class="editor-button editor-button--danger" id="delete-free-image" type="button">删除图片</button>
+                        </div>
+                        <div class="editor-two-buttons">
+                            <button class="editor-button" id="image-bring-forward" type="button">上移一层</button>
+                            <button class="editor-button" id="image-send-backward" type="button">下移一层</button>
+                        </div>
+                    </section>
                 </div>
 
                 <div class="editor-properties" id="properties-text" hidden>
@@ -231,7 +330,7 @@
         <div class="editor-dialog__header">
             <div>
                 <h2 id="save-template-title">保存为个人模板</h2>
-                <p>只保存相框结构与文字样式，不保存已填入的商品图片。</p>
+                <p>相框、文字和图片位置都会保存；自由图片可分别设为“可替换”或“固定素材”。</p>
             </div>
             <button class="editor-icon-button" value="cancel" type="submit" aria-label="关闭">
                 <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg>
@@ -247,6 +346,28 @@
         <div class="editor-dialog__footer">
             <button class="editor-button" value="cancel" type="submit">取消</button>
             <button class="editor-button editor-button--primary" id="confirm-save-template" value="default" type="button">保存模板</button>
+        </div>
+    </form>
+</dialog>
+
+<dialog class="editor-dialog editor-cutout-dialog" id="cutout-confirm-dialog" aria-labelledby="cutout-confirm-title">
+    <form method="dialog">
+        <div class="editor-dialog__header">
+            <div>
+                <h2 id="cutout-confirm-title">确认使用 KIE 抠图</h2>
+                <p>使用 Recraft 提取透明主体，原图不会被覆盖。</p>
+            </div>
+            <button class="editor-icon-button" value="cancel" type="submit" aria-label="关闭">
+                <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg>
+            </button>
+        </div>
+        <div class="editor-dialog__body">
+            <div class="editor-cost-summary"><span>本次预计费用</span><strong id="cutout-confirm-cost">¥0.032</strong></div>
+            <p class="editor-dialog-note">任务完成后按 KIE 返回的实际积分更新费用。失败不会替换当前图片。</p>
+        </div>
+        <div class="editor-dialog__footer">
+            <button class="editor-button" value="cancel" type="submit">取消</button>
+            <button class="editor-button editor-button--primary" id="confirm-cutout" value="default" type="button">确认并开始</button>
         </div>
     </form>
 </dialog>

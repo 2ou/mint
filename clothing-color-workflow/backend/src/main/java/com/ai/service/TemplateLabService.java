@@ -5,6 +5,7 @@ import com.ai.dto.TemplateLabProjectCreateRequest;
 import com.ai.dto.TemplateLabProjectResponse;
 import com.ai.dto.TemplateLabProjectUpdateRequest;
 import com.ai.dto.TemplateLabTemplateCreateRequest;
+import com.ai.dto.KieTaskResult;
 import com.ai.entity.TemplateLabPersonalTemplate;
 import com.ai.entity.TemplateLabProject;
 import com.ai.exception.BusinessException;
@@ -38,15 +39,20 @@ import java.util.stream.Collectors;
 public class TemplateLabService {
 
     private static final long MAX_ASSET_BYTES = 25L * 1024 * 1024;
+    private static final long MAX_CUTOUT_INPUT_BYTES = 5L * 1024 * 1024;
     private static final int MAX_DESIGN_JSON_LENGTH = 5_000_000;
     private static final int MAX_THUMBNAIL_LENGTH = 1_500_000;
     private static final int MAX_TEMPLATE_JSON_LENGTH = 500_000;
+    private static final String CUTOUT_MODEL = "recraft/remove-background";
 
     private final TemplateLabProjectRepository projectRepository;
     private final TemplateLabPersonalTemplateRepository personalTemplateRepository;
     private final ObjectMapper objectMapper;
     private final OssService ossService;
     private final AppProperties appProperties;
+    private final KieClientService kieClientService;
+    private final CanvasTaskService canvasTaskService;
+    private final ModelPricingService modelPricingService;
 
     private List<JsonNode> templates = List.of();
     private Map<String, JsonNode> templateIndex = Map.of();
@@ -229,6 +235,136 @@ public class TemplateLabService {
         }
     }
 
+    @Transactional(readOnly = true)
+    public Map<String, Object> cutoutQuote(Long projectId, Long userId) {
+        requireOwnedProject(projectId, userId);
+        return modelPricingService.quote("image", Map.of("model", CUTOUT_MODEL), 1).toMap();
+    }
+
+    @Transactional
+    public Map<String, Object> createCutout(Long projectId,
+                                            Long userId,
+                                            String operator,
+                                            String shopName,
+                                            String elementId,
+                                            String sourceUrl,
+                                            MultipartFile file) {
+        TemplateLabProject project = requireOwnedProject(projectId, userId);
+        validateCutoutInput(file);
+        String normalizedElementId = trimToLength(elementId, 96);
+        if (normalizedElementId == null || normalizedElementId.isBlank()) {
+            throw new BusinessException("图片元素编号不能为空");
+        }
+        canvasTaskService.requireSubmissionCapacity(operator, shopName);
+
+        String safeShop = project.getShopName().replaceAll("[^\\p{L}\\p{N}_-]", "_");
+        String objectName = "TEMPLATE_LAB/" + safeShop + "/" + userId + "/" + projectId
+                + "/cutout-input/" + UUID.randomUUID() + ".jpg";
+        try {
+            ObjectMetadata metadata = new ObjectMetadata();
+            metadata.setContentType("image/jpeg");
+            metadata.setContentLength(file.getSize());
+            ossService.getOssClient().putObject(
+                    appProperties.getOss().getResultBucket(), objectName, file.getInputStream(), metadata);
+            String providerInputUrl = appProperties.getOss().getResultPublicHost() + "/" + objectName;
+            KieTaskResult created = kieClientService.createMarketTask(CUTOUT_MODEL, Map.of(
+                    "image", providerInputUrl
+            ));
+            String taskId = created.getTaskId();
+            if (taskId == null || taskId.isBlank()) {
+                throw new IllegalStateException("KIE 未返回抠图任务编号");
+            }
+
+            Map<String, Object> taskPayload = new LinkedHashMap<>();
+            taskPayload.put("model", CUTOUT_MODEL);
+            taskPayload.put("canvas_id", templateCanvasId(projectId));
+            taskPayload.put("canvas_node_id", normalizedElementId);
+            taskPayload.put("template_lab_project_id", projectId);
+            taskPayload.put("source_url", sourceUrl == null ? "" : sourceUrl.trim());
+            taskPayload.put("provider_input_url", providerInputUrl);
+            taskPayload.put("provider_input_object", objectName);
+            canvasTaskService.recordCreated(taskId, "image", operator, shopName, taskPayload);
+
+            Map<String, Object> response = new LinkedHashMap<>();
+            response.put("task_id", taskId);
+            response.put("element_id", normalizedElementId);
+            response.put("status", "processing");
+            response.put("model", CUTOUT_MODEL);
+            response.putAll(canvasTaskService.billingFields(taskId));
+            return response;
+        } catch (Exception error) {
+            try {
+                ossService.getOssClient().deleteObject(appProperties.getOss().getResultBucket(), objectName);
+            } catch (Exception ignored) {
+                // Best-effort cleanup; the original error is more useful to the caller.
+            }
+            if (error instanceof BusinessException businessException) throw businessException;
+            throw new IllegalStateException("KIE 抠图任务提交失败：" + error.getMessage(), error);
+        }
+    }
+
+    @Transactional
+    public Map<String, Object> cutoutResult(Long projectId,
+                                            Long userId,
+                                            String operator,
+                                            String shopName,
+                                            String taskId) {
+        requireOwnedProject(projectId, userId);
+        String canvasId = templateCanvasId(projectId);
+        canvasTaskService.requireOwnedTask(taskId, operator, shopName, canvasId);
+
+        KieTaskResult result = canvasTaskService.findResult(taskId)
+                .orElseThrow(() -> new BusinessException("抠图任务不存在"));
+        if (!result.isFinished()) {
+            KieTaskResult providerResult = kieClientService.getFullResult(taskId);
+            canvasTaskService.recordPolledResult(providerResult);
+            result = canvasTaskService.findResult(taskId).orElse(providerResult);
+        }
+        if (result.isFinished() && result.isSuccess()) {
+            result = canvasTaskService.ensureResultPersisted(taskId).orElse(result);
+        }
+
+        String status = normalizeCutoutStatus(result);
+        String servingUrl = result.isSuccess() ? canvasTaskService.resultServingUrl(result) : null;
+        boolean storagePending = result.isSuccess() && (servingUrl == null || servingUrl.isBlank());
+        if (result.isFinished()) cleanupCutoutInput(taskId, operator, shopName);
+
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("task_id", taskId);
+        response.put("status", storagePending ? "processing" : status);
+        response.put("result_url", servingUrl == null ? "" : servingUrl);
+        response.put("error", result.getErrorMessage() == null ? "" : result.getErrorMessage());
+        response.put("terminal", result.isFinished() && !storagePending);
+        response.put("storage_pending", storagePending);
+        response.putAll(canvasTaskService.billingFields(taskId));
+        return response;
+    }
+
+    private String templateCanvasId(Long projectId) {
+        return "template-lab:" + projectId;
+    }
+
+    private String normalizeCutoutStatus(KieTaskResult result) {
+        if (result == null || !result.isFinished()) return "processing";
+        return result.isSuccess() ? "success" : "failed";
+    }
+
+    @SuppressWarnings("unchecked")
+    private void cleanupCutoutInput(String taskId, String operator, String shopName) {
+        canvasTaskService.retryPayload(taskId, operator, shopName).ifPresent(snapshot -> {
+            Object rawPayload = snapshot.get("payload");
+            if (!(rawPayload instanceof Map<?, ?> payload)) return;
+            Object rawObjectName = payload.get("provider_input_object");
+            String objectName = rawObjectName == null ? "" : String.valueOf(rawObjectName).trim();
+            if (objectName.isBlank()) return;
+            try {
+                ossService.getOssClient().deleteObject(appProperties.getOss().getResultBucket(), objectName);
+            } catch (Exception ignored) {
+                // The scheduled/result retry path may call this more than once.
+            }
+        });
+    }
+
     TemplateLabProject requireOwnedProject(Long id, Long userId) {
         return projectRepository.findByIdAndOwnerUserId(id, userId)
                 .orElseThrow(() -> new BusinessException("拼图项目不存在或无权访问"));
@@ -388,6 +524,17 @@ public class TemplateLabService {
         String type = file.getContentType() == null ? "" : file.getContentType().toLowerCase(Locale.ROOT);
         if (!List.of("image/jpeg", "image/png", "image/webp").contains(type)) {
             throw new BusinessException("仅支持 JPG、PNG 和 WebP 图片");
+        }
+    }
+
+    private void validateCutoutInput(MultipartFile file) {
+        if (file == null || file.isEmpty()) throw new BusinessException("抠图输入不能为空");
+        if (file.getSize() > MAX_CUTOUT_INPUT_BYTES) {
+            throw new BusinessException("抠图临时图片不能超过 5MB");
+        }
+        String type = file.getContentType() == null ? "" : file.getContentType().toLowerCase(Locale.ROOT);
+        if (!List.of("image/jpeg", "image/png", "image/webp").contains(type)) {
+            throw new BusinessException("抠图仅支持 JPG、PNG 和 WebP");
         }
     }
 

@@ -33,5 +33,14 @@ public interface KieClientService {
     // 获取 KIE 原始 JSON 报文
     String getRawResult(String taskId);
 
+    /**
+     * 创建 KIE Market 通用任务。现有视频任务接口本身使用统一的
+     * /jobs/createTask 协议，因此先通过默认方法复用，避免图片后处理
+     * 再维护一套鉴权和响应拆包逻辑。
+     */
+    default KieTaskResult createMarketTask(String model, Map<String, Object> input) {
+        return createVideoTask(model, input);
+    }
+
     KieTaskResult createVideoTask(String model, Map<String, Object> input);
 }

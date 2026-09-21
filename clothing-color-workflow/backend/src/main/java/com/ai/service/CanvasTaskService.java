@@ -3,6 +3,7 @@ package com.ai.service;
 import com.ai.config.AppProperties;
 import com.ai.dto.KieTaskResult;
 import com.ai.entity.CanvasTask;
+import com.ai.exception.BusinessException;
 import com.ai.repository.CanvasTaskRepository;
 import com.ai.service.OssService;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -105,6 +106,17 @@ public class CanvasTaskService {
                 return Optional.empty();
             }
         });
+    }
+
+    @Transactional(readOnly = true)
+    public void requireOwnedTask(String taskId, String operator, String shopName, String canvasId) {
+        CanvasTask task = canvasTaskRepository.findByTaskId(taskId)
+                .orElseThrow(() -> new BusinessException("任务不存在"));
+        if (!sameOwner(task, operator, shopName)
+                || canvasId == null
+                || !canvasId.equals(task.getCanvasId())) {
+            throw new BusinessException("任务不存在或无权访问");
+        }
     }
 
     @Transactional(readOnly = true)
@@ -293,6 +305,7 @@ public class CanvasTaskService {
                 task.setActualCost(modelPricingService.kieCreditsToCny(result.getCost(), task.getPriceVersion()));
             }
             if (callbackPayloadJson != null) task.setCallbackPayloadJson(callbackPayloadJson);
+            if (isProviderTerminal(result)) cleanupProviderInput(task);
             canvasTaskRepository.save(task);
             return;
         }
@@ -311,7 +324,39 @@ public class CanvasTaskService {
         if (isSuccessfulResult(task)) {
             persistResult(task);
         }
+        if (isTerminalStatus(task.getStatus())) cleanupProviderInput(task);
         canvasTaskRepository.save(task);
+    }
+
+    private boolean isProviderTerminal(KieTaskResult result) {
+        return result != null && (result.isFinished()
+                || isTerminalStatus(normalizeStatus(result.getStatus(), result.getResultUrl())));
+    }
+
+    /**
+     * Some KIE operations need a short-lived public OSS object. Remove only the
+     * explicitly recorded Template Lab object after the provider reaches a
+     * terminal state, including when the browser has already been closed.
+     */
+    private void cleanupProviderInput(CanvasTask task) {
+        if (task == null || task.getRequestPayloadJson() == null || task.getRequestPayloadJson().isBlank()) return;
+        try {
+            Map<String, Object> payload = objectMapper.readValue(task.getRequestPayloadJson(), new TypeReference<>() {});
+            String objectName = payload.get("provider_input_object") == null
+                    ? ""
+                    : String.valueOf(payload.get("provider_input_object")).trim();
+            if (objectName.isBlank() || !objectName.startsWith("TEMPLATE_LAB/")) return;
+            String bucket = appProperties.getOss() == null ? null : appProperties.getOss().getResultBucket();
+            if (bucket == null || bucket.isBlank()) return;
+            ossService.getOssClient().deleteObject(bucket, objectName);
+            payload.remove("provider_input_object");
+            payload.remove("provider_input_url");
+            task.setRequestPayloadJson(objectMapper.writeValueAsString(payload));
+            log.info("[AI Canvas] temporary provider input deleted: taskId={}, object={}", task.getTaskId(), objectName);
+        } catch (Exception cleanupError) {
+            log.warn("[AI Canvas] temporary provider input cleanup failed: taskId={}, error={}",
+                    task.getTaskId(), cleanupError.getMessage());
+        }
     }
 
     private boolean isSuccessfulResult(CanvasTask task) {
