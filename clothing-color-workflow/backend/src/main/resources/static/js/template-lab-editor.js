@@ -33,6 +33,7 @@
         guideLines: [],
         fieldSequence: 0,
         assetPickMode: '',
+        backgroundTargetId: '',
         pendingPlacement: null,
         backgroundEdit: null,
         cutoutQuote: null,
@@ -50,6 +51,9 @@
         assetInput: document.getElementById('asset-file-input'),
         uploadAssets: document.getElementById('upload-assets'),
         assetGrid: document.getElementById('asset-grid'),
+        backgroundPickBanner: document.getElementById('background-pick-banner'),
+        backgroundPickTarget: document.getElementById('background-pick-target'),
+        cancelBackgroundPick: document.getElementById('cancel-background-pick'),
         undo: document.getElementById('undo-button'),
         redo: document.getElementById('redo-button'),
         zoomOut: document.getElementById('zoom-out'),
@@ -975,7 +979,12 @@
 
     async function applyBackgroundAsset(asset, backgroundOptions, targetVisual) {
         var visual = targetVisual || selectedVisual();
-        if (!visual || !asset || !asset.url) return;
+        if (!visual || !state.canvas || !state.canvas.getObjects().includes(visual)) {
+            clearBackgroundPick();
+            showToast('要更换背景的图片已不存在，请重新选择图片', true);
+            return null;
+        }
+        if (!asset || !asset.url) return null;
         stopBackgroundEditing();
         try {
             var requestedBackground = backgroundOptions || {};
@@ -1053,16 +1062,26 @@
                 subTargetCheck: true
             }));
             styleFreeVisual(group);
+            if (!state.canvas.getObjects().includes(visual)) {
+                throw new Error('要更换背景的图片已不存在');
+            }
             state.canvas.remove(visual);
             state.canvas.insertAt(group, Math.max(0, index), false);
             state.canvas.setActiveObject(group);
             state.canvas.requestRenderAll();
-            state.assetPickMode = '';
+            if (state.assetPickMode === 'background'
+                    && String(state.backgroundTargetId) === String(meta.elementId)) {
+                clearBackgroundPick();
+            }
             if (!requestedBackground.silent) queueMutation(true);
             renderProperties();
-            showToast('背景图片已添加，不会产生 KIE 费用');
+            showToast(meta.activeImageVersion === 'cutout'
+                ? '背景图片已更换，不会产生 KIE 费用'
+                : '背景已更换；若被原图遮挡，请先抠图或使用透明 PNG');
+            return group;
         } catch (error) {
-            showToast('背景图片读取失败', true);
+            showToast(error && error.message ? error.message : '背景图片读取失败', true);
+            return null;
         }
     }
 
@@ -1561,7 +1580,9 @@
         els.chooseBackground.hidden = Boolean(background);
         els.backgroundControls.hidden = !background;
         els.backgroundHelp.textContent = background
-            ? '背景与主体组成一个元素；可单独调整背景，不会调用 KIE。'
+            ? (visual.activeImageVersion === 'cutout'
+                ? '背景与透明主体组成一个元素；可单独调整背景，不会调用 KIE。'
+                : '背景已经放到图片下方；若看不到变化，请先抠图或使用透明 PNG。')
             : '把素材放到当前图片下方，不会调用 KIE。';
         if (background) {
             var opacity = Math.round((background.opacity == null ? 1 : background.opacity) * 100);
@@ -1982,10 +2003,37 @@
             .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
     }
 
+    function clearBackgroundPick() {
+        state.assetPickMode = '';
+        state.backgroundTargetId = '';
+        els.backgroundPickBanner.hidden = true;
+        els.backgroundPickTarget.textContent = '请选择一张素材或上传新背景';
+    }
+
+    function startBackgroundPick(visual) {
+        if (!visual || !visual.elementId) return false;
+        state.assetPickMode = 'background';
+        state.backgroundTargetId = String(visual.elementId);
+        els.backgroundPickTarget.textContent = '目标：' + (visual.originalAssetName || visual.assetName || '当前图片');
+        els.backgroundPickBanner.hidden = false;
+        return true;
+    }
+
+    function resolveBackgroundTarget() {
+        if (state.assetPickMode !== 'background' || !state.backgroundTargetId) return null;
+        return findVisualByElementId(state.backgroundTargetId);
+    }
+
     async function useAsset(asset, point, targetFrameId) {
         if (!asset) return;
         if (state.assetPickMode === 'background') {
-            await applyBackgroundAsset(asset);
+            var backgroundTarget = resolveBackgroundTarget();
+            if (!backgroundTarget) {
+                clearBackgroundPick();
+                showToast('要更换背景的图片已不存在，请重新选择图片', true);
+                return;
+            }
+            await applyBackgroundAsset(asset, null, backgroundTarget);
             return;
         }
         if (targetFrameId) {
@@ -2018,7 +2066,13 @@
             renderAssets();
             scheduleSave();
             if (uploaded[0] && purpose === 'background') {
-                await applyBackgroundAsset(uploaded[0]);
+                var backgroundTarget = resolveBackgroundTarget();
+                if (!backgroundTarget) {
+                    clearBackgroundPick();
+                    showToast('要更换背景的图片已不存在，请重新选择图片', true);
+                } else {
+                    await applyBackgroundAsset(uploaded[0], null, backgroundTarget);
+                }
             } else if (targetFrameId && uploaded[0]) {
                 assignImageToFrame(targetFrameId, uploaded[0]);
             } else if (placementPoint) {
@@ -2604,7 +2658,7 @@
             if (frameRow) {
                 var frameId = frameRow.dataset.contentFrame;
                 if (action === 'upload-frame') {
-                    state.assetPickMode = '';
+                    clearBackgroundPick();
                     state.pendingFrameId = frameId;
                     state.pendingPlacement = null;
                     els.assetInput.click();
@@ -2681,7 +2735,7 @@
             els.assetInput.click();
         });
         els.replaceFrameImage.addEventListener('click', function () {
-            state.assetPickMode = '';
+            clearBackgroundPick();
             state.pendingFrameId = selectedFrameId();
             state.pendingPlacement = null;
             els.assetInput.click();
@@ -2818,14 +2872,19 @@
         els.confirmCutout.addEventListener('click', submitCutout);
 
         function chooseBackgroundAsset() {
-            if (!selectedVisual()) return showToast('请先选择要添加背景的图片', true);
-            state.assetPickMode = 'background';
+            var visual = selectedVisual();
+            if (!visual) return showToast('请先选择要添加背景的图片', true);
+            if (!startBackgroundPick(visual)) return showToast('当前图片缺少元素编号，请重新选择图片', true);
             var assetsTab = document.querySelector('[data-panel-tab="assets"]');
             if (assetsTab) assetsTab.click();
-            showToast('请从左侧选择背景图片，或上传一张新背景');
+            showToast('已锁定当前图片，请从左侧选择或上传新背景');
         }
         els.chooseBackground.addEventListener('click', chooseBackgroundAsset);
         els.changeBackground.addEventListener('click', chooseBackgroundAsset);
+        els.cancelBackgroundPick.addEventListener('click', function () {
+            clearBackgroundPick();
+            showToast('已取消更换背景');
+        });
         els.backgroundOpacity.addEventListener('input', function () {
             var value = Number(els.backgroundOpacity.value) || 0;
             els.backgroundOpacityValue.value = value + '%';

@@ -83,6 +83,10 @@
                 </div>
                 <div class="editor-panel__body" data-panel-content="assets" hidden>
                     <input id="asset-file-input" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden>
+                    <div class="editor-pick-banner" id="background-pick-banner" role="status" aria-live="polite" hidden>
+                        <div><strong>正在更换背景</strong><span id="background-pick-target">请选择一张素材或上传新背景</span></div>
+                        <button id="cancel-background-pick" type="button">取消</button>
+                    </div>
                     <button class="editor-upload-zone" id="upload-assets" type="button">
                         <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/></svg>
                         <strong>上传图片</strong>

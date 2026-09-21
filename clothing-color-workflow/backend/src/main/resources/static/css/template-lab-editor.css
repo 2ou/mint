@@ -100,6 +100,7 @@
 .editor-properties select:focus-visible,
 .editor-properties textarea:focus-visible,
 .editor-upload-zone:focus-visible,
+.editor-pick-banner button:focus-visible,
 .editor-asset-card:focus-visible { outline: 3px solid rgba(37, 99, 235, .23); outline-offset: 2px; }
 
 .editor-zoom-input {
@@ -151,6 +152,15 @@
 .editor-panel__tabs button[aria-selected="true"] { border-color: rgba(37, 99, 235, .22); background: var(--editor-accent-soft); color: var(--editor-accent-hover); }
 .editor-panel__body { height: calc(100% - 52px); padding: 14px; overflow: auto; }
 .editor-panel__hint { margin: 10px 0 12px; color: var(--editor-muted); font-size: 12px; line-height: 1.5; }
+.editor-pick-banner { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; padding: 10px 11px; border: 1px solid rgba(37, 99, 235, .24); border-radius: 7px; background: var(--editor-accent-soft); }
+.editor-pick-banner[hidden] { display: none; }
+.editor-pick-banner > div { min-width: 0; }
+.editor-pick-banner strong,
+.editor-pick-banner span { display: block; }
+.editor-pick-banner strong { color: var(--editor-accent-hover); font-size: 12px; }
+.editor-pick-banner span { overflow: hidden; margin-top: 2px; color: var(--editor-muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.editor-pick-banner button { min-width: 52px; min-height: 44px; padding: 0 10px; border: 1px solid rgba(37, 99, 235, .26); border-radius: 6px; background: var(--editor-surface); color: var(--editor-accent-hover); font-weight: 650; cursor: pointer; }
+.editor-pick-banner button:hover { border-color: var(--editor-accent); }
 
 .editor-content-summary {
     padding: 11px 12px;
