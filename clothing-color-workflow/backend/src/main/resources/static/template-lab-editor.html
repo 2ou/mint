@@ -41,12 +41,12 @@
                     <button class="editor-icon-button" id="zoom-out" type="button" aria-label="缩小画布">
                         <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M5 12h14"/></svg>
                     </button>
-                    <label class="editor-zoom-input" title="输入 10 到 500 的整数缩放比例">
-                        <span class="sr-only">画布缩放百分比</span>
-                        <input id="zoom-value" type="number" inputmode="numeric" min="10" max="500" step="1" value="100" aria-describedby="zoom-value-help">
-                        <span aria-hidden="true">%</span>
+                    <label class="editor-zoom-input" title="输入 2 到 10 的整数倍数，再点击减号缩小或加号放大">
+                        <span class="sr-only">画布缩放倍数</span>
+                        <input id="zoom-value" type="number" inputmode="numeric" min="2" max="10" step="1" value="2" aria-describedby="zoom-value-help">
+                        <span aria-hidden="true">倍</span>
                     </label>
-                    <span class="sr-only" id="zoom-value-help">支持输入 10 到 500 的整数，按回车或离开输入框后生效。</span>
+                    <span class="sr-only" id="zoom-value-help">输入 2 到 10 的整数。点击减号按该倍数缩小，点击加号按该倍数放大。</span>
                     <button class="editor-icon-button" id="zoom-in" type="button" aria-label="放大画布">
                         <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
                     </button>

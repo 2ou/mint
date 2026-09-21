@@ -1037,24 +1037,27 @@
         state.canvas.setZoom(scale);
         state.canvas.calcOffset();
         state.canvas.renderAll();
-        els.zoomValue.value = String(Math.round(state.manualZoom * 100));
     }
 
     function setManualZoom(value) {
-        state.manualZoom = Math.max(.1, Math.min(5, Math.round(value * 100) / 100));
+        state.manualZoom = Math.max(.1, Math.min(10, Math.round(value * 10000) / 10000));
         applyViewportScale();
     }
 
-    function applyZoomInput() {
+    function readZoomFactor(showFeedback) {
         var raw = Number(els.zoomValue.value);
         if (!Number.isFinite(raw)) {
-            els.zoomValue.value = String(Math.round(state.manualZoom * 100));
-            return;
+            raw = 2;
         }
         var rounded = Math.round(raw);
-        var clamped = Math.max(10, Math.min(500, rounded));
-        setManualZoom(clamped / 100);
-        if (clamped !== raw) showToast('缩放比例已调整为 ' + clamped + '%');
+        var clamped = Math.max(2, Math.min(10, rounded));
+        els.zoomValue.value = String(clamped);
+        els.zoomOut.setAttribute('aria-label', '缩小 ' + clamped + ' 倍');
+        els.zoomIn.setAttribute('aria-label', '放大 ' + clamped + ' 倍');
+        els.zoomOut.title = '缩小 ' + clamped + ' 倍';
+        els.zoomIn.title = '放大 ' + clamped + ' 倍';
+        if (showFeedback && clamped !== raw) showToast('缩放倍数已调整为 ' + clamped + ' 倍');
+        return clamped;
     }
 
     async function exportImage() {
@@ -1321,16 +1324,17 @@
         });
         els.undo.addEventListener('click', undo);
         els.redo.addEventListener('click', redo);
-        els.zoomOut.addEventListener('click', function () { setManualZoom(state.manualZoom - .1); });
-        els.zoomIn.addEventListener('click', function () { setManualZoom(state.manualZoom + .1); });
-        els.zoomValue.addEventListener('change', applyZoomInput);
+        els.zoomOut.addEventListener('click', function () { setManualZoom(state.manualZoom / readZoomFactor(true)); });
+        els.zoomIn.addEventListener('click', function () { setManualZoom(state.manualZoom * readZoomFactor(true)); });
+        els.zoomValue.addEventListener('change', function () { readZoomFactor(true); });
         els.zoomValue.addEventListener('keydown', function (event) {
             if (event.key === 'Enter') {
                 event.preventDefault();
-                applyZoomInput();
+                readZoomFactor(true);
                 els.zoomValue.select();
             }
         });
+        readZoomFactor(false);
         els.exportButton.addEventListener('click', exportImage);
         els.imageZoom.addEventListener('input', function () {
             els.imageZoomValue.value = els.imageZoom.value + '%';
