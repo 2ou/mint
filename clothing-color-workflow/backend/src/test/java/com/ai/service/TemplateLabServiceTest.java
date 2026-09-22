@@ -67,7 +67,7 @@ class TemplateLabServiceTest {
         var templates = service.listTemplates(7L);
         assertTrue(templates.size() >= 10);
         assertTrue(templates.stream().allMatch(template -> template.path("schemaVersion").asInt() == 1));
-        assertTrue(templates.stream().allMatch(template -> template.path("frames").isArray()));
+        assertTrue(templates.stream().allMatch(template -> template.path("frames").isArray() || template.path("images").isArray()));
         assertTrue(templates.stream().allMatch(template -> List.of("副图", "亚马逊 A+")
                 .contains(template.path("usageType").asText())));
         assertTrue(templates.stream().allMatch(template -> List.of("1:1", "3:4", "16:9", "2928:1200", "1200:900")
@@ -150,7 +150,7 @@ class TemplateLabServiceTest {
     }
 
     @Test
-    void createsRecraftCutoutWithOnlyOfficialImageInput() {
+    void createsQwenCutoutWithOfficialImageUrls() {
         TemplateLabProject project = new TemplateLabProject();
         project.setId(81L);
         project.setOwnerUserId(7L);
@@ -160,7 +160,7 @@ class TemplateLabServiceTest {
         when(ossService.getOssClient()).thenReturn(oss);
         KieTaskResult created = new KieTaskResult();
         created.setTaskId("task-cutout-1");
-        when(kieClientService.createMarketTask(eq("recraft/remove-background"), any())).thenReturn(created);
+        when(kieClientService.createMarketTask(eq("qwen2-1/image-to-image"), any())).thenReturn(created);
         when(canvasTaskService.billingFields("task-cutout-1")).thenReturn(Map.of(
                 "estimated_cost", new BigDecimal("0.0320")));
         MockMultipartFile file = new MockMultipartFile(
@@ -171,9 +171,19 @@ class TemplateLabServiceTest {
 
         assertEquals("task-cutout-1", response.get("task_id"));
         var inputCaptor = org.mockito.ArgumentCaptor.forClass(Map.class);
-        verify(kieClientService).createMarketTask(eq("recraft/remove-background"), inputCaptor.capture());
-        assertEquals(1, inputCaptor.getValue().size());
-        assertTrue(inputCaptor.getValue().containsKey("image"));
+        verify(kieClientService).createMarketTask(eq("qwen2-1/image-to-image"), inputCaptor.capture());
+        assertEquals(7, inputCaptor.getValue().size());
+        assertTrue(String.valueOf(inputCaptor.getValue().get("prompt")).contains("Remove the background"));
+        Object imageInput = inputCaptor.getValue().get("image_urls");
+        assertTrue(imageInput instanceof List<?>);
+        assertEquals(1, ((List<?>) imageInput).size());
+        assertTrue(String.valueOf(((List<?>) imageInput).getFirst())
+                .contains("/TEMPLATE_LAB/PINKSIR/7/81/cutout-input/"));
+        assertEquals("auto", inputCaptor.getValue().get("aspect_ratio"));
+        assertEquals("2K", inputCaptor.getValue().get("resolution"));
+        assertEquals("transparent", inputCaptor.getValue().get("background"));
+        assertEquals("png", inputCaptor.getValue().get("output_format"));
+        assertEquals(false, inputCaptor.getValue().get("enhance_prompt"));
         var payloadCaptor = org.mockito.ArgumentCaptor.forClass(Map.class);
         verify(canvasTaskService).recordCreated(eq("task-cutout-1"), eq("image"), eq("PINKSIR"), eq("PINKSIR"), payloadCaptor.capture());
         assertEquals("template-lab:81", payloadCaptor.getValue().get("canvas_id"));

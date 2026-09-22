@@ -11,5 +11,7 @@ import java.util.Optional;
 public interface TemplateLabPersonalTemplateRepository extends JpaRepository<TemplateLabPersonalTemplate, Long> {
     List<TemplateLabPersonalTemplate> findByOwnerUserIdOrderByUpdatedAtDesc(Long ownerUserId);
 
+    List<TemplateLabPersonalTemplate> findAllByOrderByUpdatedAtDesc();
+
     Optional<TemplateLabPersonalTemplate> findByIdAndOwnerUserId(Long id, Long ownerUserId);
 }

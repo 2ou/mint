@@ -38,7 +38,12 @@
         backgroundEdit: null,
         cutoutQuote: null,
         cutoutTargetId: null,
-        cutoutPollers: {}
+        cutoutPollers: {},
+        frameLayout: { added: [], removed: [] },
+        frameEditMode: false,
+        frameEditTarget: null,
+        frameEditOverlay: null,
+        dragFrame: null
     };
 
     var els = {
@@ -51,9 +56,6 @@
         assetInput: document.getElementById('asset-file-input'),
         uploadAssets: document.getElementById('upload-assets'),
         assetGrid: document.getElementById('asset-grid'),
-        backgroundPickBanner: document.getElementById('background-pick-banner'),
-        backgroundPickTarget: document.getElementById('background-pick-target'),
-        cancelBackgroundPick: document.getElementById('cancel-background-pick'),
         undo: document.getElementById('undo-button'),
         redo: document.getElementById('redo-button'),
         zoomOut: document.getElementById('zoom-out'),
@@ -61,11 +63,14 @@
         zoomValue: document.getElementById('zoom-value'),
         exportFormat: document.getElementById('export-format'),
         exportScale: document.getElementById('export-scale'),
+        exportSizePreview: document.getElementById('export-size-preview'),
+        exportMaxSize: document.getElementById('export-max-size'),
         exportButton: document.getElementById('export-button'),
         selectionKind: document.getElementById('selection-kind'),
         propsEmpty: document.getElementById('properties-empty'),
         propsFrame: document.getElementById('properties-frame'),
         propsText: document.getElementById('properties-text'),
+        propsBackground: document.getElementById('properties-background'),
         documentTemplate: document.getElementById('document-template'),
         documentSize: document.getElementById('document-size'),
         frameName: document.getElementById('frame-name'),
@@ -77,6 +82,10 @@
         resetCrop: document.getElementById('reset-crop'),
         removeFrameImage: document.getElementById('remove-frame-image'),
         frameToFreeImage: document.getElementById('frame-to-free-image'),
+        frameCenterHorizontal: document.getElementById('frame-center-horizontal'),
+        frameCenterVertical: document.getElementById('frame-center-vertical'),
+        frameRotate: document.getElementById('frame-rotate'),
+        deleteFrame: document.getElementById('delete-frame'),
         propsImage: document.getElementById('properties-image'),
         freeImageName: document.getElementById('free-image-name'),
         freeImageStatus: document.getElementById('free-image-status'),
@@ -106,6 +115,7 @@
         cutoutPrice: document.getElementById('cutout-price'),
         startCutout: document.getElementById('start-cutout'),
         chooseBackground: document.getElementById('choose-background'),
+        backgroundName: document.getElementById('background-name'),
         backgroundHelp: document.getElementById('background-help'),
         backgroundControls: document.getElementById('background-controls'),
         backgroundOpacity: document.getElementById('background-opacity'),
@@ -115,7 +125,6 @@
         editBackgroundPosition: document.getElementById('edit-background-position'),
         changeBackground: document.getElementById('change-background'),
         removeBackground: document.getElementById('remove-background'),
-        splitImageComposition: document.getElementById('split-image-composition'),
         freeImageFrameTarget: document.getElementById('free-image-frame-target'),
         placeImageInFrame: document.getElementById('place-image-in-frame'),
         duplicateFreeImage: document.getElementById('duplicate-free-image'),
@@ -178,8 +187,35 @@
         return new URLSearchParams(window.location.search).get('id');
     }
 
+    function effectiveFrames() {
+        var base = (state.template.frames || []).filter(function (f) {
+            return state.frameLayout.removed.indexOf(f.id) === -1;
+        });
+        var moved = base.map(function (f) {
+            var controller = getFrameController(f.id);
+            return controller ? Object.assign({}, f, {
+                x: controller.left,
+                y: controller.top,
+                rotation: controller.angle || 0,
+                scaleX: Math.abs(Number(controller.scaleX) || 1),
+                scaleY: Math.abs(Number(controller.scaleY) || 1)
+            }) : f;
+        });
+        var added = (state.frameLayout.added || []).map(function (f) {
+            var controller = getFrameController(f.id);
+            return controller ? Object.assign({}, f, {
+                x: controller.left,
+                y: controller.top,
+                rotation: controller.angle || 0,
+                scaleX: Math.abs(Number(controller.scaleX) || 1),
+                scaleY: Math.abs(Number(controller.scaleY) || 1)
+            }) : f;
+        });
+        return moved.concat(added);
+    }
+
     function frameConfig(frameId) {
-        return (state.template.frames || []).find(function (item) { return item.id === frameId; });
+        return effectiveFrames().find(function (item) { return item.id === frameId; });
     }
 
     function uniqueFieldId(prefix) {
@@ -189,6 +225,10 @@
 
     function uniqueElementId(prefix) {
         return uniqueFieldId(prefix || 'image');
+    }
+
+    function uniqueFrameId() {
+        return 'uf-' + Date.now() + '-' + (++state.fieldSequence);
     }
 
     function loadFabricImage(url) {
@@ -217,11 +257,6 @@
     function compositionSubject(group) {
         if (!group || group.labType !== 'imageComposition' || typeof group.getObjects !== 'function') return null;
         return group.getObjects().find(function (object) { return object.labType === 'imageSubject'; }) || null;
-    }
-
-    function compositionBackground(group) {
-        if (!group || group.labType !== 'imageComposition' || typeof group.getObjects !== 'function') return null;
-        return group.getObjects().find(function (object) { return object.labType === 'imageBackground'; }) || null;
     }
 
     function activeVisualUrl(object) {
@@ -306,7 +341,7 @@
     }
 
     function frameLabel(frameId) {
-        var frames = state.template.frames || [];
+        var frames = effectiveFrames();
         var index = frames.findIndex(function (item) { return item.id === frameId; });
         return index >= 0 ? (frames[index].label || '相框 ' + (index + 1)) : '相框';
     }
@@ -318,6 +353,8 @@
             originX: 'left',
             originY: 'top',
             angle: frame.rotation || 0,
+            scaleX: frame.scaleX == null ? 1 : Number(frame.scaleX),
+            scaleY: frame.scaleY == null ? 1 : Number(frame.scaleY),
             objectCaching: false
         }, options || {});
         if (frame.shape === 'circle') {
@@ -336,8 +373,26 @@
         }));
     }
 
-    function frameBounds(frame) {
-        return { x: frame.x, y: frame.y, width: frame.width, height: frame.height };
+    function frameBounds(frame, shape) {
+        var scaleX = Math.abs(Number(shape ? shape.scaleX : frame.scaleX) || 1);
+        var scaleY = Math.abs(Number(shape ? shape.scaleY : frame.scaleY) || 1);
+        var width = Number(frame.width) * scaleX;
+        var height = Number(frame.height) * scaleY;
+        var angle = Number(shape ? shape.angle : frame.rotation) || 0;
+        var left = Number(shape ? shape.left : frame.x) || 0;
+        var top = Number(shape ? shape.top : frame.y) || 0;
+        var radians = angle * Math.PI / 180;
+        var halfX = width / 2;
+        var halfY = height / 2;
+        return {
+            x: left,
+            y: top,
+            width: width,
+            height: height,
+            rotation: angle,
+            centerX: left + halfX * Math.cos(radians) - halfY * Math.sin(radians),
+            centerY: top + halfX * Math.sin(radians) + halfY * Math.cos(radians)
+        };
     }
 
     function styleInteractiveObject(object) {
@@ -353,6 +408,27 @@
         object.setControlsVisibility({ mt: true, mb: true, ml: true, mr: true, tl: true, tr: true, bl: true, br: true, mtr: true });
     }
 
+    function styleFrameController(object) {
+        if (!object) return;
+        object.set({
+            selectable: true,
+            evented: true,
+            hasControls: true,
+            hasBorders: true,
+            lockMovementX: false,
+            lockMovementY: false,
+            lockScalingX: false,
+            lockScalingY: false,
+            lockRotation: false,
+            lockScalingFlip: true,
+            minScaleLimit: .08,
+            hoverCursor: 'move',
+            moveCursor: 'move',
+            objectCaching: false
+        });
+        styleInteractiveObject(object);
+    }
+
     function addTemplateFrame(frame) {
         var placeholder = makeFrameShape(frame, {
             labType: 'framePlaceholder',
@@ -363,11 +439,11 @@
             stroke: 'rgba(37,99,235,.50)',
             strokeWidth: 2,
             strokeDashArray: [12, 9],
-            selectable: true,
+            selectable: false,
+            evented: false,
             hasControls: false,
-            lockMovementX: true,
-            lockMovementY: true,
-            hoverCursor: 'pointer'
+            hasBorders: false,
+            objectCaching: false
         });
         var border = makeFrameShape(frame, {
             labType: 'frameBorder',
@@ -376,10 +452,11 @@
             fill: 'rgba(255,255,255,0)',
             stroke: 'rgba(23,32,51,.16)',
             strokeWidth: 2,
-            selectable: false,
-            evented: false,
+            selectable: true,
+            evented: true,
             excludeFromExport: false
         });
+        styleFrameController(border);
         state.canvas.add(placeholder);
         state.canvas.add(border);
     }
@@ -470,23 +547,19 @@
             select: false,
             silent: true
         }).then(function (image) {
-            if (image && definition.backgroundAssetUrl) {
-                applyBackgroundAsset(
-                    { url: definition.backgroundAssetUrl, name: definition.backgroundAssetName || '模板背景' },
-                    Object.assign({}, definition, { silent: true }),
-                    image
-                );
-            }
         });
     }
 
-    function buildTemplateCanvas() {
+    async function buildTemplateCanvas() {
         state.suppressHistory = true;
         state.canvas.clear();
         state.canvas.backgroundColor = state.template.background || '#f5f7fa';
-        (state.template.frames || []).forEach(addTemplateFrame);
+        effectiveFrames().forEach(addTemplateFrame);
         (state.template.texts || []).forEach(addTemplateText);
         (state.template.images || []).forEach(addTemplateImage);
+        if (state.template.canvasBackground) {
+            await rebuildCanvasBackground(state.template.canvasBackground);
+        }
         state.canvas.renderAll();
         state.suppressHistory = false;
     }
@@ -510,7 +583,7 @@
                 });
                 styleInteractiveObject(object);
             } else if (object.labType === 'frameImage') {
-                object.set({ selectable: true, evented: true, hasControls: false, hasBorders: false, lockScalingX: true, lockScalingY: true, lockRotation: true, objectCaching: false });
+                object.set({ selectable: false, evented: false, hasControls: false, hasBorders: false, lockScalingX: true, lockScalingY: true, lockRotation: true, objectCaching: false });
                 object.crossOrigin = 'anonymous';
                 bindFrameHitTest(object);
             } else if (object.labType === 'freeImage') {
@@ -539,19 +612,33 @@
                 });
                 styleFreeVisual(object);
                 var subject = compositionSubject(object);
-                var background = compositionBackground(object);
                 if (subject) { subject.crossOrigin = 'anonymous'; subject.set({ selectable: false, evented: false, objectCaching: false }); }
-                if (background) { background.crossOrigin = 'anonymous'; background.set({ selectable: false, evented: false, objectCaching: false }); }
             } else if (object.labType === 'imagePlaceholder') {
                 object.set({ selectable: true, evented: true, hoverCursor: 'pointer' });
                 styleInteractiveObject(object);
+            } else if (object.labType === 'canvasBackground') {
+                object.crossOrigin = 'anonymous';
+                object.set({
+                    elementId: 'canvas-background',
+                    backgroundZoom: Number(object.backgroundZoom) || 1,
+                    backgroundCropX: object.backgroundCropX == null ? Number(object.cropX) || 0 : Number(object.backgroundCropX),
+                    backgroundCropY: object.backgroundCropY == null ? Number(object.cropY) || 0 : Number(object.backgroundCropY)
+                });
+                styleCanvasBackground(object);
             } else if (object.labType === 'framePlaceholder') {
-                object.set({ selectable: !imagesByFrame[object.frameId], evented: !imagesByFrame[object.frameId], hasControls: false, lockMovementX: true, lockMovementY: true });
+                object.set({ selectable: false, evented: false, hasControls: false, hasBorders: false, lockMovementX: true, lockMovementY: true });
             } else if (object.labType === 'frameBorder') {
-                object.set({ selectable: false, evented: false, excludeFromExport: false });
+                object.set({ excludeFromExport: false });
+                styleFrameController(object);
             } else if (object.labType === 'guide') {
                 state.canvas.remove(object);
             }
+        });
+        state.canvas.getObjects().filter(function (object) { return object.labType === 'frameBorder'; }).forEach(function (object) {
+            object.bringToFront();
+        });
+        state.canvas.getObjects().filter(function (object) { return object.labType === 'text'; }).forEach(function (object) {
+            object.bringToFront();
         });
         state.canvas.renderAll();
     }
@@ -561,6 +648,9 @@
         try {
             var parsed = JSON.parse(state.project.designJson);
             state.assets = Array.isArray(parsed.assets) ? parsed.assets : [];
+            state.frameLayout = parsed.frameLayout && Array.isArray(parsed.frameLayout.added)
+                ? { added: parsed.frameLayout.added, removed: parsed.frameLayout.removed || [] }
+                : { added: [], removed: [] };
             return parsed.fabric || null;
         } catch (error) {
             showToast('项目数据无法读取，已恢复模板初始状态', true);
@@ -569,7 +659,11 @@
     }
 
     function canvasSnapshot() {
-        return JSON.stringify(state.canvas.toDatalessJSON(CUSTOM_PROPS));
+        var json = JSON.parse(JSON.stringify(state.canvas.toDatalessJSON(CUSTOM_PROPS)));
+        if (json && Array.isArray(json.objects)) {
+            json.objects = json.objects.filter(function (o) { return o.labType !== 'frameEditOverlay'; });
+        }
+        return JSON.stringify(json);
     }
 
     function pushHistory() {
@@ -639,6 +733,10 @@
         });
     }
 
+    function getFrameController(frameId) {
+        return getFrameBorder(frameId) || getFramePlaceholder(frameId) || null;
+    }
+
     function constrainFrameImage(image) {
         if (!image || image.labType !== 'frameImage') return;
         var bounds = image.frameBounds;
@@ -648,12 +746,20 @@
         if (!bounds) return;
         var width = image.getScaledWidth();
         var height = image.getScaledHeight();
-        var minLeft = bounds.x + bounds.width - width / 2;
-        var maxLeft = bounds.x + width / 2;
-        var minTop = bounds.y + bounds.height - height / 2;
-        var maxTop = bounds.y + height / 2;
-        image.left = Math.min(maxLeft, Math.max(minLeft, image.left));
-        image.top = Math.min(maxTop, Math.max(minTop, image.top));
+        var centerX = bounds.centerX == null ? bounds.x + bounds.width / 2 : Number(bounds.centerX);
+        var centerY = bounds.centerY == null ? bounds.y + bounds.height / 2 : Number(bounds.centerY);
+        var radians = -(Number(bounds.rotation) || 0) * Math.PI / 180;
+        var dx = Number(image.left) - centerX;
+        var dy = Number(image.top) - centerY;
+        var localX = dx * Math.cos(radians) - dy * Math.sin(radians);
+        var localY = dx * Math.sin(radians) + dy * Math.cos(radians);
+        var maxOffsetX = Math.max(0, (width - Number(bounds.width)) / 2);
+        var maxOffsetY = Math.max(0, (height - Number(bounds.height)) / 2);
+        localX = Math.max(-maxOffsetX, Math.min(maxOffsetX, localX));
+        localY = Math.max(-maxOffsetY, Math.min(maxOffsetY, localY));
+        var forward = -radians;
+        image.left = centerX + localX * Math.cos(forward) - localY * Math.sin(forward);
+        image.top = centerY + localX * Math.sin(forward) + localY * Math.cos(forward);
         image.setCoords();
     }
 
@@ -666,20 +772,31 @@
             var zoom = this.canvas ? this.canvas.getZoom() : 1;
             var logicalX = point.x / Math.max(zoom, .01);
             var logicalY = point.y / Math.max(zoom, .01);
-            return Boolean(bounds)
-                && logicalX >= bounds.x
-                && logicalX <= bounds.x + bounds.width
-                && logicalY >= bounds.y
-                && logicalY <= bounds.y + bounds.height;
+            if (!bounds) return false;
+            var centerX = bounds.centerX == null ? bounds.x + bounds.width / 2 : Number(bounds.centerX);
+            var centerY = bounds.centerY == null ? bounds.y + bounds.height / 2 : Number(bounds.centerY);
+            var radians = -(Number(bounds.rotation) || 0) * Math.PI / 180;
+            var dx = logicalX - centerX;
+            var dy = logicalY - centerY;
+            var localX = dx * Math.cos(radians) - dy * Math.sin(radians);
+            var localY = dx * Math.sin(radians) + dy * Math.cos(radians);
+            return Math.abs(localX) <= Number(bounds.width) / 2
+                && Math.abs(localY) <= Number(bounds.height) / 2;
         };
+    }
+
+    function restoreDefaultHitTest(image) {
+        if (image && Object.prototype.hasOwnProperty.call(image, 'containsPoint')) {
+            delete image.containsPoint;
+        }
     }
 
     function setPlaceholderState(frameId, hasImage) {
         var placeholder = getFramePlaceholder(frameId);
         if (!placeholder) return;
         placeholder.set({
-            selectable: !hasImage,
-            evented: !hasImage,
+            selectable: false,
+            evented: false,
             fill: hasImage ? 'rgba(255,255,255,0)' : 'rgba(255,255,255,.52)',
             stroke: hasImage ? 'rgba(37,99,235,0)' : 'rgba(37,99,235,.50)'
         });
@@ -696,34 +813,37 @@
                 return;
             }
             if (oldImage) state.canvas.remove(oldImage);
-            var cover = Math.max(frame.width / image.width, frame.height / image.height);
             var clip = makeFrameShape(frame, { absolutePositioned: true, fill: '#ffffff', strokeWidth: 0 });
+            clip.setCoords();
+            var bounds = frameBounds(frame, clip);
+            var cover = Math.max(bounds.width / image.width, bounds.height / image.height);
             image.set({
-                left: frame.x + frame.width / 2,
-                top: frame.y + frame.height / 2,
+                left: bounds.centerX,
+                top: bounds.centerY,
                 originX: 'center',
                 originY: 'center',
                 scaleX: cover,
                 scaleY: cover,
+                angle: bounds.rotation || 0,
                 clipPath: clip,
                 crossOrigin: 'anonymous',
                 labType: 'frameImage',
                 frameId: frameId,
                 frameName: frameLabel(frameId),
-                frameBounds: frameBounds(frame),
+                frameBounds: bounds,
                 coverScale: cover,
                 cropZoom: 1,
                 assetUrl: asset.url,
                 assetName: asset.name || '图片',
-                selectable: true,
-                evented: true,
+                selectable: false,
+                evented: false,
                 hasControls: false,
                 hasBorders: false,
                 lockScalingX: true,
                 lockScalingY: true,
                 lockRotation: true,
                 objectCaching: false,
-                hoverCursor: 'move'
+                hoverCursor: 'default'
             });
             bindFrameHitTest(image);
             setPlaceholderState(frameId, true);
@@ -731,7 +851,7 @@
             var border = getFrameBorder(frameId);
             if (border) border.bringToFront();
             state.canvas.getObjects().filter(function (item) { return item.labType === 'text'; }).forEach(function (item) { item.bringToFront(); });
-            state.canvas.setActiveObject(image);
+            if (border) state.canvas.setActiveObject(border);
             constrainFrameImage(image);
             state.canvas.renderAll();
             queueMutation(true);
@@ -745,10 +865,11 @@
         var image = selectedFrameImage();
         if (!image) return;
         var frameId = image.frameId;
+        if (state.frameEditMode) exitFrameEdit();
         state.canvas.remove(image);
         setPlaceholderState(frameId, false);
-        var placeholder = getFramePlaceholder(frameId);
-        if (placeholder) state.canvas.setActiveObject(placeholder);
+        var controller = getFrameController(frameId);
+        if (controller) state.canvas.setActiveObject(controller);
         state.canvas.renderAll();
         queueMutation(true);
         renderProperties();
@@ -758,7 +879,9 @@
         var image = selectedFrameImage();
         if (!image) return;
         var frameId = image.frameId;
+        if (state.frameEditMode) exitFrameEdit();
         image.clipPath = null;
+        restoreDefaultHitTest(image);
         image.set({
             labType: 'freeImage',
             elementId: uniqueElementId('image'),
@@ -781,6 +904,8 @@
             cropZoom: null,
             hasControls: true,
             hasBorders: true,
+            lockMovementX: false,
+            lockMovementY: false,
             lockScalingX: false,
             lockScalingY: false,
             lockRotation: false,
@@ -788,11 +913,208 @@
         });
         setPlaceholderState(frameId, false);
         styleFreeVisual(image);
+        image.setCoords();
         state.canvas.setActiveObject(image);
         state.canvas.requestRenderAll();
         queueMutation(true);
         renderProperties();
         showToast('已转为自由图片，可在整个画布中移动');
+    }
+
+    function beginFrameDrag(object) {
+        var frameId = object && object.frameId;
+        var controller = getFrameController(frameId);
+        if (!controller) return;
+        var ph = getFramePlaceholder(frameId);
+        var img = getFrameImage(frameId);
+        var center = controller.getCenterPoint();
+        var startAngle = Number(controller.angle) || 0;
+        var radians = -startAngle * Math.PI / 180;
+        var imageDx = img ? Number(img.left) - center.x : 0;
+        var imageDy = img ? Number(img.top) - center.y : 0;
+        state.dragFrame = {
+            frameId: frameId,
+            controller: controller,
+            startWidth: Math.max(1, Math.abs(controller.getScaledWidth())),
+            startHeight: Math.max(1, Math.abs(controller.getScaledHeight())),
+            startAngle: startAngle,
+            image: img ? {
+                angle: Number(img.angle) || 0,
+                localX: imageDx * Math.cos(radians) - imageDy * Math.sin(radians),
+                localY: imageDx * Math.sin(radians) + imageDy * Math.cos(radians),
+                cropZoom: Number(img.cropZoom) || 1
+            } : null,
+            placeholder: ph || null
+        };
+    }
+
+    function syncFrameTransform(controller) {
+        var df = state.dragFrame;
+        if (!controller || !df || df.frameId !== controller.frameId) return;
+        var minSize = 64;
+        var maxWidth = state.logicalWidth * 2;
+        var maxHeight = state.logicalHeight * 2;
+        var baseWidth = Math.max(1, Number(controller.width) || 1);
+        var baseHeight = Math.max(1, Number(controller.height) || 1);
+        controller.scaleX = Math.max(minSize / baseWidth, Math.min(maxWidth / baseWidth, Math.abs(Number(controller.scaleX) || 1)));
+        controller.scaleY = Math.max(minSize / baseHeight, Math.min(maxHeight / baseHeight, Math.abs(Number(controller.scaleY) || 1)));
+        controller.setCoords();
+
+        var ph = getFramePlaceholder(df.frameId);
+        var img = getFrameImage(df.frameId);
+        var clip = img && img.clipPath;
+        var transform = {
+            left: controller.left,
+            top: controller.top,
+            scaleX: controller.scaleX,
+            scaleY: controller.scaleY,
+            angle: controller.angle || 0
+        };
+        if (ph) ph.set(transform);
+        if (clip) clip.set(transform);
+        if (img) {
+            var currentWidth = Math.max(1, Math.abs(controller.getScaledWidth()));
+            var currentHeight = Math.max(1, Math.abs(controller.getScaledHeight()));
+            var center = controller.getCenterPoint();
+            var angle = Number(controller.angle) || 0;
+            var radians = angle * Math.PI / 180;
+            var localX = df.image.localX * currentWidth / df.startWidth;
+            var localY = df.image.localY * currentHeight / df.startHeight;
+            var offsetX = localX * Math.cos(radians) - localY * Math.sin(radians);
+            var offsetY = localX * Math.sin(radians) + localY * Math.cos(radians);
+            var cover = Math.max(currentWidth / Math.max(1, Number(img.width)), currentHeight / Math.max(1, Number(img.height)));
+            var bounds = frameBounds({
+                x: controller.left,
+                y: controller.top,
+                width: baseWidth,
+                height: baseHeight,
+                scaleX: controller.scaleX,
+                scaleY: controller.scaleY,
+                rotation: angle
+            }, controller);
+            img.set({
+                left: center.x + offsetX,
+                top: center.y + offsetY,
+                scaleX: cover * df.image.cropZoom,
+                scaleY: cover * df.image.cropZoom,
+                angle: df.image.angle + angle - df.startAngle,
+                coverScale: cover,
+                frameBounds: bounds
+            });
+            constrainFrameImage(img);
+        }
+        if (ph) ph.setCoords();
+        if (clip) clip.setCoords();
+        if (img) img.setCoords();
+        state.canvas.requestRenderAll();
+    }
+
+    function modifySelectedFrame(mode) {
+        var frameId = selectedFrameId();
+        if (state.frameEditMode) exitFrameEdit();
+        var controller = getFrameController(frameId);
+        if (!controller) return;
+        beginFrameDrag(controller);
+        var center = controller.getCenterPoint();
+        if (mode === 'center-horizontal') center.x = state.logicalWidth / 2;
+        if (mode === 'center-vertical') center.y = state.logicalHeight / 2;
+        if (mode === 'rotate') controller.rotate(((Number(controller.angle) || 0) + 90) % 360);
+        controller.setPositionByOrigin(center, 'center', 'center');
+        controller.setCoords();
+        syncFrameTransform(controller);
+        state.dragFrame = null;
+        queueMutation(true);
+        renderProperties();
+    }
+
+    function addFrame(shape) {
+        var id = uniqueFrameId();
+        var size = Math.min(420, Math.min(state.logicalWidth, state.logicalHeight) - 80);
+        var x = Math.max(20, state.logicalWidth / 2 - size / 2);
+        var y = Math.max(20, state.logicalHeight / 2 - size / 2);
+        var def = {
+            id: id, shape: shape, x: x, y: y, width: size, height: size, rotation: 0,
+            label: '自定义相框', radius: shape === 'rounded' ? 28 : 0
+        };
+        state.frameLayout.added.push(def);
+        addTemplateFrame(def);
+        var border = getFrameBorder(id);
+        if (border) border.bringToFront();
+        state.canvas.getObjects().filter(function (o) { return o.labType === 'text'; }).forEach(function (o) { o.bringToFront(); });
+        if (border) state.canvas.setActiveObject(border);
+        state.canvas.renderAll();
+        queueMutation(true);
+        renderProperties();
+        showToast('已添加' + (shape === 'circle' ? '圆形' : (shape === 'rounded' ? '圆角' : '矩形')) + '相框，可直接移动、缩放和旋转');
+    }
+
+    function deleteFrame(frameId) {
+        if (!frameId) return;
+        var ph = getFramePlaceholder(frameId), b = getFrameBorder(frameId), img = getFrameImage(frameId);
+        [ph, b, img].forEach(function (o) { if (o) state.canvas.remove(o); });
+        var addedIndex = (state.frameLayout.added || []).findIndex(function (f) { return f.id === frameId; });
+        if (addedIndex >= 0) state.frameLayout.added.splice(addedIndex, 1);
+        else if (state.frameLayout.removed.indexOf(frameId) === -1) state.frameLayout.removed.push(frameId);
+        if (state.frameEditMode && state.frameEditTarget === frameId) exitFrameEdit();
+        state.canvas.discardActiveObject();
+        state.canvas.renderAll();
+        queueMutation(true);
+        renderProperties();
+        showToast('已删除相框');
+    }
+
+    function enterFrameEdit(frameId) {
+        if (state.frameEditMode) exitFrameEdit();
+        var ph = getFramePlaceholder(frameId), b = getFrameBorder(frameId), img = getFrameImage(frameId);
+        if (!img) {
+            if (b) state.canvas.setActiveObject(b);
+            document.querySelector('[data-panel-tab="assets"]').click();
+            showToast('请从左侧选择图片填入这个相框');
+            return;
+        }
+        state.frameEditMode = true;
+        state.frameEditTarget = frameId;
+        var overlay = new fabric.Rect({
+            left: 0, top: 0, width: state.logicalWidth, height: state.logicalHeight,
+            fill: 'rgba(15,20,33,0.55)', selectable: false, evented: true, excludeFromExport: true, hoverCursor: 'default'
+        });
+        overlay.labType = 'frameEditOverlay';
+        state.frameEditOverlay = overlay;
+        state.canvas.add(overlay);
+        if (ph) ph.bringToFront();
+        img.set({ selectable: true, evented: true, hasControls: false, hasBorders: false, lockMovementX: false, lockMovementY: false, hoverCursor: 'move' });
+        img.bringToFront();
+        if (b) {
+            b.set({ selectable: false, evented: false, hasControls: false, hasBorders: false });
+            b.bringToFront();
+        }
+        state.canvas.setActiveObject(img);
+        state.canvas.renderAll();
+        renderProperties();
+        positionCutoutFab();
+        showToast('正在编辑框内图片：拖动调整裁剪，点击深色区域退出', false);
+    }
+
+    function exitFrameEdit() {
+        if (!state.frameEditMode) return;
+        var frameId = state.frameEditTarget;
+        var image = getFrameImage(frameId);
+        var controller = getFrameController(frameId);
+        state.frameEditMode = false;
+        state.frameEditTarget = null;
+        if (state.frameEditOverlay) { state.canvas.remove(state.frameEditOverlay); state.frameEditOverlay = null; }
+        if (image) image.set({ selectable: false, evented: false, hasControls: false, hasBorders: false, lockMovementX: true, lockMovementY: true, hoverCursor: 'default' });
+        if (controller) {
+            styleFrameController(controller);
+            controller.bringToFront();
+            state.canvas.setActiveObject(controller);
+        } else {
+            state.canvas.discardActiveObject();
+        }
+        state.canvas.getObjects().filter(function (object) { return object.labType === 'text'; }).forEach(function (object) { object.bringToFront(); });
+        state.canvas.renderAll();
+        renderProperties();
+        positionCutoutFab();
     }
 
     function deleteSelectedVisual() {
@@ -944,6 +1266,157 @@
         });
     }
 
+    function getCanvasBackground() {
+        if (!state.canvas) return null;
+        return state.canvas.getObjects().find(function (object) { return object.labType === 'canvasBackground'; }) || null;
+    }
+
+    function styleCanvasBackground(image) {
+        if (!image) return;
+        image.set({
+            selectable: true,
+            evented: true,
+            hasControls: false,
+            hasBorders: true,
+            lockMovementX: true,
+            lockMovementY: true,
+            lockScalingX: true,
+            lockScalingY: true,
+            lockRotation: true,
+            objectCaching: false,
+            excludeFromExport: false,
+            hoverCursor: 'grab',
+            borderColor: '#2563eb',
+            borderScaleFactor: 2
+        });
+    }
+
+    function configureCanvasBackground(image, zoom, cropX, cropY) {
+        configureBackgroundImage(image, state.logicalWidth, state.logicalHeight, zoom, cropX, cropY);
+        image.set({
+            left: state.logicalWidth / 2,
+            top: state.logicalHeight / 2,
+            originX: 'center',
+            originY: 'center',
+            labType: 'canvasBackground'
+        });
+        styleCanvasBackground(image);
+        image.setCoords();
+    }
+
+    function backgroundCropRatio(image) {
+        if (!image) return { x: .5, y: .5 };
+        var sourceWidth = Number(image._element && (image._element.naturalWidth || image._element.width)) || Number(image.sourceImageWidth) || 1;
+        var sourceHeight = Number(image._element && (image._element.naturalHeight || image._element.height)) || Number(image.sourceImageHeight) || 1;
+        var maxX = Math.max(0, sourceWidth - (Number(image.width) || sourceWidth));
+        var maxY = Math.max(0, sourceHeight - (Number(image.height) || sourceHeight));
+        return {
+            x: maxX > 0 ? Math.max(0, Math.min(1, (Number(image.cropX) || 0) / maxX)) : .5,
+            y: maxY > 0 ? Math.max(0, Math.min(1, (Number(image.cropY) || 0) / maxY)) : .5
+        };
+    }
+
+    function canvasBackgroundCropAtRatio(image, zoom, ratio) {
+        var sourceWidth = Number(image._element && (image._element.naturalWidth || image._element.width)) || Number(image.width) || 1;
+        var sourceHeight = Number(image._element && (image._element.naturalHeight || image._element.height)) || Number(image.height) || 1;
+        var safeZoom = Math.max(1, Math.min(3, Number(zoom) || 1));
+        var cover = Math.max(state.logicalWidth / sourceWidth, state.logicalHeight / sourceHeight);
+        var maxX = Math.max(0, sourceWidth - state.logicalWidth / (cover * safeZoom));
+        var maxY = Math.max(0, sourceHeight - state.logicalHeight / (cover * safeZoom));
+        return { x: maxX * ratio.x, y: maxY * ratio.y };
+    }
+
+    function ensureCanvasBackgroundAtBack() {
+        var background = getCanvasBackground();
+        if (background && state.canvas.getObjects().indexOf(background) !== 0) background.moveTo(0);
+    }
+
+    async function applyCanvasBackgroundAsset(asset, options) {
+        if (!asset || !asset.url || !state.canvas) return null;
+        var existing = getCanvasBackground();
+        var requested = options || {};
+        var opacity = existing && existing.opacity != null
+            ? existing.opacity
+            : (requested.opacity == null ? 1 : Number(requested.opacity));
+        var zoom = existing ? (Number(existing.backgroundZoom) || 1) : (Number(requested.zoom) || 1);
+        var cropRatio = existing ? backgroundCropRatio(existing) : { x: .5, y: .5 };
+        try {
+            var image = await loadFabricImage(asset.url);
+            var crop = canvasBackgroundCropAtRatio(image, zoom, cropRatio);
+            configureCanvasBackground(image, zoom, crop.x, crop.y);
+            image.set({
+                elementId: 'canvas-background',
+                assetUrl: asset.url,
+                assetName: asset.name || '画布背景',
+                originalAssetUrl: asset.url,
+                originalAssetName: asset.name || '画布背景',
+                backgroundZoom: zoom,
+                backgroundCropX: image.cropX,
+                backgroundCropY: image.cropY,
+                sourceImageWidth: Number(image._element && (image._element.naturalWidth || image._element.width)) || image.width,
+                sourceImageHeight: Number(image._element && (image._element.naturalHeight || image._element.height)) || image.height,
+                opacity: Math.max(0, Math.min(1, opacity))
+            });
+            if (existing) state.canvas.remove(existing);
+            state.canvas.insertAt(image, 0, false);
+            ensureCanvasBackgroundAtBack();
+            if (requested.select !== false) state.canvas.setActiveObject(image);
+            clearBackgroundPick();
+            state.canvas.requestRenderAll();
+            if (!requested.silent) queueMutation(true);
+            renderProperties();
+            if (!requested.silent) showToast(existing ? '画布背景已更换' : '画布背景已添加');
+            return image;
+        } catch (error) {
+            showToast(error && error.message ? error.message : '画布背景读取失败', true);
+            return null;
+        }
+    }
+
+    async function rebuildCanvasBackground(def) {
+        if (!def || !def.url) return null;
+        try {
+            var image = await loadFabricImage(def.url);
+            var zoom = Number(def.zoom) || 1;
+            var cropX = def.cropX == null ? null : Number(def.cropX);
+            var cropY = def.cropY == null ? null : Number(def.cropY);
+            configureCanvasBackground(image, zoom, cropX, cropY);
+            image.set({
+                elementId: 'canvas-background',
+                assetUrl: def.url,
+                assetName: def.name || '画布背景',
+                originalAssetUrl: def.url,
+                originalAssetName: def.name || '画布背景',
+                backgroundZoom: zoom,
+                backgroundCropX: image.cropX,
+                backgroundCropY: image.cropY,
+                sourceImageWidth: Number(image._element && (image._element.naturalWidth || image._element.width)) || image.width,
+                sourceImageHeight: Number(image._element && (image._element.naturalHeight || image._element.height)) || image.height,
+                opacity: Math.max(0, Math.min(1, def.opacity == null ? 1 : Number(def.opacity)))
+            });
+            state.canvas.insertAt(image, 0, false);
+            ensureCanvasBackgroundAtBack();
+            state.canvas.requestRenderAll();
+            return image;
+        } catch (error) {
+            showToast(error && error.message ? error.message : '画布背景读取失败', true);
+            return null;
+        }
+    }
+
+    function removeCanvasBackground() {
+        var background = getCanvasBackground();
+        if (!background) return;
+        stopBackgroundEditing();
+        clearBackgroundPick();
+        state.canvas.remove(background);
+        state.canvas.discardActiveObject();
+        state.canvas.requestRenderAll();
+        queueMutation(true);
+        renderProperties();
+        showToast('画布背景已移除');
+    }
+
     function visualMetadata(visual) {
         var subject = visual.labType === 'imageComposition' ? compositionSubject(visual) : visual;
         var sourceWidth = Number(visual.sourceImageWidth)
@@ -977,275 +1450,54 @@
         };
     }
 
-    async function applyBackgroundAsset(asset, backgroundOptions, targetVisual) {
-        var visual = targetVisual || selectedVisual();
-        if (!visual || !state.canvas || !state.canvas.getObjects().includes(visual)) {
-            clearBackgroundPick();
-            showToast('要更换背景的图片已不存在，请重新选择图片', true);
-            return null;
-        }
-        if (!asset || !asset.url) return null;
-        stopBackgroundEditing();
-        try {
-            var requestedBackground = backgroundOptions || {};
-            var currentSubjectUrl = activeVisualUrl(visual);
-            var images = await Promise.all([loadFabricImage(currentSubjectUrl), loadFabricImage(asset.url)]);
-            var subject = images[0];
-            var background = images[1];
-            var existingSubject = visual.labType === 'imageComposition' ? compositionSubject(visual) : visual;
-            var meta = visualMetadata(visual);
-            var baseWidth = visual.labType === 'imageComposition'
-                ? (visual.baseWidth || (existingSubject && existingSubject.width) || subject.width)
-                : ((existingSubject && existingSubject.width) || subject.width);
-            var baseHeight = visual.labType === 'imageComposition'
-                ? (visual.baseHeight || (existingSubject && existingSubject.height) || subject.height)
-                : ((existingSubject && existingSubject.height) || subject.height);
-            var index = state.canvas.getObjects().indexOf(visual);
-            var transform = {
-                left: visual.left,
-                top: visual.top,
-                originX: visual.originX || 'center',
-                originY: visual.originY || 'center',
-                scaleX: visual.scaleX || 1,
-                scaleY: visual.scaleY || 1,
-                angle: visual.angle || 0,
-                flipX: Boolean(visual.flipX),
-                flipY: Boolean(visual.flipY),
-                opacity: visual.opacity == null ? 1 : visual.opacity
-            };
-            subject.set({
-                left: 0,
-                top: 0,
-                originX: 'center',
-                originY: 'center',
-                width: meta.subjectCropWidth || subject.width,
-                height: meta.subjectCropHeight || subject.height,
-                cropX: meta.subjectCropX || 0,
-                cropY: meta.subjectCropY || 0,
-                scaleX: baseWidth / (meta.subjectCropWidth || subject.width),
-                scaleY: baseHeight / (meta.subjectCropHeight || subject.height),
-                labType: 'imageSubject',
-                subjectElementId: meta.elementId,
-                selectable: false,
-                evented: false,
-                objectCaching: false
-            });
-            var previousBackground = visual.labType === 'imageComposition' ? compositionBackground(visual) : null;
-            configureBackgroundImage(background, baseWidth, baseHeight,
-                previousBackground ? previousBackground.backgroundZoom : (requestedBackground.backgroundZoom || 1),
-                previousBackground ? previousBackground.backgroundCropX : requestedBackground.backgroundCropX,
-                previousBackground ? previousBackground.backgroundCropY : requestedBackground.backgroundCropY);
-            background.set({
-                opacity: previousBackground && previousBackground.opacity != null
-                    ? previousBackground.opacity
-                    : (requestedBackground.backgroundOpacity == null ? 1 : Number(requestedBackground.backgroundOpacity)),
-                assetUrl: asset.url,
-                assetName: asset.name || '背景图片'
-            });
-            var group = new fabric.Group([background, subject], Object.assign(transform, meta, {
-                labType: 'imageComposition',
-                baseWidth: baseWidth,
-                baseHeight: baseHeight,
-                backgroundAssetUrl: asset.url,
-                backgroundAssetName: asset.name || '背景图片',
-                backgroundOpacity: background.opacity,
-                backgroundZoom: background.backgroundZoom,
-                backgroundCropX: background.backgroundCropX,
-                backgroundCropY: background.backgroundCropY,
-                sourceImageWidth: meta.sourceImageWidth,
-                sourceImageHeight: meta.sourceImageHeight,
-                subjectCropX: meta.subjectCropX,
-                subjectCropY: meta.subjectCropY,
-                subjectCropWidth: meta.subjectCropWidth,
-                subjectCropHeight: meta.subjectCropHeight,
-                objectCaching: false,
-                subTargetCheck: true
-            }));
-            styleFreeVisual(group);
-            if (!state.canvas.getObjects().includes(visual)) {
-                throw new Error('要更换背景的图片已不存在');
-            }
-            state.canvas.remove(visual);
-            state.canvas.insertAt(group, Math.max(0, index), false);
-            state.canvas.setActiveObject(group);
-            state.canvas.requestRenderAll();
-            if (state.assetPickMode === 'background'
-                    && String(state.backgroundTargetId) === String(meta.elementId)) {
-                clearBackgroundPick();
-            }
-            if (!requestedBackground.silent) queueMutation(true);
-            renderProperties();
-            showToast(meta.activeImageVersion === 'cutout'
-                ? '背景图片已更换，不会产生 KIE 费用'
-                : '背景已更换；若被原图遮挡，请先抠图或使用透明 PNG');
-            return group;
-        } catch (error) {
-            showToast(error && error.message ? error.message : '背景图片读取失败', true);
-            return null;
-        }
-    }
 
-    function removeCompositionBackground() {
-        var group = selectedVisual();
-        if (!group || group.labType !== 'imageComposition') return;
-        stopBackgroundEditing();
-        var meta = visualMetadata(group);
-        var subject = compositionSubject(group);
-        if (!subject) return;
-        var center = group.getCenterPoint();
-        var index = state.canvas.getObjects().indexOf(group);
-        subject.clone(function (image) {
-            image.set(Object.assign({
-                left: center.x,
-                top: center.y,
-                originX: 'center',
-                originY: 'center',
-                scaleX: (Number(group.scaleX) || 1) * (Number(subject.scaleX) || 1),
-                scaleY: (Number(group.scaleY) || 1) * (Number(subject.scaleY) || 1),
-                angle: group.angle || 0,
-                flipX: Boolean(group.flipX),
-                flipY: Boolean(group.flipY),
-                opacity: group.opacity == null ? 1 : group.opacity,
-                labType: 'freeImage',
-                baseWidth: subject.width,
-                baseHeight: subject.height,
-                cropX: subject.cropX || 0,
-                cropY: subject.cropY || 0,
-                sourceImageWidth: meta.sourceImageWidth,
-                sourceImageHeight: meta.sourceImageHeight
-            }, meta));
-            styleFreeVisual(image);
-            state.canvas.remove(group);
-            state.canvas.insertAt(image, Math.max(0, index), false);
-            state.canvas.setActiveObject(image);
-            state.canvas.requestRenderAll();
-            queueMutation(true);
-            renderProperties();
-        }, CUSTOM_PROPS);
-    }
-
-    function splitImageComposition() {
-        var group = selectedVisual();
-        if (!group || group.labType !== 'imageComposition') return;
-        var subject = compositionSubject(group);
-        var background = compositionBackground(group);
-        if (!subject || !background) return;
-        var center = group.getCenterPoint();
-        var index = state.canvas.getObjects().indexOf(group);
-        var groupScaleX = Number(group.scaleX) || 1;
-        var groupScaleY = Number(group.scaleY) || 1;
-        var cloneObject = function (object) {
-            return new Promise(function (resolve) { object.clone(resolve, CUSTOM_PROPS); });
-        };
-        Promise.all([cloneObject(background), cloneObject(subject)]).then(function (copies) {
-            var backgroundCopy = copies[0];
-            var subjectCopy = copies[1];
-            backgroundCopy.set({
-                left: center.x,
-                top: center.y,
-                originX: 'center',
-                originY: 'center',
-                scaleX: groupScaleX * (Number(background.scaleX) || 1),
-                scaleY: groupScaleY * (Number(background.scaleY) || 1),
-                angle: Number(group.angle) || 0,
-                flipX: Boolean(group.flipX),
-                flipY: Boolean(group.flipY),
-                opacity: (group.opacity == null ? 1 : group.opacity) * (background.opacity == null ? 1 : background.opacity),
-                labType: 'freeImage',
-                elementId: uniqueElementId('background'),
-                assetUrl: group.backgroundAssetUrl,
-                assetName: group.backgroundAssetName || '背景图片',
-                originalAssetUrl: group.backgroundAssetUrl,
-                originalAssetName: group.backgroundAssetName || '背景图片',
-                cutoutUrl: '',
-                activeImageVersion: 'original',
-                templateRole: 'fixed',
-                baseWidth: background.width,
-                baseHeight: background.height,
-                cutoutTaskId: '',
-                cutoutTaskStatus: '',
-                cutoutTaskError: ''
-            });
-            subjectCopy.set(Object.assign({
-                left: center.x,
-                top: center.y,
-                originX: 'center',
-                originY: 'center',
-                scaleX: groupScaleX * (Number(subject.scaleX) || 1),
-                scaleY: groupScaleY * (Number(subject.scaleY) || 1),
-                angle: Number(group.angle) || 0,
-                flipX: Boolean(group.flipX),
-                flipY: Boolean(group.flipY),
-                opacity: group.opacity == null ? 1 : group.opacity,
-                labType: 'freeImage',
-                baseWidth: subject.width,
-                baseHeight: subject.height
-            }, visualMetadata(group)));
-            styleFreeVisual(backgroundCopy);
-            styleFreeVisual(subjectCopy);
-            state.canvas.remove(group);
-            state.canvas.insertAt(backgroundCopy, Math.max(0, index), false);
-            state.canvas.insertAt(subjectCopy, Math.max(0, index + 1), false);
-            state.canvas.setActiveObject(subjectCopy);
-            state.canvas.requestRenderAll();
-            queueMutation(true);
-            renderProperties();
-            showToast('主体与背景已拆分为两个自由图片');
-        });
-    }
-
-    function selectedBackground() {
-        return compositionBackground(selectedVisual());
-    }
 
     function setBackgroundOpacity(value, commit) {
-        var group = selectedVisual();
-        var background = compositionBackground(group);
-        if (!group || !background) return;
+        var background = getCanvasBackground();
+        if (!background) return;
         var opacity = Math.max(0, Math.min(1, Number(value) / 100));
         background.set('opacity', opacity);
-        group.backgroundOpacity = opacity;
         state.canvas.requestRenderAll();
         if (commit) queueMutation(true);
     }
 
     function setBackgroundZoom(value, commit) {
-        var group = selectedVisual();
-        var background = compositionBackground(group);
-        if (!group || !background) return;
-        configureBackgroundImage(background, group.baseWidth || group.width, group.baseHeight || group.height,
-            Number(value) / 100, background.backgroundCropX, background.backgroundCropY);
-        group.set({
-            backgroundZoom: background.backgroundZoom,
-            backgroundCropX: background.backgroundCropX,
-            backgroundCropY: background.backgroundCropY
-        });
+        var background = getCanvasBackground();
+        if (!background) return;
+        var zoom = Math.max(1, Math.min(3, Number(value) / 100));
+        var ratio = backgroundCropRatio(background);
+        var crop = canvasBackgroundCropAtRatio(background, zoom, ratio);
+        configureCanvasBackground(background, zoom, crop.x, crop.y);
         state.canvas.requestRenderAll();
         if (commit) queueMutation(true);
     }
 
     function startBackgroundEditing() {
-        var group = selectedVisual();
-        if (!group || group.labType !== 'imageComposition') return;
-        if (state.backgroundEdit && state.backgroundEdit.elementId === group.elementId) return stopBackgroundEditing();
+        var background = getCanvasBackground();
+        if (!background) return;
+        state.canvas.setActiveObject(background);
+        if (state.backgroundEdit && state.backgroundEdit.elementId === 'canvas-background') {
+            renderProperties();
+            return;
+        }
         stopBackgroundEditing();
-        state.backgroundEdit = { elementId: group.elementId, dragging: false };
-        group.set({ lockMovementX: true, lockMovementY: true, hoverCursor: 'grab' });
+        state.backgroundEdit = { elementId: 'canvas-background', dragging: false };
+        background.set({ lockMovementX: true, lockMovementY: true, hoverCursor: 'grab' });
         els.editBackgroundPosition.setAttribute('aria-pressed', 'true');
         els.editBackgroundPosition.textContent = '完成背景位置调整';
-        els.stageTip.textContent = '在图片内拖动背景，主体和组合位置保持不变';
+        els.stageTip.textContent = '拖动背景调整位置，使用右侧滑杆缩放；其他图片和文字保持不变';
         els.stageTip.hidden = false;
         state.canvas.requestRenderAll();
     }
 
     function stopBackgroundEditing() {
         if (!state.backgroundEdit) return;
-        var group = findVisualByElementId(state.backgroundEdit.elementId);
-        if (group) group.set({ lockMovementX: false, lockMovementY: false, hoverCursor: 'move' });
+        var background = getCanvasBackground();
+        if (background) background.set({ lockMovementX: true, lockMovementY: true, hoverCursor: 'grab' });
         state.backgroundEdit = null;
         if (els.editBackgroundPosition) {
             els.editBackgroundPosition.setAttribute('aria-pressed', 'false');
-            els.editBackgroundPosition.textContent = '拖动调整背景位置';
+            els.editBackgroundPosition.textContent = '开始调整背景';
         }
         if (els.stageTip) els.stageTip.hidden = true;
         if (state.canvas) state.canvas.requestRenderAll();
@@ -1263,11 +1515,10 @@
     }
 
     function beginBackgroundDrag(event) {
-        if (!state.backgroundEdit || !event.target || event.target.labType !== 'imageComposition'
-                || String(event.target.elementId) !== String(state.backgroundEdit.elementId)) return false;
-        var background = compositionBackground(event.target);
+        if (!state.backgroundEdit || !event.target || event.target.labType !== 'canvasBackground') return false;
+        var background = getCanvasBackground();
         if (!background) return false;
-        var pointer = groupLocalPointer(event.target, event.e);
+        var pointer = state.canvas.getPointer(event.e);
         state.backgroundEdit.dragging = true;
         state.backgroundEdit.moved = false;
         state.backgroundEdit.startX = pointer.x;
@@ -1280,19 +1531,18 @@
 
     function moveBackgroundDrag(event) {
         if (!state.backgroundEdit || !state.backgroundEdit.dragging) return;
-        var group = findVisualByElementId(state.backgroundEdit.elementId);
-        var background = compositionBackground(group);
-        if (!group || !background) return;
-        var pointer = groupLocalPointer(group, event.e);
+        var background = getCanvasBackground();
+        if (!background) return;
+        var pointer = state.canvas.getPointer(event.e);
         var dx = pointer.x - state.backgroundEdit.startX;
         var dy = pointer.y - state.backgroundEdit.startY;
         if (Math.abs(dx) + Math.abs(dy) > 1) state.backgroundEdit.moved = true;
         var sourceScale = Math.max(Number(background.scaleX) || 1, .0001);
-        configureBackgroundImage(background, group.baseWidth || group.width, group.baseHeight || group.height,
+        configureCanvasBackground(background,
             background.backgroundZoom || 1,
             state.backgroundEdit.cropX - dx / sourceScale,
             state.backgroundEdit.cropY - dy / sourceScale);
-        group.set({
+        background.set({
             backgroundCropX: background.backgroundCropX,
             backgroundCropY: background.backgroundCropY,
             backgroundZoom: background.backgroundZoom
@@ -1304,20 +1554,23 @@
         if (!state.backgroundEdit || !state.backgroundEdit.dragging) return false;
         var moved = state.backgroundEdit.moved;
         state.backgroundEdit.dragging = false;
-        var group = findVisualByElementId(state.backgroundEdit.elementId);
-        if (group) group.set('hoverCursor', 'grab');
+        var background = getCanvasBackground();
+        if (background) background.set('hoverCursor', 'grab');
         if (moved) queueMutation(true);
         return true;
     }
 
     function selectedFrameId() {
         var active = state.canvas && state.canvas.getActiveObject();
-        return active && (active.labType === 'frameImage' || active.labType === 'framePlaceholder') ? active.frameId : null;
+        return active && (active.labType === 'frameImage' || active.labType === 'framePlaceholder' || active.labType === 'frameBorder')
+            ? active.frameId
+            : null;
     }
 
     function selectedFrameImage() {
         var active = state.canvas && state.canvas.getActiveObject();
-        return active && active.labType === 'frameImage' ? active : null;
+        if (!active || !active.frameId) return null;
+        return active.labType === 'frameImage' ? active : getFrameImage(active.frameId);
     }
 
     function selectedText() {
@@ -1339,11 +1592,17 @@
         var image = selectedFrameImage();
         if (!image) return;
         var bounds = image.frameBounds;
+        if (typeof bounds === 'string') {
+            try { bounds = JSON.parse(bounds); } catch (ignore) { return; }
+        }
+        var centerX = bounds.centerX == null ? bounds.x + bounds.width / 2 : Number(bounds.centerX);
+        var centerY = bounds.centerY == null ? bounds.y + bounds.height / 2 : Number(bounds.centerY);
         image.set({
-            left: bounds.x + bounds.width / 2,
-            top: bounds.y + bounds.height / 2,
+            left: centerX,
+            top: centerY,
             scaleX: image.coverScale,
             scaleY: image.coverScale,
+            angle: Number(bounds.rotation) || 0,
             cropZoom: 1
         });
         image.setCoords();
@@ -1468,10 +1727,6 @@
         addFreeImage(asset, point, config).then(function (image) {
             if (!image) return;
             image.moveTo(Math.max(0, index));
-            if (backgroundUrl) {
-                state.canvas.setActiveObject(image);
-                applyBackgroundAsset({ url: backgroundUrl, name: backgroundName || '模板背景' }, backgroundOptions);
-            }
         });
     }
 
@@ -1576,30 +1831,27 @@
             ? '最近实际 ' + formatCny(visual.cutoutActualCost)
             : (quoteAmount == null ? '费用待回传' : '预计 ' + formatCny(quoteAmount) + '/张');
 
-        var background = compositionBackground(visual);
-        els.chooseBackground.hidden = Boolean(background);
-        els.backgroundControls.hidden = !background;
-        els.backgroundHelp.textContent = background
-            ? (visual.activeImageVersion === 'cutout'
-                ? '背景与透明主体组成一个元素；可单独调整背景，不会调用 KIE。'
-                : '背景已经放到图片下方；若看不到变化，请先抠图或使用透明 PNG。')
-            : '把素材放到当前图片下方，不会调用 KIE。';
-        if (background) {
-            var opacity = Math.round((background.opacity == null ? 1 : background.opacity) * 100);
-            var zoom = Math.round((background.backgroundZoom || 1) * 100);
-            els.backgroundOpacity.value = opacity;
-            els.backgroundOpacityValue.value = opacity + '%';
-            els.backgroundOpacityValue.textContent = opacity + '%';
-            els.backgroundZoom.value = zoom;
-            els.backgroundZoomValue.value = zoom + '%';
-            els.backgroundZoomValue.textContent = zoom + '%';
-        }
-
         var frames = state.template.frames || [];
         els.freeImageFrameTarget.innerHTML = frames.map(function (frame) {
             return '<option value="' + escapeHtml(frame.id) + '">' + escapeHtml(frame.label || frameLabel(frame.id)) + '</option>';
         }).join('');
         els.placeImageInFrame.disabled = !frames.length;
+        positionCutoutFab();
+    }
+
+    function renderBackgroundProperties() {
+        var background = getCanvasBackground();
+        if (!background) return;
+        var opacity = Math.round((background.opacity == null ? 1 : background.opacity) * 100);
+        var zoom = Math.round((background.backgroundZoom || 1) * 100);
+        els.backgroundOpacity.value = opacity;
+        els.backgroundOpacityValue.value = opacity + '%';
+        els.backgroundOpacityValue.textContent = opacity + '%';
+        els.backgroundZoom.value = zoom;
+        els.backgroundZoomValue.value = zoom + '%';
+        els.backgroundZoomValue.textContent = zoom + '%';
+        els.backgroundName.textContent = background.backgroundAssetName || background.assetName || '画布背景';
+        els.backgroundHelp.textContent = '点击背景即可选中并直接拖动位置；使用缩放滑杆放大或缩小。背景始终位于所有内容下方。';
     }
 
     function renderProperties() {
@@ -1613,6 +1865,7 @@
         els.propsImage.hidden = true;
         els.propsText.hidden = true;
         els.propsMulti.hidden = true;
+        els.propsBackground.hidden = true;
         if (!active || !active.labType) {
             var selectedTexts = selectedTextObjects();
             if (selectedTexts.length > 1) {
@@ -1627,20 +1880,32 @@
             renderLayerPanel();
             return;
         }
-        if (active.labType === 'framePlaceholder' || active.labType === 'frameImage') {
+        if (active.labType === 'framePlaceholder' || active.labType === 'frameImage' || active.labType === 'frameBorder') {
             els.propsFrame.hidden = false;
-            els.selectionKind.textContent = active.labType === 'frameImage' ? '相框图片' : '空相框';
+            var frameImage = getFrameImage(active.frameId);
+            els.selectionKind.textContent = state.frameEditMode ? '框内图片裁剪' : (frameImage ? '相框' : '空相框');
             els.frameName.textContent = active.frameName || frameLabel(active.frameId);
-            var image = active.labType === 'frameImage' ? active : getFrameImage(active.frameId);
+            var image = active.labType === 'frameImage' ? active : frameImage;
             els.cropControls.hidden = !image;
             els.frameToFreeImage.hidden = !image;
-            els.frameHelp.textContent = image ? '拖动画面调整裁剪位置，缩放不会改变相框尺寸。' : '从左侧选择图片，或上传一张新图片。';
+            els.frameHelp.textContent = state.frameEditMode
+                ? '当前正在编辑框内图片。拖动画面调整裁剪位置，点击深色区域退出。'
+                : (image
+                    ? '拖动相框移动，拖动控制点缩放或旋转；双击相框进入图片裁剪。'
+                    : '拖动相框移动，拖动控制点缩放或旋转；双击后从左侧填入图片。');
             if (image) {
                 var zoomValue = Math.round((image.cropZoom || 1) * 100);
                 els.imageZoom.value = zoomValue;
                 els.imageZoomValue.value = zoomValue + '%';
                 els.imageZoomValue.textContent = zoomValue + '%';
             }
+            renderLayerPanel();
+            return;
+        }
+        if (active.labType === 'canvasBackground') {
+            els.propsBackground.hidden = false;
+            els.selectionKind.textContent = '画布背景';
+            renderBackgroundProperties();
             renderLayerPanel();
             return;
         }
@@ -1708,24 +1973,46 @@
         line.bringToFront();
     }
 
-    function snapMovingObject(object) {
-        if (!object || object.labType !== 'text') return;
+    function showAlignmentGuides(object) {
+        if (!object || object.labType === 'guide' || object.labType === 'frameEditOverlay') return;
         removeGuides();
+        var zoom = Math.max(state.canvas.getZoom(), 0.25);
+        var threshold = 8 / zoom;
         var rect = object.getBoundingRect(true, true);
-        var threshold = 8 / Math.max(state.canvas.getZoom(), .25);
-        var centerX = rect.left + rect.width / 2;
-        var centerY = rect.top + rect.height / 2;
-        var canvasCenterX = state.logicalWidth / 2;
-        var canvasCenterY = state.logicalHeight / 2;
-        if (Math.abs(centerX - canvasCenterX) <= threshold) {
-            object.left += canvasCenterX - centerX;
-            addGuide(canvasCenterX, 0, canvasCenterX, state.logicalHeight);
+        var mL = rect.left, mR = rect.left + rect.width, mCX = (mL + mR) / 2;
+        var mT = rect.top, mB = rect.top + rect.height, mCY = (mT + mB) / 2;
+        var W = state.logicalWidth, H = state.logicalHeight;
+        var candX = [0, W / 2, W];
+        var candY = [0, H / 2, H];
+        state.canvas.getObjects().forEach(function (o) {
+            if (o === object || o.labType === 'guide' || o.labType === 'frameEditOverlay') return;
+            var r = o.getBoundingRect(true, true);
+            candX.push(r.left, r.left + r.width / 2, r.left + r.width);
+            candY.push(r.top, r.top + r.height / 2, r.top + r.height);
+        });
+        var bestX = null, bestXAbs = Infinity, snapX = null;
+        candX.forEach(function (tx) {
+            [[mL, tx], [mCX, tx], [mR, tx]].forEach(function (p) {
+                var d = p[1] - p[0];
+                if (Math.abs(d) <= threshold && Math.abs(d) < bestXAbs) { bestXAbs = Math.abs(d); bestX = d; snapX = tx; }
+            });
+        });
+        var bestY = null, bestYAbs = Infinity, snapY = null;
+        candY.forEach(function (ty) {
+            [[mT, ty], [mCY, ty], [mB, ty]].forEach(function (p) {
+                var d = p[1] - p[0];
+                if (Math.abs(d) <= threshold && Math.abs(d) < bestYAbs) { bestYAbs = Math.abs(d); bestY = d; snapY = ty; }
+            });
+        });
+        if (bestX !== null) {
+            object.left += bestX;
+            addGuide(snapX, 0, snapX, H);
         }
-        if (Math.abs(centerY - canvasCenterY) <= threshold) {
-            object.top += canvasCenterY - centerY;
-            addGuide(0, canvasCenterY, state.logicalWidth, canvasCenterY);
+        if (bestY !== null) {
+            object.top += bestY;
+            addGuide(0, snapY, W, snapY);
         }
-        object.setCoords();
+        if (bestX !== null || bestY !== null) object.setCoords();
     }
 
     function renderAssets() {
@@ -1748,7 +2035,7 @@
 
     function renderContentPanel() {
         if (!state.canvas || !state.template || !els.contentList) return;
-        var frames = state.template.frames || [];
+        var frames = effectiveFrames();
         var definitions = state.template.texts || [];
         var filled = frames.filter(function (frame) { return Boolean(getFrameImage(frame.id)); }).length;
         els.contentSummary.innerHTML = '<strong>内容完成度 ' + filled + ' / ' + frames.length + ' 个相框</strong>'
@@ -1791,15 +2078,20 @@
         }).reverse();
         var imageRows = images.map(function (object, index) {
             var selected = activeVisual === object;
-            var typeLabel = object.labType === 'imageComposition' ? '图片组合' : (object.labType === 'imagePlaceholder' ? '图片占位' : '自由图片');
+            var hasBackground = object.labType === 'imageComposition';
+            var typeLabel = hasBackground ? '主体 + 背景' : (object.labType === 'imagePlaceholder' ? '图片占位' : '自由图片');
             var roleLabel = object.templateRole === 'fixed' ? '固定素材' : '可替换';
             var taskLabel = String(object.cutoutTaskStatus || '').toLowerCase() === 'processing' ? ' · 抠图中' : '';
+            var backgroundLabel = hasBackground && object.backgroundAssetName
+                ? ' · 背景：' + escapeHtml(object.backgroundAssetName)
+                : '';
             return '<section class="editor-layer-item' + (!object.visible ? ' is-hidden' : '') + (selected ? ' is-selected' : '')
                 + '" data-layer-image="' + escapeHtml(object.elementId) + '"><div class="editor-layer-item__head"><strong>'
                 + escapeHtml(object.originalAssetName || object.assetName || ('图片 ' + (index + 1))) + '</strong><span class="editor-content-status is-ready">'
                 + typeLabel + '</span></div><div class="editor-layer-item__meta">' + roleLabel + taskLabel
-                + (object.lockedByUser ? ' · 已锁定' : '') + (object.visible === false ? ' · 已隐藏' : '') + '</div>'
-                + '<div class="editor-layer-actions"><button type="button" data-layer-action="select-image">选择</button>'
+                + backgroundLabel + (object.lockedByUser ? ' · 已锁定' : '') + (object.visible === false ? ' · 已隐藏' : '') + '</div>'
+                + '<div class="editor-layer-actions">'
+                + '<button type="button" data-layer-action="select-image">选择</button>'
                 + '<button type="button" data-layer-action="visibility">' + (object.visible ? '隐藏' : '显示') + '</button>'
                 + '<button type="button" data-layer-action="lock">' + (object.lockedByUser ? '解锁' : '锁定') + '</button>'
                 + '<button type="button" data-layer-action="up" aria-label="上移一层">上移</button>'
@@ -1818,7 +2110,7 @@
                 + '<button type="button" data-layer-action="up" aria-label="上移一层">上移</button>'
                 + '<button type="button" data-layer-action="down" aria-label="下移一层">下移</button></div></section>';
         }).join('');
-        var frameRows = (state.template.frames || []).map(function (frame) {
+        var frameRows = effectiveFrames().map(function (frame) {
             return '<section class="editor-layer-item" data-layer-frame="' + escapeHtml(frame.id) + '"><div class="editor-layer-item__head"><strong>'
                 + escapeHtml(frame.label || frameLabel(frame.id)) + '</strong><span class="editor-content-status' + (getFrameImage(frame.id) ? ' is-ready' : '') + '">相框</span></div>'
                 + '<div class="editor-layer-actions"><button type="button" data-layer-action="select-frame">定位</button></div></section>';
@@ -1827,7 +2119,7 @@
     }
 
     function selectFrame(frameId) {
-        var object = getFrameImage(frameId) || getFramePlaceholder(frameId);
+        var object = getFrameController(frameId);
         if (!object) return;
         state.canvas.setActiveObject(object);
         state.canvas.requestRenderAll();
@@ -1946,6 +2238,18 @@
                 subjectCropHeight: meta.subjectCropHeight
             };
         });
+        var bgObject = getCanvasBackground();
+        var canvasBackground = null;
+        if (bgObject) {
+            canvasBackground = {
+                url: bgObject.backgroundAssetUrl || '',
+                name: bgObject.backgroundAssetName || '画布背景',
+                opacity: bgObject.opacity == null ? 1 : bgObject.opacity,
+                zoom: bgObject.backgroundZoom || 1,
+                cropX: bgObject.backgroundCropX == null ? null : bgObject.backgroundCropX,
+                cropY: bgObject.backgroundCropY == null ? null : bgObject.backgroundCropY
+            };
+        }
         return {
             schemaVersion: 1,
             usageType: state.template.usageType,
@@ -1953,9 +2257,10 @@
             width: state.logicalWidth,
             height: state.logicalHeight,
             background: state.canvas.backgroundColor || state.template.background || '#f5f7fa',
+            canvasBackground: canvasBackground,
             accent: state.template.accent || '#172033',
             tags: Array.from(new Set([state.template.usageType, state.template.ratioGroup, '个人模板'])),
-            frames: JSON.parse(JSON.stringify(state.template.frames || [])),
+            frames: JSON.parse(JSON.stringify(effectiveFrames())),
             texts: texts,
             images: images
         };
@@ -1966,7 +2271,7 @@
         els.saveTemplateCategory.value = state.template.category || '个人模板';
         els.saveTemplateDescription.value = '复用当前相框、自由图片和文字布局。';
         els.saveTemplateSpec.textContent = state.template.usageType + ' · ' + state.template.ratioGroup + ' · '
-            + state.logicalWidth + ' × ' + state.logicalHeight + ' · ' + (state.template.frames || []).length + ' 个相框 · '
+            + state.logicalWidth + ' × ' + state.logicalHeight + ' · ' + effectiveFrames().length + ' 个相框 · '
             + state.canvas.getObjects().filter(function (object) { return object.labType === 'freeImage' || object.labType === 'imageComposition'; }).length + ' 个自由图片';
         els.saveTemplateDialog.showModal();
         setTimeout(function () { els.saveTemplateName.focus(); els.saveTemplateName.select(); }, 0);
@@ -1975,6 +2280,13 @@
     async function savePersonalTemplate() {
         var name = els.saveTemplateName.value.trim();
         if (!name) return showToast('请输入模板名称', true);
+        var ratioW = state.logicalWidth, ratioH = state.logicalHeight, ratioGroup = state.template.ratioGroup;
+        var ratioOk = (ratioGroup === '1:1' && ratioW === ratioH)
+            || (ratioGroup === '3:4' && ratioW * 4 === ratioH * 3)
+            || (ratioGroup === '16:9' && ratioW * 9 === ratioH * 16)
+            || (ratioGroup === '2928:1200' && ratioW === 2928 && ratioH === 1200)
+            || (ratioGroup === '1200:900' && ratioW === 1200 && ratioH === 900);
+        if (!ratioOk) return showToast('当前画布尺寸不符合模板比例 ' + ratioGroup + '，无法保存为模板', true);
         els.confirmSaveTemplate.disabled = true;
         els.confirmSaveTemplate.textContent = '正在保存...';
         try {
@@ -2006,34 +2318,21 @@
     function clearBackgroundPick() {
         state.assetPickMode = '';
         state.backgroundTargetId = '';
-        els.backgroundPickBanner.hidden = true;
-        els.backgroundPickTarget.textContent = '请选择一张素材或上传新背景';
     }
 
-    function startBackgroundPick(visual) {
-        if (!visual || !visual.elementId) return false;
-        state.assetPickMode = 'background';
-        state.backgroundTargetId = String(visual.elementId);
-        els.backgroundPickTarget.textContent = '目标：' + (visual.originalAssetName || visual.assetName || '当前图片');
-        els.backgroundPickBanner.hidden = false;
-        return true;
-    }
-
-    function resolveBackgroundTarget() {
-        if (state.assetPickMode !== 'background' || !state.backgroundTargetId) return null;
-        return findVisualByElementId(state.backgroundTargetId);
+    function openCanvasBackgroundPicker() {
+        state.assetPickMode = 'canvasBackground';
+        state.backgroundTargetId = '';
+        var assetsTab = document.querySelector('[data-panel-tab="assets"]');
+        if (assetsTab) assetsTab.click();
+        showToast('请从素材库选择或上传一张画布背景图');
     }
 
     async function useAsset(asset, point, targetFrameId) {
         if (!asset) return;
-        if (state.assetPickMode === 'background') {
-            var backgroundTarget = resolveBackgroundTarget();
-            if (!backgroundTarget) {
-                clearBackgroundPick();
-                showToast('要更换背景的图片已不存在，请重新选择图片', true);
-                return;
-            }
-            await applyBackgroundAsset(asset, null, backgroundTarget);
+        if (state.assetPickMode === 'canvasBackground') {
+            await applyCanvasBackgroundAsset(asset);
+            state.assetPickMode = '';
             return;
         }
         if (targetFrameId) {
@@ -2065,14 +2364,9 @@
             }
             renderAssets();
             scheduleSave();
-            if (uploaded[0] && purpose === 'background') {
-                var backgroundTarget = resolveBackgroundTarget();
-                if (!backgroundTarget) {
-                    clearBackgroundPick();
-                    showToast('要更换背景的图片已不存在，请重新选择图片', true);
-                } else {
-                    await applyBackgroundAsset(uploaded[0], null, backgroundTarget);
-                }
+            if (uploaded[0] && purpose === 'canvasBackground') {
+                await applyCanvasBackgroundAsset(uploaded[0]);
+                state.assetPickMode = '';
             } else if (targetFrameId && uploaded[0]) {
                 assignImageToFrame(targetFrameId, uploaded[0]);
             } else if (placementPoint) {
@@ -2098,11 +2392,16 @@
     }
 
     function serializedDesign() {
+        var fabricJson = state.canvas.toDatalessJSON(CUSTOM_PROPS);
+        if (fabricJson && Array.isArray(fabricJson.objects)) {
+            fabricJson.objects = fabricJson.objects.filter(function (o) { return o.labType !== 'frameEditOverlay'; });
+        }
         return JSON.stringify({
             schemaVersion: 3,
             templateId: state.template.id,
             assets: state.assets,
-            fabric: state.canvas.toDatalessJSON(CUSTOM_PROPS)
+            frameLayout: state.frameLayout,
+            fabric: fabricJson
         });
     }
 
@@ -2136,7 +2435,7 @@
 
     function createThumbnail() {
         try {
-            return canvasDataUrl('jpeg', Math.min(1, 360 / state.logicalWidth), .72, false);
+            return canvasDataUrl('jpeg', Math.min(1, 360 / state.logicalWidth), .72, true);
         } catch (error) {
             return state.project.thumbnailDataUrl || '';
         }
@@ -2168,8 +2467,12 @@
             setSaveState('已自动保存', 'saved');
         }).catch(function (error) {
             state.dirty = true;
-            setSaveState('保存失败，稍后将重试', 'error');
-            showToast(error.response && error.response.data ? error.response.data.message : error.message, true);
+            var saveStatus = error.response && Number(error.response.status);
+            var saveMessage = saveStatus === 409
+                ? '项目已被其他会话修改，请刷新后重新加载'
+                : (error.response && error.response.data ? error.response.data.message : error.message);
+            setSaveState(saveStatus === 409 ? '保存冲突，请刷新' : '保存失败，稍后将重试', 'error');
+            showToast(saveMessage, true);
         });
         return state.saveQueue;
     }
@@ -2184,6 +2487,7 @@
         state.canvas.setZoom(scale);
         state.canvas.calcOffset();
         state.canvas.renderAll();
+        positionCutoutFab();
     }
 
     function setManualZoom(value) {
@@ -2205,6 +2509,42 @@
         els.zoomIn.title = '放大 ' + clamped + ' 倍';
         if (showFeedback && clamped !== raw) showToast('缩放倍数已调整为 ' + clamped + ' 倍');
         return clamped;
+    }
+
+    function exportScaleLimit() {
+        var width = Math.max(1, Number(state.logicalWidth) || 1);
+        var height = Math.max(1, Number(state.logicalHeight) || 1);
+        var byDimension = Math.floor(16384 / Math.max(width, height));
+        var byPixels = Math.floor(Math.sqrt(100000000 / (width * height)));
+        return Math.max(1, Math.min(10, byDimension, byPixels));
+    }
+
+    function updateExportSizePreview(scale) {
+        var limit = exportScaleLimit();
+        var requestedScale = Math.round(Number(scale) || 1);
+        var safeScale = Math.max(1, Math.min(limit, requestedScale));
+        var width = state.logicalWidth * safeScale;
+        var height = state.logicalHeight * safeScale;
+        var label = requestedScale > limit ? '上限 ' + limit + ' 倍' : width + ' × ' + height;
+        els.exportSizePreview.value = label;
+        els.exportSizePreview.textContent = label;
+        return { scale: safeScale, width: width, height: height };
+    }
+
+    function readExportScale(showFeedback) {
+        var raw = Number(els.exportScale.value);
+        if (!Number.isFinite(raw)) raw = 1;
+        var rounded = Math.round(raw);
+        var limit = exportScaleLimit();
+        var clamped = Math.max(1, Math.min(limit, rounded));
+        els.exportScale.max = String(limit);
+        els.exportScale.value = String(clamped);
+        els.exportScale.title = '输入 1 到 ' + limit + ' 的整数倍数';
+        var size = updateExportSizePreview(clamped);
+        if (showFeedback && clamped !== raw) {
+            showToast('当前画布支持 1 到 ' + limit + ' 倍，已调整为 ' + clamped + ' 倍');
+        }
+        return size;
     }
 
     function loadHtmlImage(url) {
@@ -2260,45 +2600,6 @@
             targetHeight = Math.max(256, Math.round(targetHeight * .86));
         }
         throw new Error('临时图片仍超过 5MB，请先压缩原图后再抠图');
-    }
-
-    async function composeOriginalWithMask(originalUrl, maskUrl) {
-        var images = await Promise.all([loadHtmlImage(originalUrl), loadHtmlImage(maskUrl)]);
-        var original = images[0];
-        var mask = images[1];
-        var width = original.naturalWidth;
-        var height = original.naturalHeight;
-        var output = document.createElement('canvas');
-        output.width = width;
-        output.height = height;
-        var outputContext = output.getContext('2d', { willReadFrequently: true });
-        outputContext.drawImage(original, 0, 0, width, height);
-        var maskCanvas = document.createElement('canvas');
-        maskCanvas.width = width;
-        maskCanvas.height = height;
-        var maskContext = maskCanvas.getContext('2d', { willReadFrequently: true });
-        maskContext.clearRect(0, 0, width, height);
-        maskContext.drawImage(mask, 0, 0, width, height);
-        var sourcePixels = outputContext.getImageData(0, 0, width, height);
-        var maskPixels = maskContext.getImageData(0, 0, width, height);
-        for (var i = 3; i < sourcePixels.data.length; i += 4) {
-            sourcePixels.data[i] = Math.round(sourcePixels.data[i] * maskPixels.data[i] / 255);
-        }
-        outputContext.putImageData(sourcePixels, 0, 0);
-        return canvasBlob(output, 'image/png', 1);
-    }
-
-    async function uploadGeneratedCutout(blob, name) {
-        if (!blob || blob.size > 25 * 1024 * 1024) return null;
-        var safeName = String(name || '图片').replace(/\.[^.]+$/, '').replace(/[\\/:*?"<>|]/g, '_');
-        var form = new FormData();
-        form.append('file', new File([blob], safeName + '_cutout.png', { type: 'image/png' }));
-        var asset = apiData(await axios.post('/api/template-lab/projects/' + state.project.id + '/assets', form, {
-            headers: { 'Content-Type': 'multipart/form-data' }
-        }));
-        state.assets.push(asset);
-        renderAssets();
-        return asset;
     }
 
     async function fetchCutoutQuote() {
@@ -2373,7 +2674,18 @@
         }
     }
 
-    function pollCutoutTask(taskId, elementId, delay) {
+    function pollCutoutTask(taskId, elementId, delay, attempts) {
+        attempts = attempts || 0;
+        if (attempts > 80) {
+            var timeoutVisual = findVisualByElementId(elementId);
+            if (timeoutVisual) {
+                timeoutVisual.set({ cutoutTaskStatus: 'failed', cutoutTaskError: '抠图处理超时，请重新提交' });
+                queueMutation(true);
+                if (selectedVisual() === timeoutVisual) renderProperties();
+            }
+            showToast('抠图处理超时，请重新提交', true);
+            return;
+        }
         if (!taskId || state.cutoutPollers[taskId]) return;
         state.cutoutPollers[taskId] = setTimeout(async function check() {
             delete state.cutoutPollers[taskId];
@@ -2393,7 +2705,7 @@
                     showToast(result.error || 'KIE 抠图失败', true);
                     return;
                 }
-                pollCutoutTask(taskId, elementId, 3000);
+                pollCutoutTask(taskId, elementId, 3000, attempts + 1);
             } catch (error) {
                 var statusCode = error.response && Number(error.response.status);
                 if (statusCode >= 400 && statusCode < 500 && statusCode !== 408 && statusCode !== 429) {
@@ -2411,33 +2723,16 @@
                     showToast('抠图任务无法继续查询，请重新提交', true);
                     return;
                 }
-                pollCutoutTask(taskId, elementId, 5000);
+                pollCutoutTask(taskId, elementId, 5000, attempts + 1);
             }
         }, delay || 3000);
     }
 
     async function applyCutoutResult(elementId, result) {
         var visual = findVisualByElementId(elementId);
-        var originalUrl = visual && (visual.cutoutSourceUrl || visual.originalAssetUrl || visual.assetUrl);
-        var asset = null;
-        if (visual && originalUrl && originalUrl === (visual.originalAssetUrl || visual.assetUrl)) {
-            try {
-                var compositeBlob = await composeOriginalWithMask(originalUrl, result.result_url);
-                asset = await uploadGeneratedCutout(compositeBlob, visual.originalAssetName || visual.assetName);
-            } catch (error) {
-                showToast('已完成抠图，但原图像素合成失败，使用 KIE 高清结果', true);
-            }
-        }
-        if (!asset) {
-            asset = {
-                url: result.result_url,
-                name: ((visual && (visual.originalAssetName || visual.assetName)) || '图片') + '_KIE抠图.png',
-                generated: true
-            };
-            state.assets.push(asset);
-            renderAssets();
-        }
         if (!visual) {
+            state.assets.push({ url: result.result_url, name: 'KIE抠图结果.png', generated: true });
+            renderAssets();
             scheduleSave();
             showToast('原图片已删除，抠图结果已保存到项目素材库');
             return;
@@ -2449,7 +2744,7 @@
             return;
         }
         visual.set({
-            cutoutUrl: asset.url,
+            cutoutUrl: result.result_url,
             cutoutTaskStatus: 'success',
             cutoutTaskError: '',
             cutoutActualCost: result.actual_cost,
@@ -2472,8 +2767,100 @@
         });
     }
 
+    function dataUrlBytes(dataUrl) {
+        var comma = dataUrl.indexOf(',');
+        if (comma < 0) return 0;
+        var b64 = dataUrl.slice(comma + 1);
+        var padding = 0;
+        if (b64.charAt(b64.length - 1) === '=') padding += 1;
+        if (b64.charAt(b64.length - 2) === '=') padding += 1;
+        return Math.max(0, Math.floor(b64.length * 3 / 4) - padding);
+    }
+
+    function formatBytes(bytes) {
+        if (bytes >= 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+        if (bytes >= 1024) return Math.round(bytes / 1024) + ' KB';
+        return bytes + ' B';
+    }
+
+    function buildOffscreenCanvas(scale) {
+        var currentPixelWidth = state.canvas.getWidth();
+        var targetPixelWidth = state.logicalWidth * scale;
+        var multiplier = targetPixelWidth / currentPixelWidth;
+        var hidden = [];
+        state.canvas.getObjects().forEach(function (o) {
+            if (o.labType === 'framePlaceholder' || o.labType === 'imagePlaceholder'
+                    || o.labType === 'frameBorder' || o.labType === 'guide') {
+                hidden.push({ o: o, v: o.visible });
+                o.visible = false;
+            }
+        });
+        state.canvas.renderAll();
+        var el = state.canvas.toCanvasElement(multiplier, { enableRetinaScaling: false });
+        hidden.forEach(function (h) { h.o.visible = h.v; });
+        if (hidden.length) state.canvas.renderAll();
+        return el;
+    }
+
+    function offscreenDataUrl(el, format, quality) {
+        return el.toDataURL(format === 'jpeg' ? 'image/jpeg' : 'image/png', quality == null ? 0.94 : quality);
+    }
+
+    function renderCandidatesForScale(format, scale, qualities, maxBytes) {
+        var el = buildOffscreenCanvas(scale);
+        var fit = null, smallest = null;
+        for (var i = 0; i < qualities.length; i += 1) {
+            var dataUrl = offscreenDataUrl(el, format, qualities[i]);
+            var bytes = dataUrlBytes(dataUrl);
+            var cand = { dataUrl: dataUrl, bytes: bytes, scale: scale, quality: qualities[i], format: format };
+            if (!smallest || bytes < smallest.bytes) smallest = cand;
+            if (bytes <= maxBytes && (!fit || bytes > fit.bytes)) fit = cand;
+        }
+        return { fit: fit, smallest: smallest };
+    }
+
+    function readExportMaxBytes() {
+        if (!els.exportMaxSize) return null;
+        var raw = parseFloat(els.exportMaxSize.value);
+        if (!Number.isFinite(raw) || raw <= 0) return null;
+        return Math.round(raw * 1024 * 1024);
+    }
+
+    function compressForMaxBytes(format, baseScale, maxBytes) {
+        var isJpeg = format === 'jpeg';
+        var qualities = isJpeg
+            ? [0.94, 0.92, 0.88, 0.84, 0.8, 0.76, 0.72, 0.68, 0.64, 0.6, 0.55, 0.5, 0.45, 0.4, 0.35, 0.3]
+            : [1];
+        var best = null;
+        var scale = baseScale;
+        while (true) {
+            var res = renderCandidatesForScale(format, scale, qualities, maxBytes);
+            if (res.fit) { best = res.fit; break; }
+            best = res.smallest;
+            if (scale <= 1) break;
+            scale = Math.max(1, Math.round(scale * 0.85 * 100) / 100);
+        }
+        var autoJpeg = false;
+        if (!isJpeg && best && best.bytes > maxBytes) {
+            autoJpeg = true;
+            var jq = [0.94, 0.9, 0.85, 0.8, 0.75, 0.7, 0.65, 0.6, 0.55, 0.5, 0.45, 0.4, 0.35, 0.3];
+            var js = Math.min(baseScale, 1);
+            var jBest = null;
+            while (true) {
+                var r = renderCandidatesForScale('jpeg', js, jq, maxBytes);
+                if (r.fit) { jBest = r.fit; break; }
+                jBest = r.smallest;
+                if (js <= 1) break;
+                js = Math.max(1, Math.round(js * 0.85 * 100) / 100);
+            }
+            if (jBest) best = jBest;
+        }
+        best.autoJpeg = autoJpeg;
+        return best;
+    }
+
     async function exportImage() {
-        var emptyFrames = (state.template.frames || []).filter(function (frame) { return !getFrameImage(frame.id); });
+        var emptyFrames = effectiveFrames().filter(function (frame) { return !getFrameImage(frame.id); });
         var emptyImageSlots = state.canvas.getObjects().filter(function (object) { return object.labType === 'imagePlaceholder'; });
         if (emptyFrames.length || emptyImageSlots.length) {
             showToast('还有 ' + (emptyFrames.length + emptyImageSlots.length) + ' 个图片位置未填入，完成后再导出。', true);
@@ -2484,16 +2871,36 @@
         try {
             await saveNow();
             var format = els.exportFormat.value;
-            var scale = Number(els.exportScale.value) || 1;
-            var dataUrl = canvasDataUrl(format, scale, format === 'jpeg' ? .94 : 1, true);
+            var exportSize = readExportScale(true);
+            var scale = exportSize.scale;
+            var maxBytes = readExportMaxBytes();
+            var finalFormat = format;
+            var finalScale = scale;
+            var dataUrl;
+            var finalBytes;
+            var autoJpeg = false;
+            if (maxBytes == null) {
+                dataUrl = canvasDataUrl(format, scale, format === 'jpeg' ? .94 : 1, true);
+                finalBytes = dataUrlBytes(dataUrl);
+            } else {
+                var compressed = compressForMaxBytes(format, scale, maxBytes);
+                dataUrl = compressed.dataUrl;
+                finalFormat = compressed.format;
+                finalScale = compressed.scale;
+                finalBytes = compressed.bytes;
+                autoJpeg = compressed.autoJpeg;
+            }
             var link = document.createElement('a');
             var safeName = (els.projectName.value.trim() || '拼图项目').replace(/[\\/:*?"<>|]/g, '_');
-            link.download = safeName + '_' + state.logicalWidth * scale + 'x' + state.logicalHeight * scale + '.' + (format === 'jpeg' ? 'jpg' : 'png');
+            var ext = finalFormat === 'jpeg' ? 'jpg' : 'png';
+            link.download = safeName + '_' + Math.round(state.logicalWidth * finalScale) + 'x' + Math.round(state.logicalHeight * finalScale) + '.' + ext;
             link.href = dataUrl;
             document.body.appendChild(link);
             link.click();
             link.remove();
-            showToast('图片已导出');
+            var msg = '图片已导出：' + formatBytes(finalBytes) + ' / ' + Math.round(state.logicalWidth * finalScale) + '×' + Math.round(state.logicalHeight * finalScale);
+            if (autoJpeg) msg += '（PNG 超限已转 JPG）';
+            showToast(msg);
         } catch (error) {
             showToast('导出失败。请检查素材是否允许跨域读取。', true);
         } finally {
@@ -2507,17 +2914,97 @@
         var zoom = state.canvas.getZoom();
         var x = (event.clientX - rect.left) / zoom;
         var y = (event.clientY - rect.top) / zoom;
-        var frames = state.template.frames || [];
+        var frames = effectiveFrames();
         return frames.find(function (frame) {
-            return x >= frame.x && x <= frame.x + frame.width && y >= frame.y && y <= frame.y + frame.height;
+            var bounds = frameBounds(frame);
+            var radians = -(Number(bounds.rotation) || 0) * Math.PI / 180;
+            var dx = x - bounds.centerX;
+            var dy = y - bounds.centerY;
+            var localX = dx * Math.cos(radians) - dy * Math.sin(radians);
+            var localY = dx * Math.sin(radians) + dy * Math.cos(radians);
+            if (frame.shape === 'circle') {
+                var radiusX = Math.max(1, bounds.width / 2);
+                var radiusY = Math.max(1, bounds.height / 2);
+                return (localX * localX) / (radiusX * radiusX) + (localY * localY) / (radiusY * radiusY) <= 1;
+            }
+            return Math.abs(localX) <= bounds.width / 2 && Math.abs(localY) <= bounds.height / 2;
         });
+    }
+
+    function createCutoutFab() {
+        if (!state.canvas || !state.canvas.wrapperEl) return;
+        state.canvas.wrapperEl.style.position = 'relative';
+        var fab = document.createElement('button');
+        fab.type = 'button';
+        fab.id = 'image-cutout-fab';
+        fab.className = 'image-cutout-fab';
+        fab.textContent = '去除背景';
+        fab.style.display = 'none';
+        fab.addEventListener('click', function (event) {
+            event.preventDefault();
+            event.stopPropagation();
+            openCutoutConfirmation();
+        });
+        state.canvas.wrapperEl.appendChild(fab);
+        els.imageCutoutFab = fab;
+    }
+
+    function positionCutoutFab() {
+        var fab = els.imageCutoutFab;
+        if (!fab || !state.canvas) return;
+        var active = state.canvas.getActiveObject();
+        var cutoutable = active && !state.frameEditMode
+            && (active.labType === 'freeImage' || active.labType === 'imageComposition');
+        if (!cutoutable) { fab.style.display = 'none'; return; }
+        var rect;
+        try { rect = active.getBoundingRect(); } catch (ignore) { fab.style.display = 'none'; return; }
+        if (!rect || !Number.isFinite(rect.left) || !Number.isFinite(rect.width)) { fab.style.display = 'none'; return; }
+        var taskStatus = String(active.cutoutTaskStatus || '').toLowerCase();
+        var processing = taskStatus === 'processing' || taskStatus === 'queued';
+        var hasCutout = Boolean(active.cutoutUrl);
+        fab.disabled = processing;
+        fab.textContent = processing ? '抠图中…' : (hasCutout ? '重新抠图' : '去除背景');
+        fab.style.display = 'inline-flex';
+        var canvasW = state.canvas.getWidth();
+        var w = fab.offsetWidth, h = fab.offsetHeight;
+        var left = rect.left + rect.width - w / 2;
+        var top = rect.top - h / 2;
+        left = Math.max(4, Math.min(left, canvasW - w - 4));
+        top = Math.max(4, top);
+        fab.style.left = left + 'px';
+        fab.style.top = top + 'px';
     }
 
     function setupCanvasEvents() {
         state.canvas.on('selection:created', renderProperties);
         state.canvas.on('selection:updated', renderProperties);
         state.canvas.on('selection:cleared', renderProperties);
+        state.canvas.on('selection:created', positionCutoutFab);
+        state.canvas.on('selection:updated', positionCutoutFab);
+        state.canvas.on('selection:cleared', positionCutoutFab);
+        state.canvas.on('object:moving', positionCutoutFab);
+        state.canvas.on('object:scaling', positionCutoutFab);
+        state.canvas.on('object:modified', positionCutoutFab);
         state.canvas.on('mouse:down', function (event) {
+            var target = event.target;
+            if (target && target.labType === 'canvasBackground') {
+                state.dragFrame = null;
+                startBackgroundEditing();
+                beginBackgroundDrag(event);
+                return;
+            }
+            if (state.frameEditMode && state.frameEditOverlay && target === state.frameEditOverlay) {
+                exitFrameEdit();
+                return;
+            }
+            if (state.frameEditMode && (!target || target.frameId !== state.frameEditTarget)) {
+                exitFrameEdit();
+            }
+            if (!state.frameEditMode && target && target.labType === 'frameBorder') {
+                beginFrameDrag(target);
+            } else {
+                state.dragFrame = null;
+            }
             beginBackgroundDrag(event);
         });
         state.canvas.on('mouse:move', function (event) {
@@ -2525,10 +3012,34 @@
         });
         state.canvas.on('object:moving', function (event) {
             var object = event.target;
-            if (object.labType === 'frameImage') constrainFrameImage(object);
-            else snapMovingObject(object);
+            if (!object) return;
+            if (state.frameEditMode && state.frameEditTarget && object.labType === 'frameImage' && object.frameId === state.frameEditTarget) {
+                constrainFrameImage(object);
+                return;
+            }
+            if (object.labType === 'frameBorder') {
+                showAlignmentGuides(object);
+                syncFrameTransform(object);
+                return;
+            }
+            showAlignmentGuides(object);
+        });
+        state.canvas.on('object:scaling', function (event) {
+            var object = event.target;
+            if (object && object.labType === 'frameBorder') syncFrameTransform(object);
+        });
+        state.canvas.on('object:rotating', function (event) {
+            var object = event.target;
+            if (object && object.labType === 'frameBorder') syncFrameTransform(object);
         });
         state.canvas.on('object:modified', function () {
+            if (state.dragFrame) {
+                state.dragFrame = null;
+                removeGuides();
+                queueMutation(true);
+                renderProperties();
+                return;
+            }
             removeGuides();
             queueMutation(true);
             renderProperties();
@@ -2542,11 +3053,10 @@
             removeGuides();
         });
         state.canvas.on('mouse:dblclick', function (event) {
-            if (event.target && event.target.labType === 'frameImage') {
-                state.canvas.setActiveObject(event.target);
-                els.stageTip.hidden = false;
-                clearTimeout(setupCanvasEvents.tipTimer);
-                setupCanvasEvents.tipTimer = setTimeout(function () { els.stageTip.hidden = true; }, 2600);
+            if (event.target && (event.target.labType === 'frameBorder' || event.target.labType === 'framePlaceholder')) {
+                enterFrameEdit(event.target.frameId);
+            } else if (!state.frameEditMode && event.target && event.target.labType === 'frameImage') {
+                enterFrameEdit(event.target.frameId);
             } else if (event.target && (event.target.labType === 'freeImage' || event.target.labType === 'imageComposition')) {
                 state.canvas.setActiveObject(event.target);
                 renderProperties();
@@ -2557,6 +3067,15 @@
                 document.querySelector('[data-panel-tab="assets"]').click();
                 showToast('从左侧选择图片填入这个位置');
             }
+        });
+        state.canvas.on('mouse:wheel', function (opt) {
+            var e = opt && opt.e;
+            if (!e || typeof e.preventDefault !== 'function') return;
+            e.preventDefault();
+            if (typeof e.stopPropagation === 'function') e.stopPropagation();
+            var factor = e.deltaY > 0 ? 0.9 : 1.1;
+            if (e.ctrlKey) factor = Math.pow(factor, 0.5);
+            setManualZoom(state.manualZoom * factor);
         });
     }
 
@@ -2597,6 +3116,7 @@
             });
             fabric.Object.prototype.objectCaching = false;
             setupCanvasEvents();
+            createCutoutFab();
             var saved = parseSavedDesign();
             if (saved) {
                 state.suppressHistory = true;
@@ -2605,7 +3125,7 @@
                     finishInitialization();
                 });
             } else {
-                buildTemplateCanvas();
+                await buildTemplateCanvas();
                 finishInitialization();
                 scheduleSave();
             }
@@ -2622,6 +3142,7 @@
         renderContentPanel();
         renderLayerPanel();
         applyViewportScale();
+        readExportScale(false);
         pushHistory();
         renderProperties();
         els.loading.hidden = true;
@@ -2684,11 +3205,12 @@
         });
         els.layerList.addEventListener('click', function (event) {
             var button = event.target.closest('[data-layer-action]');
-            if (!button) return;
-            var textRow = button.closest('[data-layer-field]');
-            var frameRow = button.closest('[data-layer-frame]');
-            var imageRow = button.closest('[data-layer-image]');
-            var action = button.dataset.layerAction;
+            var textRow = event.target.closest('[data-layer-field]');
+            var frameRow = event.target.closest('[data-layer-frame]');
+            var imageRow = event.target.closest('[data-layer-image]');
+            if (!textRow && !frameRow && !imageRow) return;
+            var action = button ? button.dataset.layerAction
+                : (frameRow ? 'select-frame' : (imageRow ? 'select-image' : 'select'));
             if (frameRow && action === 'select-frame') return selectFrame(frameRow.dataset.layerFrame);
             var object = imageRow
                 ? findVisualByElementId(imageRow.dataset.layerImage)
@@ -2729,6 +3251,13 @@
         document.querySelectorAll('[data-add-text]').forEach(function (button) {
             button.addEventListener('click', function () { addText(button.dataset.addText); });
         });
+        document.querySelectorAll('[data-add-frame]').forEach(function (button) {
+            button.addEventListener('click', function () { addFrame(button.dataset.addFrame); });
+        });
+        els.deleteFrame.addEventListener('click', function () {
+            var id = selectedFrameId();
+            if (id) deleteFrame(id);
+        });
         els.uploadAssets.addEventListener('click', function () {
             state.pendingFrameId = null;
             state.pendingPlacement = null;
@@ -2736,7 +3265,9 @@
         });
         els.replaceFrameImage.addEventListener('click', function () {
             clearBackgroundPick();
-            state.pendingFrameId = selectedFrameId();
+            var frameId = selectedFrameId();
+            if (state.frameEditMode) exitFrameEdit();
+            state.pendingFrameId = frameId;
             state.pendingPlacement = null;
             els.assetInput.click();
         });
@@ -2796,6 +3327,15 @@
             }
         });
         readZoomFactor(false);
+        els.exportScale.addEventListener('input', function () { updateExportSizePreview(els.exportScale.value); });
+        els.exportScale.addEventListener('change', function () { readExportScale(true); });
+        els.exportScale.addEventListener('keydown', function (event) {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                readExportScale(true);
+                els.exportScale.select();
+            }
+        });
         els.exportButton.addEventListener('click', exportImage);
         els.imageZoom.addEventListener('input', function () {
             els.imageZoomValue.value = els.imageZoom.value + '%';
@@ -2806,6 +3346,9 @@
         els.resetCrop.addEventListener('click', resetCrop);
         els.removeFrameImage.addEventListener('click', removeFrameImage);
         els.frameToFreeImage.addEventListener('click', convertSelectedFrameToFreeImage);
+        els.frameCenterHorizontal.addEventListener('click', function () { modifySelectedFrame('center-horizontal'); });
+        els.frameCenterVertical.addEventListener('click', function () { modifySelectedFrame('center-vertical'); });
+        els.frameRotate.addEventListener('click', function () { modifySelectedFrame('rotate'); });
 
         els.showOriginalImage.addEventListener('click', function () { switchVisualVersion('original'); });
         els.showCutoutImage.addEventListener('click', function () { switchVisualVersion('cutout'); });
@@ -2871,20 +3414,8 @@
         els.startCutout.addEventListener('click', openCutoutConfirmation);
         els.confirmCutout.addEventListener('click', submitCutout);
 
-        function chooseBackgroundAsset() {
-            var visual = selectedVisual();
-            if (!visual) return showToast('请先选择要添加背景的图片', true);
-            if (!startBackgroundPick(visual)) return showToast('当前图片缺少元素编号，请重新选择图片', true);
-            var assetsTab = document.querySelector('[data-panel-tab="assets"]');
-            if (assetsTab) assetsTab.click();
-            showToast('已锁定当前图片，请从左侧选择或上传新背景');
-        }
-        els.chooseBackground.addEventListener('click', chooseBackgroundAsset);
-        els.changeBackground.addEventListener('click', chooseBackgroundAsset);
-        els.cancelBackgroundPick.addEventListener('click', function () {
-            clearBackgroundPick();
-            showToast('已取消更换背景');
-        });
+        els.chooseBackground.addEventListener('click', openCanvasBackgroundPicker);
+        els.changeBackground.addEventListener('click', openCanvasBackgroundPicker);
         els.backgroundOpacity.addEventListener('input', function () {
             var value = Number(els.backgroundOpacity.value) || 0;
             els.backgroundOpacityValue.value = value + '%';
@@ -2899,9 +3430,11 @@
             setBackgroundZoom(value, false);
         });
         els.backgroundZoom.addEventListener('change', function () { setBackgroundZoom(els.backgroundZoom.value, true); });
-        els.editBackgroundPosition.addEventListener('click', startBackgroundEditing);
-        els.removeBackground.addEventListener('click', removeCompositionBackground);
-        els.splitImageComposition.addEventListener('click', splitImageComposition);
+        els.editBackgroundPosition.addEventListener('click', function () {
+            if (state.backgroundEdit) stopBackgroundEditing();
+            else startBackgroundEditing();
+        });
+        els.removeBackground.addEventListener('click', removeCanvasBackground);
         els.placeImageInFrame.addEventListener('click', function () {
             var visual = selectedVisual();
             var frameId = els.freeImageFrameTarget.value;
@@ -2968,6 +3501,7 @@
                 event.preventDefault(); saveNow(); return;
             }
             if (typing) return;
+            if (event.key === 'Escape') { if (state.frameEditMode) { event.preventDefault(); exitFrameEdit(); } return; }
             if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') { event.preventDefault(); event.shiftKey ? redo() : undo(); return; }
             if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'y') { event.preventDefault(); redo(); return; }
             if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'd') {
@@ -2978,18 +3512,24 @@
             }
             if (event.key === 'Delete' || event.key === 'Backspace') {
                 if (selectedText()) { event.preventDefault(); deleteSelectedText(); }
-                else if (selectedFrameImage()) { event.preventDefault(); removeFrameImage(); }
+                else if (selectedFrameId()) { event.preventDefault(); deleteFrame(selectedFrameId()); }
                 else if (selectedVisual()) { event.preventDefault(); deleteSelectedVisual(); }
             }
             if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) {
-                var object = selectedText() || selectedVisual();
+                var frameController = getFrameController(selectedFrameId());
+                var object = selectedText() || selectedVisual() || frameController;
                 if (!object) return;
                 event.preventDefault();
+                if (frameController && object === frameController) beginFrameDrag(frameController);
                 var step = event.shiftKey ? 10 : 1;
                 if (event.key === 'ArrowLeft') object.left -= step;
                 if (event.key === 'ArrowRight') object.left += step;
                 if (event.key === 'ArrowUp') object.top -= step;
                 if (event.key === 'ArrowDown') object.top += step;
+                if (frameController && object === frameController) {
+                    syncFrameTransform(frameController);
+                    state.dragFrame = null;
+                }
                 object.setCoords(); state.canvas.renderAll(); queueMutation(false);
             }
         });

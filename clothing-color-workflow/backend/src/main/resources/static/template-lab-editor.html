@@ -7,7 +7,7 @@
     <title>拼图编辑器 - 模板拼图实验室</title>
     <link rel="stylesheet" href="css/variables.css">
     <link rel="stylesheet" href="css/shared.css">
-    <link rel="stylesheet" href="css/template-lab-editor.css">
+    <link rel="stylesheet" href="css/template-lab-editor.css?v=20260922.2">
     <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
     <script src="https://unpkg.com/fabric@5.3.0/dist/fabric.min.js"></script>
     <script src="auth.js"></script>
@@ -51,6 +51,12 @@
                         <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
                     </button>
                 </div>
+                <div class="editor-toolbar__group editor-frame-control">
+                    <span class="editor-toolbar__label">添加相框</span>
+                    <button class="editor-button editor-button--small" type="button" data-add-frame="rect">矩形</button>
+                    <button class="editor-button editor-button--small" type="button" data-add-frame="rounded">圆角</button>
+                    <button class="editor-button editor-button--small" type="button" data-add-frame="circle">圆形</button>
+                </div>
                 <div class="editor-toolbar__group editor-export-controls">
                     <button class="editor-button" id="save-as-template" type="button" title="保存当前相框和文字布局">
                         <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M5 4h12l2 2v14H5z"/><path d="M8 4v6h8V4M8 16h8"/></svg>
@@ -58,8 +64,19 @@
                     </button>
                     <label class="sr-only" for="export-format">导出格式</label>
                     <select id="export-format" title="导出格式"><option value="png">PNG</option><option value="jpeg">JPG</option></select>
-                    <label class="sr-only" for="export-scale">导出尺寸</label>
-                    <select id="export-scale" title="导出尺寸"><option value="1">原尺寸</option><option value="2">2 倍高清</option></select>
+                    <label class="editor-zoom-input editor-export-scale-input" title="输入导出图片的整数倍数">
+                        <span class="sr-only">导出图片倍数</span>
+                        <input id="export-scale" type="number" inputmode="numeric" min="1" max="10" step="1" value="1" aria-describedby="export-scale-help export-size-preview">
+                        <span aria-hidden="true">倍</span>
+                    </label>
+                    <span class="sr-only" id="export-scale-help">输入 1 到当前画布支持上限之间的整数倍数。</span>
+                    <output class="editor-export-size-preview" id="export-size-preview" for="export-scale">计算尺寸</output>
+                    <label class="editor-zoom-input editor-export-maxsize-input" title="限制导出文件体积（MB），留空则不限制">
+                        <span class="sr-only">限制导出体积</span>
+                        <input id="export-max-size" type="number" inputmode="decimal" min="0.01" step="0.1" placeholder="不限" aria-describedby="export-max-size-help">
+                        <span aria-hidden="true">MB</span>
+                    </label>
+                    <span class="sr-only" id="export-max-size-help">填了则自动压缩到不超过该体积且最接近的值；PNG 超限会转为 JPG。</span>
                     <button class="editor-button editor-button--primary" id="export-button" type="button">
                         <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>
                         导出图片
@@ -83,10 +100,6 @@
                 </div>
                 <div class="editor-panel__body" data-panel-content="assets" hidden>
                     <input id="asset-file-input" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden>
-                    <div class="editor-pick-banner" id="background-pick-banner" role="status" aria-live="polite" hidden>
-                        <div><strong>正在更换背景</strong><span id="background-pick-target">请选择一张素材或上传新背景</span></div>
-                        <button id="cancel-background-pick" type="button">取消</button>
-                    </div>
                     <button class="editor-upload-zone" id="upload-assets" type="button">
                         <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/></svg>
                         <strong>上传图片</strong>
@@ -145,14 +158,20 @@
                         <div><span>模板</span><strong id="document-template">-</strong></div>
                         <div><span>画布尺寸</span><strong id="document-size">-</strong></div>
                     </div>
+                    <button class="editor-button editor-button--block" id="choose-background" type="button">添加画布背景</button>
                 </div>
 
                 <div class="editor-properties" id="properties-frame" hidden>
                     <div class="editor-property-group">
                         <label>当前相框</label>
                         <strong id="frame-name">相框</strong>
-                        <p id="frame-help">从左侧选择图片，或上传一张新图片。</p>
+                        <p id="frame-help">拖动相框移动，拖动控制点缩放或旋转；双击进入框内图片裁剪。</p>
                     </div>
+                    <div class="editor-two-buttons">
+                        <button class="editor-button" id="frame-center-horizontal" type="button">水平居中</button>
+                        <button class="editor-button" id="frame-center-vertical" type="button">垂直居中</button>
+                    </div>
+                    <button class="editor-button editor-button--block" id="frame-rotate" type="button">旋转相框 90°</button>
                     <button class="editor-button editor-button--primary editor-button--block" id="replace-frame-image" type="button">替换相框图片</button>
                     <div class="editor-property-group" id="crop-controls" hidden>
                         <label for="image-zoom">图片缩放 <output id="image-zoom-value">100%</output></label>
@@ -163,6 +182,7 @@
                         </div>
                     </div>
                     <button class="editor-button editor-button--block" id="frame-to-free-image" type="button" hidden>转为自由图片</button>
+                    <button class="editor-button editor-button--block editor-button--danger" id="delete-frame" type="button">删除相框</button>
                 </div>
 
                 <div class="editor-properties editor-image-properties" id="properties-image" hidden>
@@ -218,31 +238,9 @@
                     </section>
 
                     <section class="editor-property-section" aria-labelledby="cutout-title">
-                        <div class="editor-property-section__title"><strong id="cutout-title">KIE 智能抠图</strong><span id="cutout-price">预计 ¥0.032/张</span></div>
+                        <div class="editor-property-section__title"><strong id="cutout-title">KIE 智能抠图</strong><span id="cutout-price">预计 ¥0.256/张</span></div>
                         <p class="editor-section-help">仅点击抠图时产生费用。原图会一直保留，可随时免费切换。</p>
                         <button class="editor-button editor-button--primary editor-button--block" id="start-cutout" type="button">开始抠图</button>
-                    </section>
-
-                    <section class="editor-property-section" aria-labelledby="background-title">
-                        <div class="editor-property-section__title"><strong id="background-title">背景图片</strong><span>普通图层合成 · 免费</span></div>
-                        <p class="editor-section-help" id="background-help">把素材放到当前图片下方，不会调用 KIE。</p>
-                        <button class="editor-button editor-button--block" id="choose-background" type="button">添加背景图片</button>
-                        <div id="background-controls" hidden>
-                            <div class="editor-property-group">
-                                <label for="background-opacity">背景透明度 <output id="background-opacity-value">100%</output></label>
-                                <input id="background-opacity" type="range" min="0" max="100" step="1" value="100">
-                            </div>
-                            <div class="editor-property-group">
-                                <label for="background-zoom">背景缩放 <output id="background-zoom-value">100%</output></label>
-                                <input id="background-zoom" type="range" min="100" max="300" step="1" value="100">
-                            </div>
-                            <button class="editor-button editor-button--block" id="edit-background-position" type="button" aria-pressed="false">拖动调整背景位置</button>
-                            <div class="editor-two-buttons">
-                                <button class="editor-button" id="change-background" type="button">更换背景</button>
-                                <button class="editor-button editor-button--danger" id="remove-background" type="button">移除背景</button>
-                            </div>
-                            <button class="editor-button editor-button--block" id="split-image-composition" type="button">拆分主体与背景</button>
-                        </div>
                     </section>
 
                     <section class="editor-property-section" aria-labelledby="image-layout-title">
@@ -259,6 +257,35 @@
                         <div class="editor-two-buttons">
                             <button class="editor-button" id="image-bring-forward" type="button">上移一层</button>
                             <button class="editor-button" id="image-send-backward" type="button">下移一层</button>
+                        </div>
+                    </section>
+                </div>
+
+                <div class="editor-properties editor-image-properties" id="properties-background" hidden>
+                    <div class="editor-image-heading">
+                        <div>
+                            <span class="editor-eyebrow">项目画布</span>
+                            <strong id="background-name">画布背景</strong>
+                        </div>
+                        <span class="editor-status-badge">固定底层</span>
+                    </div>
+                    <section class="editor-property-section" aria-labelledby="background-title">
+                        <div class="editor-property-section__title"><strong id="background-title">画布背景</strong><span>普通图层 · 免费</span></div>
+                        <p class="editor-section-help" id="background-help">点击背景即可选中并直接拖动位置；使用缩放滑杆放大或缩小。</p>
+                        <div id="background-controls">
+                            <div class="editor-property-group">
+                                <label for="background-opacity">背景透明度 <output id="background-opacity-value">100%</output></label>
+                                <input id="background-opacity" type="range" min="0" max="100" step="1" value="100">
+                            </div>
+                            <div class="editor-property-group">
+                                <label for="background-zoom">背景缩放 <output id="background-zoom-value">100%</output></label>
+                                <input id="background-zoom" type="range" min="100" max="300" step="1" value="100">
+                            </div>
+                            <button class="editor-button editor-button--block" id="edit-background-position" type="button" aria-pressed="false">开始调整背景</button>
+                            <div class="editor-two-buttons">
+                                <button class="editor-button" id="change-background" type="button">更换背景</button>
+                                <button class="editor-button editor-button--danger" id="remove-background" type="button">移除背景</button>
+                            </div>
                         </div>
                     </section>
                 </div>
@@ -359,7 +386,7 @@
         <div class="editor-dialog__header">
             <div>
                 <h2 id="cutout-confirm-title">确认使用 KIE 抠图</h2>
-                <p>使用 Recraft 提取透明主体，原图不会被覆盖。</p>
+                <p>使用 Qwen 提取透明主体，原图不会被覆盖。</p>
             </div>
             <button class="editor-icon-button" value="cancel" type="submit" aria-label="关闭">
                 <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg>
@@ -377,6 +404,6 @@
 </dialog>
 
 <div class="editor-toast" id="editor-toast" role="status" aria-live="polite"></div>
-<script src="js/template-lab-editor.js"></script>
+<script src="js/template-lab-editor.js?v=20260922.3"></script>
 </body>
 </html>

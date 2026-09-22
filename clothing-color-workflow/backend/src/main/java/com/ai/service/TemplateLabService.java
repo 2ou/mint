@@ -43,7 +43,7 @@ public class TemplateLabService {
     private static final int MAX_DESIGN_JSON_LENGTH = 5_000_000;
     private static final int MAX_THUMBNAIL_LENGTH = 1_500_000;
     private static final int MAX_TEMPLATE_JSON_LENGTH = 500_000;
-    private static final String CUTOUT_MODEL = "recraft/remove-background";
+    private static final String CUTOUT_MODEL = "qwen2-1/image-to-image";
 
     private final TemplateLabProjectRepository projectRepository;
     private final TemplateLabPersonalTemplateRepository personalTemplateRepository;
@@ -86,8 +86,8 @@ public class TemplateLabService {
             item.put("source", "system");
             result.add(item);
         });
-        personalTemplateRepository.findByOwnerUserIdOrderByUpdatedAtDesc(userId).stream()
-                .map(this::personalTemplateNode)
+        personalTemplateRepository.findAllByOrderByUpdatedAtDesc().stream()
+                .map(template -> personalTemplateNode(template, userId))
                 .forEach(result::add);
         return result;
     }
@@ -168,7 +168,32 @@ public class TemplateLabService {
 
     @Transactional
     public void deleteProject(Long id, Long userId) {
-        projectRepository.delete(requireOwnedProject(id, userId));
+        TemplateLabProject project = requireOwnedProject(id, userId);
+        projectRepository.delete(project);
+        cleanupProjectAssets(project);
+    }
+
+    private void cleanupProjectAssets(TemplateLabProject project) {
+        String safeShop = project.getShopName() == null ? "_" : project.getShopName().replaceAll("[^\\p{L}\\p{N}_-]", "_");
+        String prefix = "TEMPLATE_LAB/" + safeShop + "/" + project.getOwnerUserId() + "/" + project.getId() + "/";
+        try {
+            var client = ossService.getOssClient();
+            String bucket = appProperties.getOss().getResultBucket();
+            String nextMarker = null;
+            do {
+                var request = new com.aliyun.oss.model.ListObjectsRequest(bucket).withPrefix(prefix).withMaxKeys(1000).withMarker(nextMarker);
+                var listing = client.listObjects(request);
+                List<String> keys = listing.getObjectSummaries().stream()
+                        .map(com.aliyun.oss.model.OSSObjectSummary::getKey)
+                        .toList();
+                if (!keys.isEmpty()) {
+                    client.deleteObjects(new com.aliyun.oss.model.DeleteObjectsRequest(bucket).withKeys(keys));
+                }
+                nextMarker = listing.getNextMarker();
+            } while (nextMarker != null && !nextMarker.isBlank());
+        } catch (Exception ignored) {
+            // 删除项目时 OSS 清理尽力而为，失败不影响 DB 删除
+        }
     }
 
     @Transactional
@@ -194,13 +219,17 @@ public class TemplateLabService {
         personal.setDescription(definition.path("description").asText());
         personal.setDefinitionJson(writeJson(definition));
         personal.setThumbnailDataUrl(request.getThumbnailDataUrl());
-        return personalTemplateNode(personalTemplateRepository.save(personal));
+        return personalTemplateNode(personalTemplateRepository.save(personal), userId);
     }
 
     @Transactional
     public void deletePersonalTemplate(Long templateId, Long userId) {
-        TemplateLabPersonalTemplate template = personalTemplateRepository.findByIdAndOwnerUserId(templateId, userId)
-                .orElseThrow(() -> new BusinessException("个人模板不存在或无权访问"));
+        TemplateLabPersonalTemplate template = personalTemplateRepository.findById(templateId)
+                .orElseThrow(() -> new BusinessException("个人模板不存在"));
+        boolean owner = template.getOwnerUserId() != null && template.getOwnerUserId().equals(userId);
+        if (!owner && !isAdmin(userId)) {
+            throw new BusinessException("仅作者或管理员可删除该模板");
+        }
         personalTemplateRepository.delete(template);
     }
 
@@ -238,7 +267,7 @@ public class TemplateLabService {
     @Transactional(readOnly = true)
     public Map<String, Object> cutoutQuote(Long projectId, Long userId) {
         requireOwnedProject(projectId, userId);
-        return modelPricingService.quote("image", Map.of("model", CUTOUT_MODEL), 1).toMap();
+        return modelPricingService.quote("image", Map.of("model", CUTOUT_MODEL, "resolution", "2K"), 1).toMap();
     }
 
     @Transactional
@@ -267,9 +296,16 @@ public class TemplateLabService {
             ossService.getOssClient().putObject(
                     appProperties.getOss().getResultBucket(), objectName, file.getInputStream(), metadata);
             String providerInputUrl = appProperties.getOss().getResultPublicHost() + "/" + objectName;
-            KieTaskResult created = kieClientService.createMarketTask(CUTOUT_MODEL, Map.of(
-                    "image", providerInputUrl
-            ));
+            Map<String, Object> cutoutInput = new LinkedHashMap<>();
+            cutoutInput.put("prompt", "Remove the background and keep only the main subject. "
+                    + "Output an RGBA image with a transparent background (alpha channel), preserving the subject's original colors and details.");
+            cutoutInput.put("image_urls", List.of(providerInputUrl));
+            cutoutInput.put("aspect_ratio", "auto");
+            cutoutInput.put("resolution", "2K");
+            cutoutInput.put("background", "transparent");
+            cutoutInput.put("output_format", "png");
+            cutoutInput.put("enhance_prompt", false);
+            KieTaskResult created = kieClientService.createMarketTask(CUTOUT_MODEL, cutoutInput);
             String taskId = created.getTaskId();
             if (taskId == null || taskId.isBlank()) {
                 throw new IllegalStateException("KIE 未返回抠图任务编号");
@@ -370,6 +406,11 @@ public class TemplateLabService {
                 .orElseThrow(() -> new BusinessException("拼图项目不存在或无权访问"));
     }
 
+    private boolean isAdmin(Long userId) {
+        List<Long> admins = appProperties.getTemplateLabAdminUserIds();
+        return admins != null && admins.contains(userId);
+    }
+
     private JsonNode requireTemplate(String templateId, Long userId) {
         if (templateId != null && templateId.startsWith("personal:")) {
             Long personalId;
@@ -379,9 +420,9 @@ public class TemplateLabService {
                 throw new BusinessException("个人模板编号不正确");
             }
             TemplateLabPersonalTemplate personal = personalTemplateRepository
-                    .findByIdAndOwnerUserId(personalId, userId)
-                    .orElseThrow(() -> new BusinessException("个人模板不存在或无权访问"));
-            return personalTemplateNode(personal);
+                    .findById(personalId)
+                    .orElseThrow(() -> new BusinessException("个人模板不存在"));
+            return personalTemplateNode(personal, userId);
         }
         JsonNode template = templateIndex.get(templateId);
         if (template == null) {
@@ -390,11 +431,14 @@ public class TemplateLabService {
         return template;
     }
 
-    private JsonNode personalTemplateNode(TemplateLabPersonalTemplate template) {
+    private JsonNode personalTemplateNode(TemplateLabPersonalTemplate template, Long userId) {
         ObjectNode definition = parseTemplateDefinition(template.getDefinitionJson());
         definition.put("id", "personal:" + template.getId());
         definition.put("source", "personal");
         definition.put("personalTemplateId", template.getId());
+        definition.put("authorId", template.getOwnerUserId());
+        definition.put("canDelete", template.getOwnerUserId() != null
+                && (template.getOwnerUserId().equals(userId) || isAdmin(userId)));
         definition.put("name", template.getName());
         definition.put("category", template.getCategory());
         definition.put("description", template.getDescription());
@@ -427,12 +471,21 @@ public class TemplateLabService {
         String usageType = definition.path("usageType").asText();
         String ratioGroup = definition.path("ratioGroup").asText();
         JsonNode frames = definition.path("frames");
+        JsonNode images = definition.path("images");
         JsonNode texts = definition.path("texts");
         if (width < 320 || height < 320 || width > 8000 || height > 8000) {
             throw new BusinessException("模板画布尺寸必须在 320 到 8000 像素之间");
         }
-        if (!frames.isArray() || frames.isEmpty() || frames.size() > 20) {
-            throw new BusinessException("模板必须包含 1 到 20 个相框");
+        boolean hasFrames = frames.isArray() && !frames.isEmpty();
+        boolean hasImages = images.isArray() && !images.isEmpty();
+        if (!hasFrames && !hasImages) {
+            throw new BusinessException("模板必须包含 1 到 20 个相框或图片位");
+        }
+        if (frames.isArray() && frames.size() > 20) {
+            throw new BusinessException("模板相框不能超过 20 个");
+        }
+        if (images.isArray() && images.size() > 20) {
+            throw new BusinessException("模板图片位不能超过 20 个");
         }
         if (!texts.isArray() || texts.size() > 40) {
             throw new BusinessException("模板文字字段不能超过 40 个");
@@ -443,6 +496,13 @@ public class TemplateLabService {
                     || frame.path("width").asDouble() <= 0
                     || frame.path("height").asDouble() <= 0) {
                 throw new BusinessException("模板包含无效相框");
+            }
+        }
+        for (JsonNode image : images) {
+            if (image.path("id").asText().isBlank()
+                    || image.path("baseWidth").asDouble() <= 0
+                    || image.path("baseHeight").asDouble() <= 0) {
+                throw new BusinessException("模板包含无效图片位");
             }
         }
     }

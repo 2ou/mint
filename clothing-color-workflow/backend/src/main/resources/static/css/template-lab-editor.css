@@ -135,6 +135,11 @@
 }
 .editor-zoom-input input::-webkit-inner-spin-button,
 .editor-zoom-input input::-webkit-outer-spin-button { margin: 0; appearance: none; }
+.editor-export-scale-input { width: 68px; border-color: var(--editor-border); }
+.editor-export-scale-input input { width: 36px; }
+.editor-export-maxsize-input { width: 92px; border-color: var(--editor-border); }
+.editor-export-maxsize-input input { width: 54px; }
+.editor-export-size-preview { min-width: 82px; color: var(--editor-muted); font-size: 11px; font-variant-numeric: tabular-nums; text-align: center; white-space: nowrap; }
 .editor-toolbar select { height: 44px; padding: 0 28px 0 10px; border: 1px solid var(--editor-border); border-radius: 7px; background: var(--editor-surface); color: var(--editor-ink); font-size: 12px; }
 .editor-button { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 13px; border-radius: 7px; font-size: 13px; font-weight: 650; white-space: nowrap; }
 .editor-button--primary { border-color: var(--editor-accent); background: var(--editor-accent); color: #f7faff; }
@@ -194,6 +199,12 @@
 .editor-content-item textarea { width: 100%; min-height: 64px; margin-top: 8px; padding: 8px; resize: vertical; border: 1px solid var(--editor-border); border-radius: 6px; background: var(--editor-surface); color: var(--editor-ink); font: inherit; font-size: 12px; line-height: 1.45; }
 .editor-layer-item.is-hidden { opacity: .58; }
 .editor-layer-item.is-selected { border-color: rgba(37, 99, 235, .38); background: var(--editor-accent-soft); }
+.editor-layer-item[data-layer-image],
+.editor-layer-item[data-layer-field],
+.editor-layer-item[data-layer-frame] { cursor: pointer; transition: border-color 150ms ease, background 150ms ease; }
+.editor-layer-item[data-layer-image]:hover,
+.editor-layer-item[data-layer-field]:hover,
+.editor-layer-item[data-layer-frame]:hover { border-color: rgba(37, 99, 235, .28); }
 .editor-layer-item__meta { margin-top: 3px; color: var(--editor-muted); font-size: 10px; }
 
 .editor-upload-zone { width: 100%; min-height: 116px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; border: 1px dashed rgba(37, 99, 235, .38); border-radius: 8px; background: #f5f8fd; color: #345c9a; cursor: pointer; transition: background 160ms ease, border-color 160ms ease, box-shadow 160ms ease; }
@@ -266,6 +277,7 @@
 .editor-property-row .editor-property-group { flex: 1; min-width: 0; }
 .editor-two-buttons { gap: 8px; margin-bottom: 10px; }
 .editor-two-buttons .editor-button { flex: 1; padding: 0 8px; }
+#frame-rotate { margin-bottom: 10px; }
 .editor-segmented { margin-bottom: 15px; border: 1px solid var(--editor-border); border-radius: 7px; overflow: hidden; }
 .editor-segmented button { flex: 1; min-width: 0; height: 38px; border: 0; border-right: 1px solid var(--editor-border); border-radius: 0; font-size: 12px; }
 .editor-segmented button:last-child { border-right: 0; }
@@ -340,6 +352,7 @@
 @media (max-width: 1180px) {
     .editor-workspace { grid-template-columns: 220px minmax(330px, 1fr) 280px; }
     .editor-export-controls select { display: none; }
+    .editor-export-size-preview { display: none; }
     .editor-project-name { width: 210px; }
 }
 
@@ -363,3 +376,29 @@
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+
+.editor-toolbar__label { color: var(--editor-muted); font-size: 12px; padding-right: 2px; }
+.editor-frame-control { gap: 4px; padding-left: 8px; border-left: 1px solid var(--editor-border); }
+.editor-button--small { padding: 4px 10px; font-size: 12px; line-height: 1.5; }
+
+.image-cutout-fab {
+    position: absolute;
+    z-index: 30;
+    display: none;
+    align-items: center;
+    padding: 6px 12px;
+    border: none;
+    border-radius: 999px;
+    background: var(--editor-accent);
+    color: #f7faff;
+    font-family: inherit;
+    font-size: 12px;
+    line-height: 1.4;
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
+    box-shadow: 0 6px 18px rgba(23, 32, 51, .28);
+    pointer-events: auto;
+}
+.image-cutout-fab:hover { background: var(--editor-accent-hover); }
+.image-cutout-fab:disabled { opacity: .65; cursor: default; }

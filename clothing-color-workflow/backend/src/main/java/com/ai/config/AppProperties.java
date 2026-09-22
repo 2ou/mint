@@ -2,6 +2,9 @@ package com.ai.config;
 
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+
+import java.util.ArrayList;
+import java.util.List;
 import org.springframework.context.annotation.Configuration;
 
 @Data
@@ -20,6 +23,9 @@ public class AppProperties {
 
     // 如果有 oss，同理也 new 一下
     private Oss oss = new Oss();
+
+    /** 模板实验室：可删除他人个人模板的管理员 userId 列表（yml 键 app.template-lab-admin-user-ids，逗号分隔） */
+    private List<Long> templateLabAdminUserIds = new ArrayList<>();
 
     public String getLocalSaveRoot() { return localSaveRoot; }
     public void setLocalSaveRoot(String localSaveRoot) { this.localSaveRoot = localSaveRoot; }

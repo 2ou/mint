@@ -94,13 +94,22 @@
         var style = aspect >= 1
             ? 'width:82%;aspect-ratio:' + template.width + '/' + template.height
             : 'height:86%;width:auto;aspect-ratio:' + template.width + '/' + template.height;
-        var frames = (template.frames || []).map(function (frame) {
+        var frameBoxes = (template.frames || []).map(function (frame) {
             var radius = frame.shape === 'circle' ? '50%' : ((frame.radius || 0) / frame.width * 100) + '%';
             var polygon = frame.shape === 'polygon' ? 'clip-path:polygon(0 0,100% 0,100% 88%,86% 100%,0 100%);' : '';
             return '<span class="lab-mini-frame" style="left:' + (frame.x / template.width * 100) + '%;top:'
                 + (frame.y / template.height * 100) + '%;width:' + (frame.width / template.width * 100) + '%;height:'
                 + (frame.height / template.height * 100) + '%;border-radius:' + radius + ';' + polygon + '"></span>';
-        }).join('');
+        });
+        var imageBoxes = (template.images || []).map(function (image) {
+            var w = image.baseWidth || 360, h = image.baseHeight || 360;
+            var cx = (image.x == null ? template.width / 2 : image.x);
+            var cy = (image.y == null ? template.height / 2 : image.y);
+            return '<span class="lab-mini-frame" style="left:' + ((cx - w / 2) / template.width * 100) + '%;top:'
+                + ((cy - h / 2) / template.height * 100) + '%;width:' + (w / template.width * 100) + '%;height:'
+                + (h / template.height * 100) + '%;border-radius:0%;"></span>';
+        });
+        var frames = frameBoxes.concat(imageBoxes).join('');
         var texts = (template.texts || []).map(function (text, index) {
             return '<span class="lab-mini-text" style="left:' + (text.x / template.width * 100) + '%;top:'
                 + (text.y / template.height * 100) + '%;width:' + Math.min(48, text.width / template.width * 70) + '%;background:'
@@ -173,7 +182,25 @@
     function filteredTemplates() {
         var query = state.templateSearch.trim().toLowerCase();
         var templates = state.templates.filter(function (template) {
-            var searchable = [template.name, template.description, template.category, template.usageType, template.ratioGroup]
+            var frameList = template.frames || [];
+            var imageList = template.images || [];
+            var slotList = frameList.concat(imageList);
+            var textList = template.texts || [];
+            var shapeLabel = { rect: '矩形 方', rounded: '圆角 圆角矩形', circle: '圆形 圆 椭圆' };
+            var frameShapes = slotList.map(function (f) {
+                var s = f.shape || 'rect';
+                return [s, (shapeLabel[s] || '')].join(' ');
+            }).join(' ');
+            var totalSlots = slotList.length;
+            var frameCountText = totalSlots + ' 个相框 ' + totalSlots + '个相框 ' + totalSlots + ' 个图片位 '
+                + totalSlots + '个图片位 相框 frame frames 图片框 可替换相框 图位 占位 图片位 image images';
+            var textCountText = textList.length + ' 个文字 文字 text texts 文本 文案 标题';
+            var textContent = textList.map(function (t) {
+                return [t.content, t.placeholder, t.label, t.name].filter(Boolean).join(' ');
+            }).join(' ');
+            var bgText = '背景 ' + (template.background || '') + (template.background && template.background !== '#ffffff' ? ' 有背景色 纯色背景' : '');
+            var searchable = [template.name, template.description, template.category, template.usageType, template.ratioGroup,
+                frameShapes, frameCountText, textCountText, textContent, bgText]
                 .concat(template.tags || []).join(' ').toLowerCase();
             var sourceMatch = state.sourceMode === '全部'
                 || (state.sourceMode === '系统' && template.source !== 'personal')
@@ -207,12 +234,12 @@
                 + templatePreview(template)
                 + '<div class="lab-card__floating-actions"><button class="lab-icon-button lab-favorite' + (favorite ? ' is-active' : '')
                 + '" type="button" data-action="favorite-template" aria-pressed="' + favorite + '" aria-label="' + (favorite ? '取消收藏' : '收藏模板') + '">' + icons.star + '</button>'
-                + (personal ? '<button class="lab-icon-button" type="button" data-action="delete-template" aria-label="删除个人模板">' + icons.trash + '</button>' : '') + '</div>'
+                + ((personal && template.canDelete) ? '<button class="lab-icon-button" type="button" data-action="delete-template" aria-label="删除个人模板">' + icons.trash + '</button>' : '') + '</div>'
                 + '<div class="lab-card__body"><div class="lab-card__title-row"><h3 class="lab-card__title">' + escapeHtml(template.name) + '</h3>'
                 + '<span class="lab-card__badge ' + (personal ? 'lab-card__badge--personal' : '') + '">' + (personal ? '个人' : '系统') + '</span></div>'
                 + '<div class="lab-card__meta"><strong>' + escapeHtml(template.usageType) + '</strong> · ' + escapeHtml(template.ratioGroup)
                 + ' · ' + template.width + ' × ' + template.height + '</div>'
-                + '<div class="lab-card__meta">' + (template.frames || []).length + ' 个相框 · ' + (template.texts || []).length + ' 个文字字段 · ' + escapeHtml(template.category) + '</div>'
+                + '<div class="lab-card__meta">' + ((template.frames || []).length + (template.images || []).length) + ' 个图片位 · ' + (template.texts || []).length + ' 个文字字段 · ' + escapeHtml(template.category) + '</div>'
                 + '<p class="lab-card__description">' + escapeHtml(template.description) + '</p>'
                 + '<div class="lab-card__actions"><button class="lab-button lab-button--primary" type="button" data-action="use-template">使用此模板</button></div>'
                 + '</div></article>';
