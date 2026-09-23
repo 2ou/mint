@@ -14,19 +14,26 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Mockito;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.mock.env.MockEnvironment;
 
 import java.math.BigDecimal;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Map;
 import java.util.Optional;
 import java.util.List;
+import java.util.Base64;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -39,7 +46,12 @@ class TemplateLabServiceTest {
     private KieClientService kieClientService;
     private CanvasTaskService canvasTaskService;
     private ModelPricingService modelPricingService;
+    private TextModelService textModelService;
+    private AppProperties appProperties;
     private TemplateLabService service;
+
+    @TempDir
+    Path tempDir;
 
     @BeforeEach
     void setUp() {
@@ -49,16 +61,20 @@ class TemplateLabServiceTest {
         kieClientService = Mockito.mock(KieClientService.class);
         canvasTaskService = Mockito.mock(CanvasTaskService.class);
         modelPricingService = Mockito.mock(ModelPricingService.class);
-        when(personalTemplateRepository.findByOwnerUserIdOrderByUpdatedAtDesc(any())).thenReturn(List.of());
+        textModelService = Mockito.mock(TextModelService.class);
+        appProperties = new AppProperties();
+        when(personalTemplateRepository.findAllByOrderByUpdatedAtDesc()).thenReturn(List.of());
         service = new TemplateLabService(
                 repository,
                 personalTemplateRepository,
                 new ObjectMapper(),
                 ossService,
-                new AppProperties(),
+                appProperties,
+                new MockEnvironment().withProperty("spring.profiles.active", "prod"),
                 kieClientService,
                 canvasTaskService,
-                modelPricingService);
+                modelPricingService,
+                textModelService);
         service.loadTemplates();
     }
 
@@ -95,6 +111,108 @@ class TemplateLabServiceTest {
         assertEquals(1600, response.getCanvasHeight());
         assertTrue(response.getTemplateDefinitionJson().contains("\"fashion-duo\""));
         assertFalse(response.getProjectName().isBlank());
+    }
+
+    @Test
+    void storesUploadedAssetUnderLocalResultRootWhenEnabled() throws Exception {
+        appProperties.setLocalSaveRoot(tempDir.toString());
+        MockEnvironment devEnvironment = new MockEnvironment();
+        devEnvironment.setActiveProfiles("dev");
+        service = new TemplateLabService(
+                repository,
+                personalTemplateRepository,
+                new ObjectMapper(),
+                ossService,
+                appProperties,
+                devEnvironment,
+                kieClientService,
+                canvasTaskService,
+                modelPricingService,
+                textModelService);
+        TemplateLabProject project = new TemplateLabProject();
+        project.setId(81L);
+        project.setOwnerUserId(7L);
+        project.setShopName("PINKSIR");
+        when(repository.findByIdAndOwnerUserId(81L, 7L)).thenReturn(Optional.of(project));
+        byte[] png = Base64.getDecoder().decode(
+                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=");
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "look.png", "image/png", png);
+
+        Map<String, Object> asset = service.uploadAsset(81L, 7L, file);
+
+        assertEquals("local", asset.get("storage"));
+        String url = String.valueOf(asset.get("url"));
+        assertTrue(url.startsWith("/ai-result/template-lab/PINKSIR/7/81/assets/"));
+        Path stored = tempDir.resolve(url.substring("/ai-result/".length()).replace('/', java.io.File.separatorChar));
+        assertTrue(Files.exists(stored));
+        assertEquals(png.length, Files.size(stored));
+        String thumbnailUrl = String.valueOf(asset.get("thumbnailUrl"));
+        assertTrue(thumbnailUrl.startsWith("/ai-result/template-lab/PINKSIR/7/81/thumbnails/"));
+        Path thumbnail = tempDir.resolve(thumbnailUrl.substring("/ai-result/".length()).replace('/', java.io.File.separatorChar));
+        assertTrue(Files.size(thumbnail) > 0);
+    }
+
+    @Test
+    void parsesUploadedImageIntoDraftProjectWithPersistentBackgroundAndMasks() throws Exception {
+        appProperties.setLocalSaveRoot(tempDir.toString());
+        appProperties.getOss().setResultBucket("result-bucket");
+        appProperties.getOss().setResultPublicHost("https://assets.example.com");
+        MockEnvironment devEnvironment = new MockEnvironment();
+        devEnvironment.setActiveProfiles("dev");
+        service = new TemplateLabService(
+                repository,
+                personalTemplateRepository,
+                new ObjectMapper(),
+                ossService,
+                appProperties,
+                devEnvironment,
+                kieClientService,
+                canvasTaskService,
+                modelPricingService,
+                textModelService);
+        OSS oss = Mockito.mock(OSS.class);
+        when(ossService.getOssClient()).thenReturn(oss);
+        when(textModelService.generateRawPromptWithImages(anyString(), anyString(), anyList(), eq("gpt-5.6-sol")))
+                .thenReturn("""
+                        {"background":"#f4f1ec","accent":"#1f2937","frames":[
+                          {"label":"主商品","shape":"rounded","x":80,"y":160,"width":760,"height":900,"radius":24,"rotation":0,"coverFill":"#ffffff"}
+                        ],"texts":[
+                          {"label":"标题","text":"SUMMER EDIT","x":100,"y":60,"width":620,"height":64,"fontSize":46,"fontWeight":"700","fontFamily":"Arial","fill":"#1f2937","textAlign":"left","lineHeight":1.1,"rotation":0,"coverFill":"#f4f1ec"}
+                        ]}
+                        """);
+        when(repository.save(any(TemplateLabProject.class))).thenAnswer(invocation -> {
+            TemplateLabProject project = invocation.getArgument(0);
+            project.setId(92L);
+            project.setVersion(0L);
+            return project;
+        });
+        byte[] png = Base64.getDecoder().decode(
+                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=");
+        MockMultipartFile file = new MockMultipartFile("file", "layout.png", "image/png", png);
+
+        var response = service.parseTemplateImage(
+                file, "secondary-portrait", "春夏解析", "保留顶部装饰", 7L, "设计师", "PINKSIR");
+
+        assertEquals(92L, response.getId());
+        assertEquals("春夏解析", response.getProjectName());
+        assertEquals(1200, response.getCanvasWidth());
+        assertEquals(1600, response.getCanvasHeight());
+        JsonNode definition = new ObjectMapper().readTree(response.getTemplateDefinitionJson());
+        assertEquals("/ai-result/template-lab/PINKSIR/7/template-sources/",
+                definition.path("canvasBackground").path("url").asText().replaceAll("[^/]+$", ""));
+        assertEquals(1, definition.path("frames").size());
+        assertEquals(1, definition.path("texts").size());
+        assertEquals(2, definition.path("backgroundMasks").size());
+        assertEquals("SUMMER EDIT", definition.path("texts").get(0).path("text").asText());
+        Path stored = tempDir.resolve(definition.path("canvasBackground").path("url").asText()
+                .substring("/ai-result/".length()).replace('/', java.io.File.separatorChar));
+        assertTrue(Files.exists(stored));
+        var urls = org.mockito.ArgumentCaptor.forClass(List.class);
+        verify(textModelService).generateRawPromptWithImages(anyString(), anyString(), urls.capture(), eq("gpt-5.6-sol"));
+        assertTrue(String.valueOf(urls.getValue().getFirst()).startsWith(
+                "https://assets.example.com/TEMPLATE_LAB/PINKSIR/7/template-parse-input/"));
+        verify(oss).deleteObject(eq("result-bucket"), org.mockito.ArgumentMatchers.contains("/template-parse-input/"));
     }
 
     @Test

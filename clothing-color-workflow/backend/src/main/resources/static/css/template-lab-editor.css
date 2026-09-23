@@ -241,6 +241,13 @@
 @keyframes editor-spin { to { transform: rotate(360deg); } }
 .editor-canvas-viewport { position: absolute; inset: 0; overflow: auto; padding: 40px; }
 .editor-canvas-viewport .canvas-container { margin: auto; box-shadow: 0 18px 60px rgba(23, 32, 51, .24), 0 2px 8px rgba(23, 32, 51, .12); }
+.editor-stage.is-drop-active .editor-canvas-viewport .canvas-container { box-shadow: 0 0 0 3px rgba(37, 99, 235, .42), 0 18px 60px rgba(23, 32, 51, .24); }
+.editor-canvas-drop-indicator { position: absolute; inset: 24px; z-index: 12; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; pointer-events: none; border: 2px dashed rgba(37, 99, 235, .72); border-radius: 12px; background: rgba(239, 246, 255, .92); color: var(--editor-accent); text-align: center; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .72); }
+.editor-canvas-drop-indicator svg { width: 34px; height: 34px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.editor-canvas-drop-indicator strong { color: var(--editor-ink); font-size: 15px; }
+.editor-canvas-drop-indicator span { color: var(--editor-muted); font-size: 12px; }
+.editor-canvas-drop-indicator[data-state="uploading"] svg { animation: editor-drop-pulse .8s ease-in-out infinite alternate; }
+@keyframes editor-drop-pulse { to { opacity: .45; transform: translateY(-3px); } }
 .editor-stage__tip { position: absolute; left: 50%; bottom: 16px; z-index: 5; transform: translateX(-50%); max-width: calc(100% - 32px); padding: 8px 11px; border: 1px solid rgba(23, 32, 51, .13); border-radius: 6px; background: rgba(251, 252, 255, .92); color: var(--editor-muted); box-shadow: 0 6px 18px rgba(23, 32, 51, .10); font-size: 11px; white-space: nowrap; }
 
 .editor-panel__title { height: 52px; justify-content: space-between; gap: 12px; padding: 0 15px; border-bottom: 1px solid var(--editor-border); }

@@ -7,9 +7,9 @@
     <title>拼图编辑器 - 模板拼图实验室</title>
     <link rel="stylesheet" href="css/variables.css">
     <link rel="stylesheet" href="css/shared.css">
-    <link rel="stylesheet" href="css/template-lab-editor.css?v=20260922.2">
-    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
-    <script src="https://unpkg.com/fabric@5.3.0/dist/fabric.min.js"></script>
+    <link rel="stylesheet" href="css/template-lab-editor.css?v=20260922.3">
+    <script src="vendor/template-lab/axios-1.20.0.min.js"></script>
+    <script src="vendor/template-lab/fabric-5.3.0.min.js"></script>
     <script src="auth.js"></script>
     <script src="js/sidebar.js"></script>
 </head>
@@ -105,7 +105,7 @@
                         <strong>上传图片</strong>
                         <span>JPG、PNG、WebP，单张不超过 25MB</span>
                     </button>
-                    <p class="editor-panel__hint">点击素材可添加为自由图片；拖到相框内会填充相框，拖到空白处可自由移动。</p>
+                    <p class="editor-panel__hint">可以把电脑中的图片直接拖到画布。拖到相框内会填充相框，拖到空白处会成为自由图片。</p>
                     <div class="editor-asset-grid" id="asset-grid"></div>
                 </div>
                 <div class="editor-panel__body" data-panel-content="text" hidden>
@@ -119,7 +119,9 @@
                         <dl>
                             <div><dt>撤销</dt><dd>Ctrl + Z</dd></div>
                             <div><dt>重做</dt><dd>Ctrl + Y</dd></div>
-                            <div><dt>复制文字</dt><dd>Ctrl + D</dd></div>
+                            <div><dt>复制元素</dt><dd>Ctrl + C</dd></div>
+                            <div><dt>粘贴元素</dt><dd>Ctrl + V</dd></div>
+                            <div><dt>快速副本</dt><dd>Ctrl + D</dd></div>
                             <div><dt>删除元素</dt><dd>Delete</dd></div>
                             <div><dt>保存</dt><dd>Ctrl + S</dd></div>
                         </dl>
@@ -139,6 +141,11 @@
                 </div>
                 <div class="editor-canvas-viewport" id="canvas-viewport" hidden>
                     <canvas id="template-canvas"></canvas>
+                </div>
+                <div class="editor-canvas-drop-indicator" id="canvas-drop-indicator" role="status" aria-live="polite" aria-atomic="true" hidden>
+                    <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/></svg>
+                    <strong id="canvas-drop-indicator-title">松开即可添加图片</strong>
+                    <span id="canvas-drop-indicator-hint">拖到相框内自动填充，拖到空白处作为自由图片</span>
                 </div>
                 <div class="editor-stage__tip" id="stage-tip" hidden>图片拖到相框内会填充相框，拖到空白处会成为自由图片</div>
             </section>
@@ -404,6 +411,6 @@
 </dialog>
 
 <div class="editor-toast" id="editor-toast" role="status" aria-live="polite"></div>
-<script src="js/template-lab-editor.js?v=20260922.3"></script>
+<script src="js/template-lab-editor.js?v=20260923.1"></script>
 </body>
 </html>

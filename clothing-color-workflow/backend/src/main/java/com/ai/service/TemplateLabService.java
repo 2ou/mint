@@ -11,18 +11,30 @@ import com.ai.entity.TemplateLabProject;
 import com.ai.exception.BusinessException;
 import com.ai.repository.TemplateLabPersonalTemplateRepository;
 import com.ai.repository.TemplateLabProjectRepository;
+import com.ai.service.impl.KieGptModels;
 import com.aliyun.oss.model.ObjectMetadata;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import net.coobird.thumbnailator.Thumbnails;
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.Profiles;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.Comparator;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -36,6 +48,7 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class TemplateLabService {
 
     private static final long MAX_ASSET_BYTES = 25L * 1024 * 1024;
@@ -44,15 +57,18 @@ public class TemplateLabService {
     private static final int MAX_THUMBNAIL_LENGTH = 1_500_000;
     private static final int MAX_TEMPLATE_JSON_LENGTH = 500_000;
     private static final String CUTOUT_MODEL = "qwen2-1/image-to-image";
+    private static final String TEMPLATE_PARSE_MODEL = KieGptModels.GPT_5_6_SOL;
 
     private final TemplateLabProjectRepository projectRepository;
     private final TemplateLabPersonalTemplateRepository personalTemplateRepository;
     private final ObjectMapper objectMapper;
     private final OssService ossService;
     private final AppProperties appProperties;
+    private final Environment environment;
     private final KieClientService kieClientService;
     private final CanvasTaskService canvasTaskService;
     private final ModelPricingService modelPricingService;
+    private final TextModelService textModelService;
 
     private List<JsonNode> templates = List.of();
     private Map<String, JsonNode> templateIndex = Map.of();
@@ -124,6 +140,373 @@ public class TemplateLabService {
     }
 
     @Transactional
+    public TemplateLabProjectResponse parseTemplateImage(MultipartFile file,
+                                                         String canvasSpec,
+                                                         String projectName,
+                                                         String notes,
+                                                         Long userId,
+                                                         String operator,
+                                                         String shopName) {
+        validateAsset(file);
+        ParsedCanvasSpec spec = requireParsedCanvasSpec(canvasSpec);
+        String normalizedShop = normalizeIdentity(shopName, "默认店铺");
+        StoredTemplateSource source = storeTemplateSource(file, userId, normalizedShop);
+        String temporaryProviderObject = null;
+        try {
+            String providerUrl = source.servingUrl();
+            if (useLocalAssetStorage()) {
+                temporaryProviderObject = uploadTemplateParseInput(file, userId, normalizedShop);
+                providerUrl = publicOssUrl(temporaryProviderObject);
+            }
+            String raw = textModelService.generateRawPromptWithImages(
+                    templateParserSystemPrompt(),
+                    templateParserUserPrompt(spec, notes),
+                    List.of(providerUrl),
+                    TEMPLATE_PARSE_MODEL);
+            ObjectNode definition = buildParsedTemplateDefinition(
+                    parseTemplateModelJson(raw), spec, source.servingUrl(), file.getOriginalFilename());
+            validateTemplateDefinition(definition);
+
+            TemplateLabProject project = new TemplateLabProject();
+            project.setOwnerUserId(userId);
+            project.setOperator(normalizeIdentity(operator, "用户"));
+            project.setShopName(normalizedShop);
+            project.setProjectName(normalizeProjectName(projectName, "图片解析模板"));
+            project.setTemplateId(definition.path("id").asText());
+            project.setTemplateDefinitionJson(writeJson(definition));
+            project.setCanvasWidth(spec.width());
+            project.setCanvasHeight(spec.height());
+            project.setDesignJson(null);
+            project.setThumbnailDataUrl(source.servingUrl());
+            return TemplateLabProjectResponse.from(projectRepository.save(project), true);
+        } catch (BusinessException error) {
+            deleteStoredTemplateSource(source);
+            throw error;
+        } catch (Exception error) {
+            deleteStoredTemplateSource(source);
+            log.warn("模板图片解析失败", error);
+            throw new BusinessException("图片解析失败，请检查图片是否清晰并重试");
+        } finally {
+            deleteOssObjectQuietly(temporaryProviderObject);
+        }
+    }
+
+    private StoredTemplateSource storeTemplateSource(MultipartFile file, Long userId, String shopName) {
+        String contentType = file.getContentType().toLowerCase(Locale.ROOT);
+        String extension = imageExtension(contentType);
+        String sourceId = UUID.randomUUID().toString();
+        String safeShop = safePathSegment(shopName);
+        if (useLocalAssetStorage()) {
+            Path root = localSaveRoot();
+            Path directory = root.resolve("template-lab")
+                    .resolve(safeShop)
+                    .resolve(String.valueOf(userId))
+                    .resolve("template-sources")
+                    .normalize();
+            if (!directory.startsWith(root)) {
+                throw new IllegalStateException("模板来源图片目录不安全");
+            }
+            Path target = directory.resolve(sourceId + extension).normalize();
+            try {
+                Files.createDirectories(directory);
+                try (InputStream input = file.getInputStream()) {
+                    Files.copy(input, target);
+                }
+                return new StoredTemplateSource(localServingUrl(root, target), target, null);
+            } catch (Exception error) {
+                try {
+                    Files.deleteIfExists(target);
+                } catch (Exception ignored) {
+                    // Preserve the original storage error.
+                }
+                throw new IllegalStateException("模板来源图片保存失败，请检查本地结果目录是否可写", error);
+            }
+        }
+
+        String objectName = "TEMPLATE_LAB/" + safeShop + "/" + userId
+                + "/template-sources/" + sourceId + extension;
+        uploadOssFile(file, contentType, objectName);
+        return new StoredTemplateSource(publicOssUrl(objectName), null, objectName);
+    }
+
+    private String uploadTemplateParseInput(MultipartFile file, Long userId, String shopName) {
+        String contentType = file.getContentType().toLowerCase(Locale.ROOT);
+        String objectName = "TEMPLATE_LAB/" + safePathSegment(shopName) + "/" + userId
+                + "/template-parse-input/" + UUID.randomUUID() + imageExtension(contentType);
+        uploadOssFile(file, contentType, objectName);
+        return objectName;
+    }
+
+    private void uploadOssFile(MultipartFile file, String contentType, String objectName) {
+        try {
+            ObjectMetadata metadata = new ObjectMetadata();
+            metadata.setContentType(contentType);
+            metadata.setContentLength(file.getSize());
+            ossService.getOssClient().putObject(
+                    appProperties.getOss().getResultBucket(), objectName, file.getInputStream(), metadata);
+        } catch (Exception error) {
+            throw new IllegalStateException("图片上传到解析存储失败", error);
+        }
+    }
+
+    private String publicOssUrl(String objectName) {
+        String host = appProperties.getOss().getResultPublicHost();
+        if (host == null || host.isBlank()) {
+            throw new IllegalStateException("OSS 公网访问地址未配置");
+        }
+        return host.replaceAll("/+$", "") + "/" + objectName;
+    }
+
+    private void deleteStoredTemplateSource(StoredTemplateSource source) {
+        if (source == null) return;
+        if (source.localPath() != null) {
+            try {
+                Files.deleteIfExists(source.localPath());
+            } catch (Exception error) {
+                log.warn("模板来源图片清理失败: {}", source.localPath(), error);
+            }
+        }
+        deleteOssObjectQuietly(source.ossObjectName());
+    }
+
+    private void deleteOssObjectQuietly(String objectName) {
+        if (objectName == null || objectName.isBlank()) return;
+        try {
+            ossService.getOssClient().deleteObject(appProperties.getOss().getResultBucket(), objectName);
+        } catch (Exception error) {
+            log.warn("模板解析临时对象清理失败: {}", objectName, error);
+        }
+    }
+
+    private String imageExtension(String contentType) {
+        return switch (contentType) {
+            case "image/jpeg" -> ".jpg";
+            case "image/webp" -> ".webp";
+            default -> ".png";
+        };
+    }
+
+    private String templateParserSystemPrompt() {
+        return """
+                You analyze an ecommerce collage image and return strict JSON only. Do not use markdown.
+                Reconstruct only editable photo/product regions and OCR text. Decorative color blocks, lines,
+                icons, shadows, textures and ornaments remain baked into the supplied background image.
+                Coordinates must describe the final target canvas after the source image is centered with
+                object-fit: cover. For each editable region, estimate a solid coverFill sampled from the
+                surrounding background so the original photo or text can be covered before the editable layer.
+                Never invent text. Return at most 20 frames and 40 text items.
+                """;
+    }
+
+    private String templateParserUserPrompt(ParsedCanvasSpec spec, String notes) {
+        String normalizedNotes = notes == null ? "" : trimToLength(notes.trim(), 1000);
+        return """
+                Target canvas: %d x %d pixels. Usage: %s. Ratio: %s.
+                Optional user notes: %s
+                Return exactly this JSON shape:
+                {
+                  "background":"#RRGGBB",
+                  "accent":"#RRGGBB",
+                  "frames":[{"label":"商品图 1","shape":"rect|rounded|circle","x":0,"y":0,"width":100,"height":100,"radius":0,"rotation":0,"coverFill":"#RRGGBB"}],
+                  "texts":[{"label":"标题","text":"exact OCR text","x":0,"y":0,"width":100,"height":40,"fontSize":24,"fontWeight":"400|500|600|700","fontFamily":"Arial|Microsoft YaHei|SimHei|SimSun|Georgia","fill":"#RRGGBB","textAlign":"left|center|right","lineHeight":1.1,"rotation":0,"coverFill":"#RRGGBB"}]
+                }
+                Coordinates are top-left based and must stay within the target canvas. Include only regions that
+                should be replaceable/editable. A useful template must contain at least one photo/product frame.
+                """.formatted(spec.width(), spec.height(), spec.usageType(), spec.ratioGroup(),
+                normalizedNotes.isBlank() ? "none" : normalizedNotes);
+    }
+
+    private ObjectNode parseTemplateModelJson(String raw) {
+        if (raw == null || raw.isBlank()) {
+            throw new BusinessException("KIE 未返回模板解析结果，请重试");
+        }
+        String normalized = raw.trim();
+        int first = normalized.indexOf('{');
+        int last = normalized.lastIndexOf('}');
+        if (first < 0 || last <= first) {
+            throw new BusinessException("KIE 返回的模板结构无法读取，请重试");
+        }
+        try {
+            JsonNode root = objectMapper.readTree(normalized.substring(first, last + 1));
+            if (!(root instanceof ObjectNode object)) {
+                throw new BusinessException("KIE 返回的模板结构无法读取，请重试");
+            }
+            return object;
+        } catch (BusinessException error) {
+            throw error;
+        } catch (Exception error) {
+            throw new BusinessException("KIE 返回的模板结构无法读取，请重试");
+        }
+    }
+
+    private ObjectNode buildParsedTemplateDefinition(ObjectNode detected,
+                                                       ParsedCanvasSpec spec,
+                                                       String sourceUrl,
+                                                       String originalFilename) {
+        ObjectNode definition = objectMapper.createObjectNode();
+        String parsedId = "parsed:" + UUID.randomUUID().toString().substring(0, 12);
+        String background = normalizeHexColor(detected.path("background").asText(), "#f5f5f5");
+        String accent = normalizeHexColor(detected.path("accent").asText(), "#172033");
+        definition.put("schemaVersion", 1);
+        definition.put("id", parsedId);
+        definition.put("name", "图片解析模板");
+        definition.put("category", "AI 解析");
+        definition.put("description", "由上传图片识别生成的草稿，请检查图片位、遮罩和文字后再保存为个人模板。");
+        definition.put("usageType", spec.usageType());
+        definition.put("ratioGroup", spec.ratioGroup());
+        definition.put("width", spec.width());
+        definition.put("height", spec.height());
+        definition.put("background", background);
+        definition.put("accent", accent);
+        ArrayNode tags = definition.putArray("tags");
+        tags.add("AI 解析").add(spec.usageType()).add(spec.ratioGroup());
+        ArrayNode frames = definition.putArray("frames");
+        ArrayNode texts = definition.putArray("texts");
+        ArrayNode masks = definition.putArray("backgroundMasks");
+        definition.putArray("images");
+
+        JsonNode detectedFrames = detected.path("frames");
+        if (detectedFrames.isArray()) {
+            int count = Math.min(20, detectedFrames.size());
+            for (int index = 0; index < count; index++) {
+                JsonNode item = detectedFrames.get(index);
+                double x = clamp(item.path("x").asDouble(), 0, spec.width() - 32);
+                double y = clamp(item.path("y").asDouble(), 0, spec.height() - 32);
+                double width = clamp(item.path("width").asDouble(), 32, spec.width() - x);
+                double height = clamp(item.path("height").asDouble(), 32, spec.height() - y);
+                String frameId = "parsed-frame-" + (index + 1);
+                String shape = normalizeOption(item.path("shape").asText(), List.of("rect", "rounded", "circle"), "rect");
+                double radius = "circle".equals(shape) ? Math.min(width, height) / 2
+                        : clamp(item.path("radius").asDouble(), 0, Math.min(width, height) / 2);
+                double rotation = clamp(item.path("rotation").asDouble(), -180, 180);
+                String coverFill = normalizeHexColor(item.path("coverFill").asText(), background);
+
+                ObjectNode frame = frames.addObject();
+                frame.put("id", frameId);
+                frame.put("slotId", frameId);
+                frame.put("label", trimToLength(item.path("label").asText("商品图 " + (index + 1)), 80));
+                frame.put("required", true);
+                frame.put("replaceable", true);
+                frame.put("x", roundCoordinate(x));
+                frame.put("y", roundCoordinate(y));
+                frame.put("width", roundCoordinate(width));
+                frame.put("height", roundCoordinate(height));
+                frame.put("shape", shape);
+                frame.put("radius", roundCoordinate(radius));
+                frame.put("rotation", rotation);
+                appendBackgroundMask(masks, "frame-mask-" + (index + 1), x, y, width, height,
+                        coverFill, radius, rotation);
+            }
+        }
+        if (frames.isEmpty()) {
+            throw new BusinessException("没有识别到可替换的商品或照片区域，请换一张布局更清晰的图片重试");
+        }
+
+        JsonNode detectedTexts = detected.path("texts");
+        if (detectedTexts.isArray()) {
+            int count = Math.min(40, detectedTexts.size());
+            for (int index = 0; index < count; index++) {
+                JsonNode item = detectedTexts.get(index);
+                String content = trimToLength(item.path("text").asText().trim(), 2000);
+                if (content.isBlank()) continue;
+                double x = clamp(item.path("x").asDouble(), 0, spec.width() - 24);
+                double y = clamp(item.path("y").asDouble(), 0, spec.height() - 16);
+                double width = clamp(item.path("width").asDouble(), 24, spec.width() - x);
+                double height = clamp(item.path("height").asDouble(), 16, spec.height() - y);
+                double fontSize = clamp(item.path("fontSize").asDouble(), 10, 240);
+                double rotation = clamp(item.path("rotation").asDouble(), -180, 180);
+                String textId = "parsed-text-" + (index + 1);
+                ObjectNode text = texts.addObject();
+                text.put("id", textId);
+                text.put("fieldId", textId);
+                text.put("label", trimToLength(item.path("label").asText("文字 " + (index + 1)), 80));
+                text.put("editable", true);
+                text.put("text", content);
+                text.put("x", roundCoordinate(x));
+                text.put("y", roundCoordinate(y));
+                text.put("width", roundCoordinate(width));
+                text.put("fontSize", roundCoordinate(fontSize));
+                text.put("fontWeight", normalizeOption(item.path("fontWeight").asText(),
+                        List.of("400", "500", "600", "700"), "400"));
+                text.put("fontFamily", normalizeOption(item.path("fontFamily").asText(),
+                        List.of("Arial", "Microsoft YaHei", "SimHei", "SimSun", "Georgia"), "Arial"));
+                text.put("fill", normalizeHexColor(item.path("fill").asText(), accent));
+                text.put("textAlign", normalizeOption(item.path("textAlign").asText(),
+                        List.of("left", "center", "right"), "left"));
+                text.put("lineHeight", clamp(item.path("lineHeight").asDouble(1.1), 0.8, 2.5));
+                text.put("angle", rotation);
+
+                double padding = Math.min(10, Math.max(3, fontSize * 0.12));
+                double maskX = Math.max(0, x - padding);
+                double maskY = Math.max(0, y - padding);
+                double maskWidth = Math.min(spec.width() - maskX, width + padding * 2);
+                double maskHeight = Math.min(spec.height() - maskY, height + padding * 2);
+                appendBackgroundMask(masks, "text-mask-" + (index + 1), maskX, maskY, maskWidth,
+                        maskHeight, normalizeHexColor(item.path("coverFill").asText(), background), 0, rotation);
+            }
+        }
+
+        ObjectNode canvasBackground = definition.putObject("canvasBackground");
+        canvasBackground.put("url", sourceUrl);
+        canvasBackground.put("name", trimToLength(originalFilename, 200));
+        canvasBackground.put("opacity", 1);
+        canvasBackground.put("zoom", 1);
+        canvasBackground.putNull("cropX");
+        canvasBackground.putNull("cropY");
+        return definition;
+    }
+
+    private void appendBackgroundMask(ArrayNode masks,
+                                      String id,
+                                      double x,
+                                      double y,
+                                      double width,
+                                      double height,
+                                      String fill,
+                                      double radius,
+                                      double angle) {
+        ObjectNode mask = masks.addObject();
+        mask.put("id", id);
+        mask.put("x", roundCoordinate(x));
+        mask.put("y", roundCoordinate(y));
+        mask.put("width", roundCoordinate(width));
+        mask.put("height", roundCoordinate(height));
+        mask.put("fill", fill);
+        mask.put("radius", roundCoordinate(radius));
+        mask.put("angle", angle);
+    }
+
+    private ParsedCanvasSpec requireParsedCanvasSpec(String value) {
+        return switch (value == null ? "" : value.trim().toLowerCase(Locale.ROOT)) {
+            case "secondary-square" -> new ParsedCanvasSpec("secondary-square", "副图", "1:1", 1200, 1200);
+            case "secondary-portrait" -> new ParsedCanvasSpec("secondary-portrait", "副图", "3:4", 1200, 1600);
+            case "secondary-wide" -> new ParsedCanvasSpec("secondary-wide", "副图", "16:9", 1600, 900);
+            case "aplus-wide" -> new ParsedCanvasSpec("aplus-wide", "亚马逊 A+", "2928:1200", 2928, 1200);
+            case "aplus-standard" -> new ParsedCanvasSpec("aplus-standard", "亚马逊 A+", "1200:900", 1200, 900);
+            default -> throw new BusinessException("请选择有效的模板用途和画布比例");
+        };
+    }
+
+    private String normalizeHexColor(String value, String fallback) {
+        String normalized = value == null ? "" : value.trim();
+        return normalized.matches("(?i)^#[0-9a-f]{6}$") ? normalized.toLowerCase(Locale.ROOT) : fallback;
+    }
+
+    private String normalizeOption(String value, List<String> allowed, String fallback) {
+        String normalized = value == null ? "" : value.trim();
+        return allowed.contains(normalized) ? normalized : fallback;
+    }
+
+    private double clamp(double value, double min, double max) {
+        if (!Double.isFinite(value)) return min;
+        return Math.max(min, Math.min(max, value));
+    }
+
+    private int roundCoordinate(double value) {
+        return (int) Math.round(value);
+    }
+
+    @Transactional
     public TemplateLabProjectResponse updateProject(Long id, Long userId, TemplateLabProjectUpdateRequest request) {
         TemplateLabProject project = requireOwnedProject(id, userId);
         if (request.getProjectName() != null) {
@@ -174,6 +557,7 @@ public class TemplateLabService {
     }
 
     private void cleanupProjectAssets(TemplateLabProject project) {
+        cleanupLocalProjectAssets(project);
         String safeShop = project.getShopName() == null ? "_" : project.getShopName().replaceAll("[^\\p{L}\\p{N}_-]", "_");
         String prefix = "TEMPLATE_LAB/" + safeShop + "/" + project.getOwnerUserId() + "/" + project.getId() + "/";
         try {
@@ -193,6 +577,24 @@ public class TemplateLabService {
             } while (nextMarker != null && !nextMarker.isBlank());
         } catch (Exception ignored) {
             // 删除项目时 OSS 清理尽力而为，失败不影响 DB 删除
+        }
+    }
+
+    private void cleanupLocalProjectAssets(TemplateLabProject project) {
+        if (!useLocalAssetStorage()) return;
+        Path root = localSaveRoot();
+        Path projectDir = localProjectDir(project, root);
+        if (!projectDir.startsWith(root) || projectDir.equals(root) || !Files.exists(projectDir)) return;
+        try (var paths = Files.walk(projectDir)) {
+            paths.sorted(Comparator.reverseOrder()).forEach(path -> {
+                try {
+                    Files.deleteIfExists(path);
+                } catch (Exception error) {
+                    log.warn("模板实验室本地素材清理失败: {}", path, error);
+                }
+            });
+        } catch (Exception error) {
+            log.warn("模板实验室本地项目目录清理失败: {}", projectDir, error);
         }
     }
 
@@ -243,9 +645,13 @@ public class TemplateLabService {
             case "image/webp" -> ".webp";
             default -> ".png";
         };
-        String safeShop = project.getShopName().replaceAll("[^\\p{L}\\p{N}_-]", "_");
-        String objectName = "TEMPLATE_LAB/" + safeShop + "/" + userId + "/" + projectId + "/"
-                + UUID.randomUUID() + extension;
+        String assetId = UUID.randomUUID().toString();
+        if (useLocalAssetStorage()) {
+            return saveLocalAsset(project, file, contentType, extension, assetId);
+        }
+        String safeShop = safePathSegment(project.getShopName());
+        String objectPrefix = "TEMPLATE_LAB/" + safeShop + "/" + userId + "/" + projectId;
+        String objectName = objectPrefix + "/assets/" + assetId + extension;
         try {
             ObjectMetadata metadata = new ObjectMetadata();
             metadata.setContentType(contentType);
@@ -253,15 +659,138 @@ public class TemplateLabService {
             ossService.getOssClient().putObject(
                     appProperties.getOss().getResultBucket(), objectName, file.getInputStream(), metadata);
             String url = appProperties.getOss().getResultPublicHost() + "/" + objectName;
-            Map<String, Object> result = new LinkedHashMap<>();
-            result.put("url", url);
-            result.put("name", trimToLength(file.getOriginalFilename(), 200));
-            result.put("size", file.getSize());
-            result.put("contentType", contentType);
-            return result;
+            String thumbnailUrl = uploadOssThumbnail(file, contentType, extension, objectPrefix, assetId, url);
+            return assetResponse(file, contentType, url, thumbnailUrl, "oss");
         } catch (Exception e) {
             throw new IllegalStateException("图片上传失败，请稍后重试", e);
         }
+    }
+
+    private Map<String, Object> saveLocalAsset(TemplateLabProject project,
+                                               MultipartFile file,
+                                               String contentType,
+                                               String extension,
+                                               String assetId) {
+        Path root = localSaveRoot();
+        Path projectDir = localProjectDir(project, root);
+        Path assetDir = projectDir.resolve("assets").normalize();
+        Path thumbnailDir = projectDir.resolve("thumbnails").normalize();
+        if (!assetDir.startsWith(root) || !thumbnailDir.startsWith(root)) {
+            throw new IllegalStateException("模板实验室本地素材目录不安全");
+        }
+        Path target = assetDir.resolve(assetId + extension).normalize();
+        try {
+            Files.createDirectories(assetDir);
+            try (InputStream input = file.getInputStream()) {
+                Files.copy(input, target);
+            }
+            String url = localServingUrl(root, target);
+            String thumbnailUrl = url;
+            byte[] thumbnail = createAssetThumbnail(file, contentType);
+            if (thumbnail != null) {
+                Files.createDirectories(thumbnailDir);
+                String thumbnailExtension = "image/png".equals(contentType) ? ".png" : ".jpg";
+                Path thumbnailTarget = thumbnailDir.resolve(assetId + thumbnailExtension).normalize();
+                Files.write(thumbnailTarget, thumbnail);
+                thumbnailUrl = localServingUrl(root, thumbnailTarget);
+            }
+            return assetResponse(file, contentType, url, thumbnailUrl, "local");
+        } catch (Exception error) {
+            try {
+                Files.deleteIfExists(target);
+            } catch (Exception ignored) {
+                // Preserve the upload error; partial-file cleanup is best effort.
+            }
+            throw new IllegalStateException("图片保存到本地失败，请检查 D:\\AiResult 是否可写", error);
+        }
+    }
+
+    private String uploadOssThumbnail(MultipartFile file,
+                                      String contentType,
+                                      String extension,
+                                      String objectPrefix,
+                                      String assetId,
+                                      String fallbackUrl) {
+        byte[] thumbnail = createAssetThumbnail(file, contentType);
+        if (thumbnail == null) return fallbackUrl;
+        String thumbnailExtension = "image/png".equals(contentType) ? ".png" : ".jpg";
+        String thumbnailType = "image/png".equals(contentType) ? "image/png" : "image/jpeg";
+        String thumbnailObject = objectPrefix + "/thumbnails/" + assetId + thumbnailExtension;
+        try (ByteArrayInputStream input = new ByteArrayInputStream(thumbnail)) {
+            ObjectMetadata metadata = new ObjectMetadata();
+            metadata.setContentType(thumbnailType);
+            metadata.setContentLength(thumbnail.length);
+            ossService.getOssClient().putObject(
+                    appProperties.getOss().getResultBucket(), thumbnailObject, input, metadata);
+            return appProperties.getOss().getResultPublicHost() + "/" + thumbnailObject;
+        } catch (Exception error) {
+            log.warn("模板实验室素材缩略图上传失败，回退原图: {}{}", assetId, extension, error);
+            return fallbackUrl;
+        }
+    }
+
+    private byte[] createAssetThumbnail(MultipartFile file, String contentType) {
+        if ("image/webp".equals(contentType)) return null;
+        try (InputStream input = file.getInputStream(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            var builder = Thumbnails.of(input).size(512, 512);
+            if ("image/png".equals(contentType)) {
+                builder.outputFormat("png");
+            } else {
+                builder.outputFormat("jpg").outputQuality(0.82);
+            }
+            builder.toOutputStream(output);
+            return output.toByteArray();
+        } catch (Exception error) {
+            log.warn("模板实验室素材缩略图生成失败，回退原图: {}", file.getOriginalFilename(), error);
+            return null;
+        }
+    }
+
+    private Map<String, Object> assetResponse(MultipartFile file,
+                                              String contentType,
+                                              String url,
+                                              String thumbnailUrl,
+                                              String storage) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("url", url);
+        result.put("thumbnailUrl", thumbnailUrl);
+        result.put("name", trimToLength(file.getOriginalFilename(), 200));
+        result.put("size", file.getSize());
+        result.put("contentType", contentType);
+        result.put("storage", storage);
+        return result;
+    }
+
+    private Path localSaveRoot() {
+        String configured = appProperties.getLocalSaveRoot();
+        if (configured == null || configured.isBlank()) {
+            String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
+            configured = os.contains("win") ? "D:/AiResult" : "/tmp/ai-result";
+        }
+        return Paths.get(configured).toAbsolutePath().normalize();
+    }
+
+    private boolean useLocalAssetStorage() {
+        return appProperties.isTemplateLabLocalAssets()
+                || environment.acceptsProfiles(Profiles.of("dev"));
+    }
+
+    private Path localProjectDir(TemplateLabProject project, Path root) {
+        return root.resolve("template-lab")
+                .resolve(safePathSegment(project.getShopName()))
+                .resolve(String.valueOf(project.getOwnerUserId()))
+                .resolve(String.valueOf(project.getId()))
+                .normalize();
+    }
+
+    private String localServingUrl(Path root, Path target) {
+        String relative = root.relativize(target).toString().replace('\\', '/');
+        return "/ai-result/" + relative;
+    }
+
+    private String safePathSegment(String value) {
+        String normalized = value == null ? "" : value.replaceAll("[^\\p{L}\\p{N}_-]", "_");
+        return normalized.isBlank() ? "_" : trimToLength(normalized, 100);
     }
 
     @Transactional(readOnly = true)
@@ -615,5 +1144,11 @@ public class TemplateLabService {
     private String trimToLength(String value, int max) {
         if (value == null) return "";
         return value.length() > max ? value.substring(0, max) : value;
+    }
+
+    private record ParsedCanvasSpec(String key, String usageType, String ratioGroup, int width, int height) {
+    }
+
+    private record StoredTemplateSource(String servingUrl, Path localPath, String ossObjectName) {
     }
 }

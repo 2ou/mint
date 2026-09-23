@@ -27,6 +27,9 @@ public class AppProperties {
     /** 模板实验室：可删除他人个人模板的管理员 userId 列表（yml 键 app.template-lab-admin-user-ids，逗号分隔） */
     private List<Long> templateLabAdminUserIds = new ArrayList<>();
 
+    /** 模板实验室普通素材是否落本地并通过 /ai-result/** 提供访问；dev 开启，prod 关闭。 */
+    private boolean templateLabLocalAssets = false;
+
     public String getLocalSaveRoot() { return localSaveRoot; }
     public void setLocalSaveRoot(String localSaveRoot) { this.localSaveRoot = localSaveRoot; }
 

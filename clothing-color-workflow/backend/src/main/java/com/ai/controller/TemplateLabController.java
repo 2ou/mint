@@ -51,6 +51,19 @@ public class TemplateLabController {
         return ApiResponse.ok("项目已创建", templateLabService.createProject(request, userId, operator, shopName));
     }
 
+    @PostMapping(value = "/templates/parse", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ApiResponse<TemplateLabProjectResponse> parseTemplateImage(
+            @RequestAttribute("userId") Long userId,
+            @RequestAttribute("operator") String operator,
+            @RequestAttribute("shopName") String shopName,
+            @RequestParam("file") MultipartFile file,
+            @RequestParam("canvasSpec") String canvasSpec,
+            @RequestParam(value = "projectName", required = false) String projectName,
+            @RequestParam(value = "notes", required = false) String notes) {
+        return ApiResponse.ok("图片已解析为模板草稿", templateLabService.parseTemplateImage(
+                file, canvasSpec, projectName, notes, userId, operator, shopName));
+    }
+
     @GetMapping("/projects/{id}")
     public ApiResponse<TemplateLabProjectResponse> project(@PathVariable("id") Long id,
                                                            @RequestAttribute("userId") Long userId) {

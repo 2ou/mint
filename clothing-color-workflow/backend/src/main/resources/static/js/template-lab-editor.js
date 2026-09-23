@@ -8,10 +8,13 @@
         'cutoutUrl', 'activeImageVersion', 'templateRole', 'cutoutTaskId', 'cutoutTaskStatus',
         'cutoutTaskError', 'cutoutSourceUrl', 'cutoutEstimatedCost', 'cutoutActualCost',
         'backgroundAssetUrl', 'backgroundAssetName', 'backgroundOpacity',
-        'backgroundZoom', 'backgroundCropX', 'backgroundCropY', 'subjectElementId', 'baseWidth',
+        'backgroundZoom', 'backgroundCropX', 'backgroundCropY', 'subjectElementId', 'baseWidth', 'maskId',
         'baseHeight', 'isTemplateImage', 'sourceImageWidth', 'sourceImageHeight',
         'subjectCropX', 'subjectCropY', 'subjectCropWidth', 'subjectCropHeight'
     ];
+    var SAVE_DELAY_MS = 1800;
+    var PREVIEW_DELAY_MS = 12000;
+    var SAVE_RETRY_DELAY_MS = 5000;
 
     var state = {
         project: null,
@@ -26,9 +29,12 @@
         historyIndex: -1,
         suppressHistory: false,
         saveTimer: null,
+        previewTimer: null,
+        saveRetryTimer: null,
         historyTimer: null,
         saveQueue: Promise.resolve(),
         dirty: false,
+        previewDirty: false,
         pendingFrameId: null,
         guideLines: [],
         fieldSequence: 0,
@@ -43,7 +49,12 @@
         frameEditMode: false,
         frameEditTarget: null,
         frameEditOverlay: null,
-        dragFrame: null
+        dragFrame: null,
+        clipboard: null,
+        clipboardReady: null,
+        clipboardCopyToken: 0,
+        clipboardPasteCount: 0,
+        canvasDragDepth: 0
     };
 
     var els = {
@@ -53,6 +64,9 @@
         viewport: document.getElementById('canvas-viewport'),
         stage: document.getElementById('editor-stage'),
         stageTip: document.getElementById('stage-tip'),
+        dropIndicator: document.getElementById('canvas-drop-indicator'),
+        dropIndicatorTitle: document.getElementById('canvas-drop-indicator-title'),
+        dropIndicatorHint: document.getElementById('canvas-drop-indicator-hint'),
         assetInput: document.getElementById('asset-file-input'),
         uploadAssets: document.getElementById('upload-assets'),
         assetGrid: document.getElementById('asset-grid'),
@@ -488,6 +502,31 @@
         state.canvas.add(text);
     }
 
+    function addBackgroundMask(definition, index) {
+        var radius = Math.max(0, Number(definition.radius) || 0);
+        var mask = new fabric.Rect({
+            left: Number(definition.x) || 0,
+            top: Number(definition.y) || 0,
+            width: Math.max(1, Number(definition.width) || 1),
+            height: Math.max(1, Number(definition.height) || 1),
+            rx: radius,
+            ry: radius,
+            angle: Number(definition.angle) || 0,
+            fill: definition.fill || state.template.background || '#f5f7fa',
+            strokeWidth: 0,
+            selectable: false,
+            evented: false,
+            hasControls: false,
+            hasBorders: false,
+            objectCaching: false,
+            excludeFromExport: false,
+            labType: 'backgroundMask',
+            maskId: definition.id || ('background-mask-' + (index + 1))
+        });
+        var baseIndex = getCanvasBackground() ? 1 : 0;
+        state.canvas.insertAt(mask, Math.min(baseIndex + index, state.canvas.getObjects().length), false);
+    }
+
     function addTemplateImage(definition) {
         var role = definition.role || 'replaceable';
         var point = { x: Number(definition.x) || state.logicalWidth / 2, y: Number(definition.y) || state.logicalHeight / 2 };
@@ -560,6 +599,7 @@
         if (state.template.canvasBackground) {
             await rebuildCanvasBackground(state.template.canvasBackground);
         }
+        (state.template.backgroundMasks || []).forEach(addBackgroundMask);
         state.canvas.renderAll();
         state.suppressHistory = false;
     }
@@ -625,6 +665,15 @@
                     backgroundCropY: object.backgroundCropY == null ? Number(object.cropY) || 0 : Number(object.backgroundCropY)
                 });
                 styleCanvasBackground(object);
+            } else if (object.labType === 'backgroundMask') {
+                object.set({
+                    selectable: false,
+                    evented: false,
+                    hasControls: false,
+                    hasBorders: false,
+                    objectCaching: false,
+                    excludeFromExport: false
+                });
             } else if (object.labType === 'framePlaceholder') {
                 object.set({ selectable: false, evented: false, hasControls: false, hasBorders: false, lockMovementX: true, lockMovementY: true });
             } else if (object.labType === 'frameBorder') {
@@ -1149,6 +1198,110 @@
         }, CUSTOM_PROPS);
     }
 
+    function isCopyableCanvasObject(object) {
+        return Boolean(object) && ['text', 'freeImage', 'imageComposition', 'imagePlaceholder'].includes(object.labType);
+    }
+
+    function selectedCopyTarget() {
+        var active = state.canvas && state.canvas.getActiveObject();
+        if (!active) return null;
+        if (isCopyableCanvasObject(active)) return active;
+        if (active.type === 'activeSelection' && typeof active.getObjects === 'function') {
+            var objects = active.getObjects();
+            return objects.length && objects.every(isCopyableCanvasObject) ? active : null;
+        }
+        return null;
+    }
+
+    function copySelectedElements() {
+        var active = selectedCopyTarget();
+        if (!active) {
+            showToast('请选择可复制的图片或文字；相框和画布背景不能直接复制', true);
+            return;
+        }
+        state.clipboard = null;
+        var copyToken = ++state.clipboardCopyToken;
+        state.clipboardReady = new Promise(function (resolve) {
+            active.clone(function (copy) {
+                if (copyToken !== state.clipboardCopyToken) {
+                    resolve(null);
+                    return;
+                }
+                state.clipboard = copy;
+                state.clipboardPasteCount = 0;
+                var count = copy.type === 'activeSelection' && typeof copy.getObjects === 'function'
+                    ? copy.getObjects().length : 1;
+                showToast('已复制 ' + count + ' 个画布元素，按 Ctrl + V 粘贴');
+                resolve(copy);
+            }, CUSTOM_PROPS);
+        });
+    }
+
+    function preparePastedElement(object) {
+        if (!object) return;
+        if (object.type === 'activeSelection' && typeof object.getObjects === 'function') {
+            object.getObjects().forEach(preparePastedElement);
+            return;
+        }
+        if (object.labType === 'text') {
+            object.set({
+                isTemplateText: false,
+                fieldId: uniqueFieldId('free'),
+                fieldLabel: (object.fieldLabel || '自由文字') + ' 副本'
+            });
+            styleInteractiveObject(object);
+            return;
+        }
+        if (object.labType === 'freeImage' || object.labType === 'imageComposition') {
+            object.set({
+                elementId: uniqueElementId('image'),
+                cutoutTaskId: '',
+                cutoutTaskStatus: '',
+                cutoutTaskError: ''
+            });
+            styleFreeVisual(object);
+            return;
+        }
+        if (object.labType === 'imagePlaceholder') {
+            object.set({ elementId: uniqueElementId('slot') });
+            styleInteractiveObject(object);
+        }
+    }
+
+    function pasteCopiedElements() {
+        if (!state.clipboard && state.clipboardReady) {
+            state.clipboardReady.then(function (copy) { if (copy) pasteCopiedElements(); });
+            return;
+        }
+        if (!state.canvas || !state.clipboard) {
+            showToast('请先选中画布中的图片或文字并按 Ctrl + C', true);
+            return;
+        }
+        state.clipboard.clone(function (copy) {
+            state.clipboardPasteCount += 1;
+            var offset = 28 * state.clipboardPasteCount;
+            state.canvas.discardActiveObject();
+            preparePastedElement(copy);
+            if (copy.type === 'activeSelection' && typeof copy.forEachObject === 'function') {
+                copy.canvas = state.canvas;
+                copy.forEachObject(function (object) { state.canvas.add(object); });
+            } else {
+                state.canvas.add(copy);
+            }
+            copy.set({
+                left: (Number(copy.left) || 0) + offset,
+                top: (Number(copy.top) || 0) + offset
+            });
+            copy.setCoords();
+            state.canvas.setActiveObject(copy);
+            state.canvas.requestRenderAll();
+            queueMutation(true);
+            renderProperties();
+            positionCutoutFab();
+            showToast('已粘贴画布元素');
+        }, CUSTOM_PROPS);
+    }
+
     function updateVisualProperty(property, value, commit) {
         var visual = selectedVisual();
         if (!visual) return;
@@ -1506,7 +1659,12 @@
     function canvasPointAtClientPoint(event) {
         var rect = state.canvas.upperCanvasEl.getBoundingClientRect();
         var zoom = Math.max(state.canvas.getZoom(), .01);
-        return new fabric.Point((event.clientX - rect.left) / zoom, (event.clientY - rect.top) / zoom);
+        var x = (event.clientX - rect.left) / zoom;
+        var y = (event.clientY - rect.top) / zoom;
+        return new fabric.Point(
+            Math.max(0, Math.min(state.logicalWidth, x)),
+            Math.max(0, Math.min(state.logicalHeight, y))
+        );
     }
 
     function groupLocalPointer(group, nativeEvent) {
@@ -2022,7 +2180,8 @@
         }
         els.assetGrid.innerHTML = state.assets.map(function (asset, index) {
             return '<button class="editor-asset-card" type="button" draggable="true" data-asset-index="' + index + '" aria-label="使用图片 '
-                + escapeHtml(asset.name || '素材') + '"><img src="' + escapeHtml(asset.url) + '" alt=""><span>'
+                + escapeHtml(asset.name || '素材') + '"><img src="' + escapeHtml(asset.thumbnailUrl || asset.url)
+                + '" alt="" loading="lazy" decoding="async"><span>'
                 + escapeHtml(asset.name || '素材') + '</span></button>';
         }).join('');
     }
@@ -2239,6 +2398,20 @@
             };
         });
         var bgObject = getCanvasBackground();
+        var backgroundMasks = state.canvas.getObjects().filter(function (object) {
+            return object.labType === 'backgroundMask' && object.visible !== false;
+        }).map(function (object, index) {
+            return {
+                id: object.maskId || ('background-mask-' + (index + 1)),
+                x: Math.round(object.left || 0),
+                y: Math.round(object.top || 0),
+                width: Math.round((object.width || 1) * (object.scaleX || 1)),
+                height: Math.round((object.height || 1) * (object.scaleY || 1)),
+                fill: normalizeColor(object.fill),
+                radius: Math.round((object.rx || 0) * (object.scaleX || 1)),
+                angle: object.angle || 0
+            };
+        });
         var canvasBackground = null;
         if (bgObject) {
             canvasBackground = {
@@ -2258,6 +2431,7 @@
             height: state.logicalHeight,
             background: state.canvas.backgroundColor || state.template.background || '#f5f7fa',
             canvasBackground: canvasBackground,
+            backgroundMasks: backgroundMasks,
             accent: state.template.accent || '#172033',
             tags: Array.from(new Set([state.template.usageType, state.template.ratioGroup, '个人模板'])),
             frames: JSON.parse(JSON.stringify(effectiveFrames())),
@@ -2346,18 +2520,77 @@
         await addFreeImage(asset, point || { x: state.logicalWidth / 2, y: state.logicalHeight / 2 });
     }
 
+    function hasCanvasDropPayload(event) {
+        var transfer = event && event.dataTransfer;
+        if (!transfer) return false;
+        var types = Array.from(transfer.types || []);
+        return types.includes('Files') || types.includes('application/x-template-lab-asset');
+    }
+
+    function hasFileDropPayload(event) {
+        var transfer = event && event.dataTransfer;
+        return Boolean(transfer) && Array.from(transfer.types || []).includes('Files');
+    }
+
+    function supportedDroppedImageFiles(files) {
+        var allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+        var list = Array.from(files || []);
+        var supported = list.filter(function (file) {
+            return allowedTypes.includes(String(file.type || '').toLowerCase())
+                || /\.(jpe?g|png|webp)$/i.test(file.name || '');
+        });
+        if (supported.length !== list.length) {
+            showToast('已忽略不支持的文件，仅支持 JPG、PNG、WebP 图片', true);
+        }
+        return supported;
+    }
+
+    function setCanvasDropState(mode) {
+        if (!els.dropIndicator || !els.stage) return;
+        if (!mode) {
+            els.stage.classList.remove('is-drop-active');
+            els.dropIndicator.hidden = true;
+            els.dropIndicator.removeAttribute('data-state');
+            return;
+        }
+        els.stage.classList.add('is-drop-active');
+        els.dropIndicator.hidden = false;
+        els.dropIndicator.dataset.state = mode;
+        if (mode === 'uploading') {
+            els.dropIndicatorTitle.textContent = '正在上传并添加图片...';
+            els.dropIndicatorHint.textContent = '完成后会自动放到刚才的拖放位置';
+        } else {
+            els.dropIndicatorTitle.textContent = '松开即可添加图片';
+            els.dropIndicatorHint.textContent = '拖到相框内自动填充，拖到空白处作为自由图片';
+        }
+    }
+
     async function uploadFiles(files, targetFrameId, placementPoint, purpose) {
         var list = Array.from(files || []);
         if (!list.length) return [];
+        if (els.uploadAssets.disabled) {
+            showToast('图片正在上传，请等待当前上传完成', true);
+            return [];
+        }
         els.uploadAssets.classList.add('is-uploading');
         els.uploadAssets.disabled = true;
+        els.uploadAssets.setAttribute('aria-busy', 'true');
+        var uploadTitle = els.uploadAssets.querySelector('strong');
+        var uploadHint = els.uploadAssets.querySelector('span');
+        var defaultUploadHint = uploadHint ? uploadHint.textContent : '';
         var uploaded = [];
         try {
             for (var i = 0; i < list.length; i += 1) {
+                if (uploadTitle) uploadTitle.textContent = '正在上传 ' + (i + 1) + ' / ' + list.length;
+                if (uploadHint) uploadHint.textContent = list[i].name;
                 var form = new FormData();
                 form.append('file', list[i]);
                 var asset = apiData(await axios.post('/api/template-lab/projects/' + state.project.id + '/assets', form, {
-                    headers: { 'Content-Type': 'multipart/form-data' }
+                    headers: { 'Content-Type': 'multipart/form-data' },
+                    onUploadProgress: function (progressEvent) {
+                        if (!uploadHint || !progressEvent.total) return;
+                        uploadHint.textContent = Math.min(100, Math.round(progressEvent.loaded * 100 / progressEvent.total)) + '%';
+                    }
                 }));
                 state.assets.push(asset);
                 uploaded.push(asset);
@@ -2385,6 +2618,9 @@
         } finally {
             els.uploadAssets.classList.remove('is-uploading');
             els.uploadAssets.disabled = false;
+            els.uploadAssets.removeAttribute('aria-busy');
+            if (uploadTitle) uploadTitle.textContent = '上传图片';
+            if (uploadHint) uploadHint.textContent = defaultUploadHint;
             els.assetInput.value = '';
             state.pendingFrameId = null;
             state.pendingPlacement = null;
@@ -2443,9 +2679,12 @@
 
     function scheduleSave() {
         state.dirty = true;
+        state.previewDirty = true;
         setSaveState('有未保存修改', 'saving');
         clearTimeout(state.saveTimer);
-        state.saveTimer = setTimeout(saveNow, 900);
+        state.saveTimer = setTimeout(saveNow, SAVE_DELAY_MS);
+        clearTimeout(state.previewTimer);
+        state.previewTimer = setTimeout(savePreviewNow, PREVIEW_DELAY_MS);
     }
 
     function saveNow() {
@@ -2455,8 +2694,7 @@
             projectName: els.projectName.value.trim() || state.project.projectName,
             canvasWidth: state.logicalWidth,
             canvasHeight: state.logicalHeight,
-            designJson: serializedDesign(),
-            thumbnailDataUrl: createThumbnail()
+            designJson: serializedDesign()
         };
         state.dirty = false;
         setSaveState('正在保存...', 'saving');
@@ -2464,7 +2702,9 @@
             return axios.put('/api/template-lab/projects/' + state.project.id, payload);
         }).then(function (response) {
             state.project = apiData(response);
-            setSaveState('已自动保存', 'saved');
+            clearTimeout(state.saveRetryTimer);
+            state.saveRetryTimer = null;
+            setSaveState(state.dirty ? '有未保存修改' : '已自动保存', state.dirty ? 'saving' : 'saved');
         }).catch(function (error) {
             state.dirty = true;
             var saveStatus = error.response && Number(error.response.status);
@@ -2473,8 +2713,38 @@
                 : (error.response && error.response.data ? error.response.data.message : error.message);
             setSaveState(saveStatus === 409 ? '保存冲突，请刷新' : '保存失败，稍后将重试', 'error');
             showToast(saveMessage, true);
+            if (saveStatus !== 409) {
+                clearTimeout(state.saveRetryTimer);
+                state.saveRetryTimer = setTimeout(function () {
+                    state.saveRetryTimer = null;
+                    saveNow();
+                }, SAVE_RETRY_DELAY_MS);
+            }
         });
         return state.saveQueue;
+    }
+
+    function savePreviewNow() {
+        if (!state.canvas || !state.project || !state.previewDirty) return state.saveQueue;
+        clearTimeout(state.previewTimer);
+        var payload = { thumbnailDataUrl: createThumbnail() };
+        state.previewDirty = false;
+        state.saveQueue = state.saveQueue.then(function () {
+            return axios.put('/api/template-lab/projects/' + state.project.id, payload);
+        }).then(function (response) {
+            state.project = apiData(response);
+            if (!state.dirty) setSaveState('已自动保存', 'saved');
+        }).catch(function () {
+            state.previewDirty = true;
+            clearTimeout(state.previewTimer);
+            state.previewTimer = setTimeout(savePreviewNow, PREVIEW_DELAY_MS);
+            if (!state.dirty) setSaveState('内容已保存，预览稍后更新', 'saved');
+        });
+        return state.saveQueue;
+    }
+
+    function saveAllNow() {
+        return saveNow().then(savePreviewNow);
     }
 
     function applyViewportScale() {
@@ -2869,7 +3139,7 @@
         els.exportButton.disabled = true;
         els.exportButton.textContent = '正在导出...';
         try {
-            await saveNow();
+            await saveAllNow();
             var format = els.exportFormat.value;
             var exportSize = readExportScale(true);
             var scale = exportSize.scale;
@@ -3295,18 +3565,59 @@
             event.dataTransfer.setData('application/x-template-lab-asset', card.dataset.assetIndex);
             event.dataTransfer.effectAllowed = 'copy';
         });
-        els.viewport.addEventListener('dragover', function (event) { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; });
-        els.viewport.addEventListener('drop', async function (event) {
+        els.viewport.addEventListener('dragenter', function (event) {
+            if (!hasCanvasDropPayload(event)) return;
             event.preventDefault();
+            state.canvasDragDepth += 1;
+            setCanvasDropState('ready');
+        });
+        els.viewport.addEventListener('dragover', function (event) {
+            if (!hasCanvasDropPayload(event)) return;
+            event.preventDefault();
+            event.dataTransfer.dropEffect = 'copy';
+            setCanvasDropState('ready');
+        });
+        els.viewport.addEventListener('dragleave', function (event) {
+            if (!state.canvasDragDepth) return;
+            state.canvasDragDepth = Math.max(0, state.canvasDragDepth - 1);
+            if (!state.canvasDragDepth) setCanvasDropState('');
+        });
+        els.viewport.addEventListener('drop', async function (event) {
+            if (!hasCanvasDropPayload(event)) return;
+            event.preventDefault();
+            event.stopPropagation();
+            state.canvasDragDepth = 0;
             var frame = frameAtClientPoint(event);
             var point = canvasPointAtClientPoint(event);
             var index = event.dataTransfer.getData('application/x-template-lab-asset');
-            if (index !== '') {
-                await useAsset(state.assets[Number(index)], point, frame && frame.id);
-            } else if (event.dataTransfer.files && event.dataTransfer.files.length) {
-                await uploadFiles(event.dataTransfer.files, frame && frame.id, frame ? null : point,
-                    state.assetPickMode === 'background' ? 'background' : '');
+            try {
+                if (index !== '') {
+                    await useAsset(state.assets[Number(index)], point, frame && frame.id);
+                } else if (event.dataTransfer.files && event.dataTransfer.files.length) {
+                    var droppedFiles = supportedDroppedImageFiles(event.dataTransfer.files);
+                    if (!droppedFiles.length) return;
+                    setCanvasDropState('uploading');
+                    await uploadFiles(droppedFiles, frame && frame.id, frame ? null : point,
+                        state.assetPickMode === 'background' ? 'background' : '');
+                }
+            } finally {
+                setCanvasDropState('');
             }
+        });
+        document.addEventListener('dragover', function (event) {
+            if (hasFileDropPayload(event)) event.preventDefault();
+        });
+        document.addEventListener('drop', function (event) {
+            if (!hasFileDropPayload(event)) return;
+            if (els.viewport.contains(event.target) || els.uploadAssets.contains(event.target)) return;
+            event.preventDefault();
+            state.canvasDragDepth = 0;
+            setCanvasDropState('');
+            showToast('请将图片拖到中间画布，或拖到左侧上传区域', true);
+        });
+        document.addEventListener('dragend', function () {
+            state.canvasDragDepth = 0;
+            setCanvasDropState('');
         });
 
         els.projectName.addEventListener('input', scheduleSave);
@@ -3498,10 +3809,16 @@
             var target = event.target;
             var typing = target && (/INPUT|TEXTAREA|SELECT/.test(target.tagName) || target.isContentEditable);
             if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
-                event.preventDefault(); saveNow(); return;
+                event.preventDefault(); saveAllNow(); return;
             }
             if (typing) return;
             if (event.key === 'Escape') { if (state.frameEditMode) { event.preventDefault(); exitFrameEdit(); } return; }
+            if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'c') {
+                event.preventDefault(); copySelectedElements(); return;
+            }
+            if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'v') {
+                event.preventDefault(); pasteCopiedElements(); return;
+            }
             if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') { event.preventDefault(); event.shiftKey ? redo() : undo(); return; }
             if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'y') { event.preventDefault(); redo(); return; }
             if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'd') {
@@ -3535,7 +3852,7 @@
         });
         window.addEventListener('resize', function () { clearTimeout(setupDomEvents.resizeTimer); setupDomEvents.resizeTimer = setTimeout(applyViewportScale, 120); });
         window.addEventListener('beforeunload', function (event) { if (state.dirty) { event.preventDefault(); event.returnValue = ''; } });
-        document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') saveNow(); });
+        document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') saveAllNow(); });
     }
 
     setupDomEvents();

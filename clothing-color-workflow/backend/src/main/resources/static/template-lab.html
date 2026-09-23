@@ -7,8 +7,8 @@
     <title>模板拼图实验室 - AI 时尚视觉</title>
     <link rel="stylesheet" href="css/variables.css">
     <link rel="stylesheet" href="css/shared.css">
-    <link rel="stylesheet" href="css/template-lab.css">
-    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <link rel="stylesheet" href="css/template-lab.css?v=20260923.1">
+    <script src="vendor/template-lab/axios-1.20.0.min.js"></script>
     <script src="auth.js"></script>
     <script src="js/sidebar.js"></script>
 </head>
@@ -48,11 +48,17 @@
                     <h2 id="templates-heading">模板库</h2>
                     <p id="template-count">系统模板与个人模板统一管理，可按用途和比例快速筛选。</p>
                 </div>
-                <label class="lab-search lab-search--template">
-                    <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.7-3.7"/></svg>
-                    <span class="sr-only">搜索模板</span>
-                    <input id="template-search" type="search" placeholder="搜索模板、分类或标签" autocomplete="off">
-                </label>
+                <div class="lab-section__actions">
+                    <button class="lab-button" id="open-parse-template" type="button">
+                        <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M5 14v5h14v-5"/></svg>
+                        上传图片解析模板
+                    </button>
+                    <label class="lab-search lab-search--template">
+                        <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.7-3.7"/></svg>
+                        <span class="sr-only">搜索模板</span>
+                        <input id="template-search" type="search" placeholder="搜索模板、分类或标签" autocomplete="off">
+                    </label>
+                </div>
             </div>
             <div class="lab-template-tools" aria-label="模板筛选">
                 <div class="lab-filter-group">
@@ -103,7 +109,70 @@
     </form>
 </dialog>
 
+<dialog class="lab-dialog lab-dialog--parse" id="parse-dialog" aria-labelledby="parse-dialog-title">
+    <form method="dialog" id="parse-form">
+        <div class="lab-dialog__header">
+            <div>
+                <h2 id="parse-dialog-title">从图片解析模板</h2>
+                <p>第一版保留背景装饰，自动拆出可替换图片位和可编辑文字。</p>
+            </div>
+            <button class="lab-icon-button" value="cancel" type="submit" aria-label="关闭">
+                <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg>
+            </button>
+        </div>
+        <div class="lab-dialog__body">
+            <label class="lab-parse-drop" id="parse-drop-zone">
+                <input class="sr-only" id="parse-file" name="file" type="file" accept="image/jpeg,image/png,image/webp">
+                <span class="lab-parse-drop__icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9" r="1.5"/><path d="m4 17 5-5 4 4 2-2 5 5"/></svg>
+                </span>
+                <strong>点击选择或拖入模板图片</strong>
+                <small>支持 JPG、PNG、WebP，单张不超过 25MB</small>
+            </label>
+            <div class="lab-parse-preview" id="parse-preview" hidden>
+                <img id="parse-preview-image" alt="待解析模板预览">
+                <div><strong id="parse-file-name"></strong><span id="parse-file-meta"></span></div>
+                <button class="lab-button" id="replace-parse-file" type="button">更换图片</button>
+            </div>
+            <div class="lab-parse-fields">
+                <label class="lab-field">
+                    <span>画布用途与比例</span>
+                    <select id="parse-canvas-spec" name="canvasSpec">
+                        <option value="secondary-square">副图 · 1:1 · 1200 × 1200</option>
+                        <option value="secondary-portrait">副图 · 3:4 · 1200 × 1600</option>
+                        <option value="secondary-wide">副图 · 16:9 · 1600 × 900</option>
+                        <option value="aplus-wide">亚马逊 A+ · 2928:1200</option>
+                        <option value="aplus-standard">亚马逊 A+ · 1200 × 900</option>
+                    </select>
+                    <small>选择最接近原图的比例，识别位置会更准确。</small>
+                </label>
+                <label class="lab-field">
+                    <span>草稿项目名称</span>
+                    <input id="parse-project-name" name="projectName" maxlength="160" placeholder="例如：夏季促销图解析">
+                </label>
+                <label class="lab-field">
+                    <span>补充说明（可选）</span>
+                    <textarea id="parse-notes" name="notes" maxlength="1000" rows="3" placeholder="例如：中间人物是主商品图，底部小字不需要拆分"></textarea>
+                </label>
+            </div>
+            <div class="lab-parse-notice">
+                <strong>解析后先进入草稿</strong>
+                <span>色块、线条和图标暂时保留在背景中；你可以校正识别结果，再手动保存为个人模板。</span>
+            </div>
+            <div class="lab-parse-status" id="parse-status" role="status" aria-live="polite" hidden>
+                <span class="lab-spinner" aria-hidden="true"></span>
+                <div><strong id="parse-status-title">正在上传图片</strong><span id="parse-status-detail">随后会调用 KIE 分析图片位和文字。</span></div>
+            </div>
+            <div class="lab-parse-error" id="parse-error" role="alert" hidden></div>
+        </div>
+        <div class="lab-dialog__footer">
+            <button class="lab-button" id="cancel-parse" value="cancel" type="submit">取消</button>
+            <button class="lab-button lab-button--primary" id="submit-parse" value="default" type="button">确认并开始解析</button>
+        </div>
+    </form>
+</dialog>
+
 <div class="lab-toast" id="lab-toast" role="status" aria-live="polite"></div>
-<script src="js/template-lab.js?v=20260922.5"></script>
+<script src="js/template-lab.js?v=20260923.1"></script>
 </body>
 </html>

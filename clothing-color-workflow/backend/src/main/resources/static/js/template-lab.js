@@ -14,7 +14,10 @@
         ratioGroup: '全部',
         sourceMode: '全部',
         favorites: readStoredList(FAVORITES_KEY),
-        recents: readStoredList(RECENTS_KEY)
+        recents: readStoredList(RECENTS_KEY),
+        parseFile: null,
+        parsePreviewUrl: '',
+        parseBusy: false
     };
 
     var els = {
@@ -32,6 +35,22 @@
         name: document.getElementById('project-name'),
         selectedSummary: document.getElementById('selected-template-summary'),
         createButton: document.getElementById('create-project'),
+        parseDialog: document.getElementById('parse-dialog'),
+        parseFile: document.getElementById('parse-file'),
+        parseDropZone: document.getElementById('parse-drop-zone'),
+        parsePreview: document.getElementById('parse-preview'),
+        parsePreviewImage: document.getElementById('parse-preview-image'),
+        parseFileName: document.getElementById('parse-file-name'),
+        parseFileMeta: document.getElementById('parse-file-meta'),
+        parseCanvasSpec: document.getElementById('parse-canvas-spec'),
+        parseProjectName: document.getElementById('parse-project-name'),
+        parseNotes: document.getElementById('parse-notes'),
+        parseStatus: document.getElementById('parse-status'),
+        parseStatusTitle: document.getElementById('parse-status-title'),
+        parseStatusDetail: document.getElementById('parse-status-detail'),
+        parseError: document.getElementById('parse-error'),
+        submitParse: document.getElementById('submit-parse'),
+        cancelParse: document.getElementById('cancel-parse'),
         toast: document.getElementById('lab-toast')
     };
 
@@ -83,7 +102,7 @@
     function templatePreview(template) {
         if (template && template.thumbnailDataUrl) {
             return '<div class="lab-card__preview"><img src="' + escapeHtml(template.thumbnailDataUrl)
-                + '" alt="' + escapeHtml(template.name) + ' 模板预览"></div>';
+                + '" alt="' + escapeHtml(template.name) + ' 模板预览" loading="lazy" decoding="async"></div>';
         }
         return miniCanvas(template);
     }
@@ -145,7 +164,7 @@
         els.projectGrid.innerHTML = projects.map(function (project) {
             var template = templateById(project.templateId);
             var preview = project.thumbnailDataUrl
-                ? '<div class="lab-card__preview"><img src="' + escapeHtml(project.thumbnailDataUrl) + '" alt="' + escapeHtml(project.projectName) + ' 项目预览"></div>'
+                ? '<div class="lab-card__preview"><img src="' + escapeHtml(project.thumbnailDataUrl) + '" alt="' + escapeHtml(project.projectName) + ' 项目预览" loading="lazy" decoding="async"></div>'
                 : miniCanvas(template);
             return '<article class="lab-card" data-project-id="' + project.id + '">' + preview
                 + '<div class="lab-card__body"><div class="lab-card__title-row"><h3 class="lab-card__title">' + escapeHtml(project.projectName) + '</h3>'
@@ -299,6 +318,141 @@
         }
     }
 
+    function formatBytes(bytes) {
+        if (!Number.isFinite(bytes) || bytes <= 0) return '0 KB';
+        if (bytes < 1024 * 1024) return Math.max(1, Math.round(bytes / 1024)) + ' KB';
+        return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+    }
+
+    function resetParseDialog() {
+        if (state.parsePreviewUrl) URL.revokeObjectURL(state.parsePreviewUrl);
+        state.parseFile = null;
+        state.parsePreviewUrl = '';
+        state.parseBusy = false;
+        els.parseFile.value = '';
+        els.parsePreview.hidden = true;
+        els.parseDropZone.hidden = false;
+        els.parseProjectName.value = '';
+        els.parseNotes.value = '';
+        els.parseCanvasSpec.value = 'secondary-square';
+        els.parseStatus.hidden = true;
+        els.parseError.hidden = true;
+        els.parseError.textContent = '';
+        els.submitParse.disabled = false;
+        els.submitParse.textContent = '确认并开始解析';
+        els.cancelParse.disabled = false;
+        els.parseDialog.removeAttribute('aria-busy');
+    }
+
+    function openParseDialog() {
+        resetParseDialog();
+        els.parseDialog.showModal();
+        setTimeout(function () { els.parseFile.focus(); }, 0);
+    }
+
+    function nearestCanvasSpec(width, height) {
+        var ratio = width / height;
+        var specs = [
+            { value: 'secondary-square', ratio: 1 },
+            { value: 'secondary-portrait', ratio: 3 / 4 },
+            { value: 'secondary-wide', ratio: 16 / 9 },
+            { value: 'aplus-wide', ratio: 2928 / 1200 },
+            { value: 'aplus-standard', ratio: 1200 / 900 }
+        ];
+        return specs.reduce(function (best, item) {
+            return Math.abs(item.ratio - ratio) < Math.abs(best.ratio - ratio) ? item : best;
+        }, specs[0]).value;
+    }
+
+    function setParseFile(file) {
+        els.parseError.hidden = true;
+        if (!file) return;
+        var allowed = ['image/jpeg', 'image/png', 'image/webp'];
+        if (!allowed.includes(file.type)) {
+            els.parseError.textContent = '仅支持 JPG、PNG 和 WebP 图片，请重新选择。';
+            els.parseError.hidden = false;
+            return;
+        }
+        if (file.size > 25 * 1024 * 1024) {
+            els.parseError.textContent = '图片超过 25MB，请压缩后重新选择。';
+            els.parseError.hidden = false;
+            return;
+        }
+        if (state.parsePreviewUrl) URL.revokeObjectURL(state.parsePreviewUrl);
+        state.parseFile = file;
+        state.parsePreviewUrl = URL.createObjectURL(file);
+        els.parsePreviewImage.src = state.parsePreviewUrl;
+        els.parseFileName.textContent = file.name;
+        els.parseFileMeta.textContent = formatBytes(file.size) + ' · 正在读取尺寸';
+        els.parseDropZone.hidden = true;
+        els.parsePreview.hidden = false;
+        els.parsePreviewImage.onload = function () {
+            var width = els.parsePreviewImage.naturalWidth;
+            var height = els.parsePreviewImage.naturalHeight;
+            els.parseFileMeta.textContent = formatBytes(file.size) + ' · ' + width + ' × ' + height;
+            if (width && height) els.parseCanvasSpec.value = nearestCanvasSpec(width, height);
+        };
+    }
+
+    function setParseBusy(busy) {
+        state.parseBusy = busy;
+        els.submitParse.disabled = busy;
+        els.cancelParse.disabled = busy;
+        els.parseFile.disabled = busy;
+        els.parseCanvasSpec.disabled = busy;
+        els.parseProjectName.disabled = busy;
+        els.parseNotes.disabled = busy;
+        els.parseDialog.toggleAttribute('aria-busy', busy);
+        els.submitParse.textContent = busy ? '正在解析...' : '确认并开始解析';
+    }
+
+    async function submitTemplateParse() {
+        if (!state.parseFile) {
+            els.parseError.textContent = '请先选择需要解析的模板图片。';
+            els.parseError.hidden = false;
+            els.parseFile.focus();
+            return;
+        }
+        var confirmed = window.confirm(
+            '即将向 KIE 提交 1 张图片，并使用 GPT 5.6 Sol 进行视觉解析，可能产生模型费用。\n\n'
+            + '解析结果只会创建草稿，不会直接发布或保存为个人模板。确认继续？'
+        );
+        if (!confirmed) return;
+
+        var form = new FormData();
+        form.append('file', state.parseFile);
+        form.append('canvasSpec', els.parseCanvasSpec.value);
+        form.append('projectName', els.parseProjectName.value.trim());
+        form.append('notes', els.parseNotes.value.trim());
+        els.parseError.hidden = true;
+        els.parseStatus.hidden = false;
+        els.parseStatusTitle.textContent = '正在上传图片';
+        els.parseStatusDetail.textContent = '上传完成后会调用 KIE 识别图片位和文字。';
+        setParseBusy(true);
+        try {
+            var response = await axios.post('/api/template-lab/templates/parse', form, {
+                headers: { 'Content-Type': 'multipart/form-data' },
+                timeout: 180000,
+                onUploadProgress: function (event) {
+                    if (!event.total || event.loaded < event.total) return;
+                    els.parseStatusTitle.textContent = 'AI 正在识别模板结构';
+                    els.parseStatusDetail.textContent = '正在分析图片位、文字和背景遮罩，通常需要几十秒。';
+                }
+            });
+            var project = apiData(response);
+            els.parseStatusTitle.textContent = '解析完成，正在进入编辑器';
+            els.parseStatusDetail.textContent = '请在编辑器中检查识别位置，再决定是否保存为个人模板。';
+            window.location.href = 'template-lab-editor.html?id=' + encodeURIComponent(project.id);
+        } catch (error) {
+            var message = error.response && error.response.data ? error.response.data.message : error.message;
+            els.parseStatus.hidden = true;
+            els.parseError.textContent = (message || '解析失败') + '。你可以调整比例、补充说明后再次尝试。';
+            els.parseError.hidden = false;
+            setParseBusy(false);
+            els.submitParse.focus();
+        }
+    }
+
     async function projectAction(action, id) {
         if (action === 'edit') {
             window.location.href = 'template-lab-editor.html?id=' + encodeURIComponent(id);
@@ -347,6 +501,29 @@
 
     document.getElementById('open-template-picker').addEventListener('click', function () {
         document.getElementById('templates-heading').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    document.getElementById('open-parse-template').addEventListener('click', openParseDialog);
+    document.getElementById('replace-parse-file').addEventListener('click', function () { els.parseFile.click(); });
+    els.parseFile.addEventListener('change', function (event) { setParseFile(event.target.files && event.target.files[0]); });
+    ['dragenter', 'dragover'].forEach(function (type) {
+        els.parseDropZone.addEventListener(type, function (event) {
+            event.preventDefault();
+            if (!state.parseBusy) els.parseDropZone.classList.add('is-dragging');
+        });
+    });
+    ['dragleave', 'drop'].forEach(function (type) {
+        els.parseDropZone.addEventListener(type, function (event) {
+            event.preventDefault();
+            els.parseDropZone.classList.remove('is-dragging');
+            if (type === 'drop' && !state.parseBusy) setParseFile(event.dataTransfer.files && event.dataTransfer.files[0]);
+        });
+    });
+    els.submitParse.addEventListener('click', submitTemplateParse);
+    els.parseDialog.addEventListener('cancel', function (event) {
+        if (state.parseBusy) event.preventDefault();
+    });
+    els.parseDialog.addEventListener('close', function () {
+        if (!state.parseBusy) resetParseDialog();
     });
     els.search.addEventListener('input', function (event) { state.search = event.target.value; renderProjects(); });
     els.templateSearch.addEventListener('input', function (event) { state.templateSearch = event.target.value; renderTemplates(); });
