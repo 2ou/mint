@@ -46,6 +46,14 @@ public class KieClientServiceImpl implements KieClientService {
     private static final Set<String> KIE_ALLOWED_ASPECT_RATIOS = Set.of(
             "1:1", "16:9", "9:16", "4:3", "3:4", "4:5", "5:4", "3:2", "2:3", "21:9", "9:21");
 
+    /**
+     * 创建 KIE 任务的重试次数（含首次）。
+     *
+     * <p>KIE 按账户限流「每 10 秒 20 个新请求」，批量提交时超出部分会收到 HTTP 429；
+     * 429 属于「稍后重试」语义，被拒的请求不会进入 KIE 队列，必须由调用方重试。</p>
+     */
+    private static final int KIE_CREATE_TASK_MAX_ATTEMPTS = 3;
+
     private String normalizeAspectRatio(String aspectRatio) {
         if (aspectRatio == null || aspectRatio.trim().isEmpty()) {
             return "1:1";
@@ -78,13 +86,22 @@ public class KieClientServiceImpl implements KieClientService {
         ArrayNode imageArray = objectMapper.createArrayNode();
         appendImageUrls(imageArray, inputUrl);
         appendImageUrls(imageArray, colorUrl);
-        String requestedModel = model == null ? "" : model.trim();
+        String requestedModel = KieImageModels.canonicalModel(model);
         String actualModel = KieImageModels.resolveActualModel(requestedModel, imageArray.size());
         rootNode.put("model", actualModel);
 
         String normalizedAspectRatio = normalizeAspectRatio(aspectRatio);
         String normalizedResolution = resolution != null && !resolution.trim().isEmpty() ? resolution.trim() : "2K";
-        if (KieImageModels.isImage25(requestedModel)) {
+        if (KieImageModels.isNanoBanana21(requestedModel)) {
+            List<String> imageUrls = new ArrayList<>();
+            imageArray.forEach(node -> imageUrls.add(node.asText()));
+            KieImageModels.validateNanoBanana21ReferenceFormats(imageUrls);
+            KieImageModels.NanoBanana21Parameters params = KieImageModels.validateNanoBanana21(
+                    imageArray.size(), resolution, aspectRatio);
+            normalizedAspectRatio = params.aspectRatio();
+            normalizedResolution = params.resolution();
+            inputNode.set("image_input", imageArray);
+        } else if (KieImageModels.isImage25(requestedModel)) {
             List<String> imageUrls = new ArrayList<>();
             imageArray.forEach(node -> imageUrls.add(node.asText()));
             KieImageModels.validateImage25ReferenceFormats(imageUrls);
@@ -116,7 +133,8 @@ public class KieClientServiceImpl implements KieClientService {
         RuntimeException lastError = null;
         // KIE may return HTTP 200 with business code 500 and no taskId. In that
         // case the task was not accepted, so retrying the same request is safe.
-        for (int attempt = 1; attempt <= 3; attempt++) {
+        for (int attempt = 1; attempt <= KIE_CREATE_TASK_MAX_ATTEMPTS; attempt++) {
+            boolean rateLimited = false;
             RequestBody body = RequestBody.create(jsonBody, MediaType.parse("application/json"));
             Request request = new Request.Builder()
                     .url(url)
@@ -127,9 +145,11 @@ public class KieClientServiceImpl implements KieClientService {
                 String responseBody = response.body() == null ? "" : response.body().string();
                 if (!response.isSuccessful()) {
                     lastError = new RuntimeException("KIE 图片任务创建失败：HTTP " + response.code() + "，" + responseBody);
-                    if (response.code() < 500 || attempt == 3) throw lastError;
-                    log.warn("KIE 图片任务创建返回 HTTP {}，准备第 {}/3 次重试。model={}, resolution={}, aspectRatio={}, refs={}",
-                            response.code(), attempt + 1, actualModel, normalizedResolution, normalizedAspectRatio, imageArray.size());
+                    // 429 是「限流，稍后重试」语义，必须重试；其余 4xx 是请求本身有问题，重试无意义。
+                    if ((response.code() < 500 && response.code() != 429) || attempt == KIE_CREATE_TASK_MAX_ATTEMPTS) throw lastError;
+                    rateLimited = response.code() == 429;
+                    log.warn("KIE 图片任务创建返回 HTTP {}，准备第 {}/{} 次重试。model={}, resolution={}, aspectRatio={}, refs={}",
+                            response.code(), attempt + 1, KIE_CREATE_TASK_MAX_ATTEMPTS, actualModel, normalizedResolution, normalizedAspectRatio, imageArray.size());
                 } else {
                     JsonNode root = objectMapper.readTree(responseBody);
                     int code = root.has("code") ? root.path("code").asInt(200) : 200;
@@ -141,16 +161,17 @@ public class KieClientServiceImpl implements KieClientService {
 
                     String detail = !message.isBlank() ? message : responseBody;
                     lastError = new RuntimeException("KIE 图片任务未受理（业务码 " + code + "）：" + detail);
-                    if (code < 500 || attempt == 3) throw lastError;
-                    log.warn("KIE 图片任务返回业务码 {}，准备第 {}/3 次重试。model={}, resolution={}, aspectRatio={}, refs={}, response={}",
-                            code, attempt + 1, actualModel, normalizedResolution, normalizedAspectRatio, imageArray.size(), responseBody);
+                    if ((code < 500 && code != 429) || attempt == KIE_CREATE_TASK_MAX_ATTEMPTS) throw lastError;
+                    rateLimited = code == 429;
+                    log.warn("KIE 图片任务返回业务码 {}，准备第 {}/{} 次重试。model={}, resolution={}, aspectRatio={}, refs={}, response={}",
+                            code, attempt + 1, KIE_CREATE_TASK_MAX_ATTEMPTS, actualModel, normalizedResolution, normalizedAspectRatio, imageArray.size(), responseBody);
                 }
             } catch (IOException e) {
                 lastError = new RuntimeException("KIE 图片任务网络请求异常: " + e.getMessage(), e);
-                if (attempt == 3) throw lastError;
-                log.warn("KIE 图片任务网络异常，准备第 {}/3 次重试。model={}, error={}", attempt + 1, model, e.getMessage());
+                if (attempt == KIE_CREATE_TASK_MAX_ATTEMPTS) throw lastError;
+                log.warn("KIE 图片任务网络异常，准备第 {}/{} 次重试。model={}, error={}", attempt + 1, KIE_CREATE_TASK_MAX_ATTEMPTS, model, e.getMessage());
             }
-            pauseBeforeRetry(attempt);
+            pauseBeforeRetry(attempt, rateLimited);
         }
         throw lastError == null ? new RuntimeException("KIE 图片任务创建失败") : lastError;
     }
@@ -162,9 +183,11 @@ public class KieClientServiceImpl implements KieClientService {
         }
     }
 
-    private void pauseBeforeRetry(int attempt) {
+    private void pauseBeforeRetry(int attempt, boolean rateLimited) {
+        // 429 需要等 KIE 的 10 秒滑窗滚过去，退避要明显长于 5xx 的即时重试。
+        long delayMs = rateLimited ? 2000L * attempt : 500L * attempt;
         try {
-            Thread.sleep(500L * attempt);
+            Thread.sleep(delayMs);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new RuntimeException("KIE 图片任务重试被中断", e);
@@ -355,58 +378,79 @@ public class KieClientServiceImpl implements KieClientService {
         String jsonBody = gson.toJson(request);
         log.info("🚀 [视频任务下发] 模型: {}, 请求内容: {}", model, jsonBody);
 
-        // 2. 构造 OkHttp 请求 (使用动态获取的 apiUrl 和 apiKey)
-        okhttp3.Request okRequest = new okhttp3.Request.Builder()
-                .url(apiUrl + "/jobs/createTask") // 完美拼接，不会再报 404
-                .post(okhttp3.RequestBody.create(jsonBody, okhttp3.MediaType.parse("application/json")))
-                .addHeader("Authorization", "Bearer " + apiKey)
-                .build();
+        String lastFailure = "";
+        for (int attempt = 1; attempt <= KIE_CREATE_TASK_MAX_ATTEMPTS; attempt++) {
+            boolean rateLimited = false;
 
-        // 3. 执行请求并解析响应
-        try (okhttp3.Response response = httpClient.newCall(okRequest).execute()) {
-            String resStr = response.body() != null ? response.body().string() : "";
+            // 2. 构造 OkHttp 请求 (使用动态获取的 apiUrl 和 apiKey)
+            okhttp3.Request okRequest = new okhttp3.Request.Builder()
+                    .url(apiUrl + "/jobs/createTask") // 完美拼接，不会再报 404
+                    .post(okhttp3.RequestBody.create(jsonBody, okhttp3.MediaType.parse("application/json")))
+                    .addHeader("Authorization", "Bearer " + apiKey)
+                    .build();
 
-            if (!response.isSuccessful()) {
-                log.error("❌ KIE 接口响应异常: HTTP {}, 返回内容: {}", response.code(), resStr);
-                throw new BusinessException("KIE 接口请求失败，HTTP 状态码: " + response.code());
+            // 3. 执行请求并解析响应
+            try (okhttp3.Response response = httpClient.newCall(okRequest).execute()) {
+                String resStr = response.body() != null ? response.body().string() : "";
+
+                if (!response.isSuccessful()) {
+                    lastFailure = "HTTP " + response.code() + " " + resStr;
+                    log.error("❌ KIE 接口响应异常: HTTP {}, 返回内容: {}", response.code(), resStr);
+                    // 429 是「限流，稍后重试」语义，必须重试；其余 4xx 是请求本身有问题，重试无意义。
+                    if ((response.code() < 500 && response.code() != 429) || attempt == KIE_CREATE_TASK_MAX_ATTEMPTS) {
+                        throw new BusinessException("KIE 接口请求失败，HTTP 状态码: " + response.code());
+                    }
+                    rateLimited = response.code() == 429;
+                } else {
+                    log.info("📥 [KIE 响应成功]: {}", resStr);
+
+                    // 智能拆包解析 KIE 的嵌套 JSON 结构
+                    com.google.gson.JsonObject rootObj = com.google.gson.JsonParser.parseString(resStr).getAsJsonObject();
+
+                    int code = rootObj.has("code") ? rootObj.get("code").getAsInt() : 200;
+                    String msg = rootObj.has("msg") ? rootObj.get("msg").getAsString() : "";
+                    String status = rootObj.has("status") ? rootObj.get("status").getAsString() : msg;
+
+                    if (code != 200 && !"success".equalsIgnoreCase(status) && !"success".equalsIgnoreCase(msg)) {
+                        lastFailure = "业务码 " + code + " " + msg;
+                        log.warn("⚠️ KIE 任务受理失败: {}", resStr);
+                        if ((code < 500 && code != 429) || attempt == KIE_CREATE_TASK_MAX_ATTEMPTS) {
+                            throw new BusinessException("AI 服务受理失败: " + msg);
+                        }
+                        rateLimited = code == 429;
+                    } else {
+                        com.google.gson.JsonObject dataObj = rootObj.has("data") && !rootObj.get("data").isJsonNull()
+                                ? rootObj.getAsJsonObject("data") : rootObj;
+
+                        if (!dataObj.has("taskId") || dataObj.get("taskId").isJsonNull()) {
+                            log.warn("⚠️ KIE 任务受理异常，找不到 taskId: {}", resStr);
+                            throw new BusinessException("AI 服务未返回 taskId");
+                        }
+
+                        KieTaskResult result = new KieTaskResult();
+                        result.setTaskId(dataObj.get("taskId").getAsString());
+                        result.setStatus("SUCCESS");
+
+                        return result;
+                    }
+                }
+            } catch (java.net.SocketTimeoutException e) {
+                // 超时不代表未受理，交给画布轮询兜底，避免重复下单。
+                log.error("⏳ KIE 接口调用超时: {}", e.getMessage());
+                throw new BusinessException("AI 服务响应超时，请稍后在大盘查看任务状态");
+            } catch (BusinessException e) {
+                throw e;
+            } catch (Exception e) {
+                lastFailure = e.getClass().getSimpleName() + ": " + e.getMessage();
+                log.error("💥 KIE 视频任务调用发生异常（第 {}/{} 次）", attempt, KIE_CREATE_TASK_MAX_ATTEMPTS, e);
+                if (attempt == KIE_CREATE_TASK_MAX_ATTEMPTS) {
+                    throw new BusinessException("任务下发异常: " + e.getMessage());
+                }
             }
 
-            log.info("📥 [KIE 响应成功]: {}", resStr);
-
-            // 智能拆包解析 KIE 的嵌套 JSON 结构
-            com.google.gson.JsonObject rootObj = com.google.gson.JsonParser.parseString(resStr).getAsJsonObject();
-
-            int code = rootObj.has("code") ? rootObj.get("code").getAsInt() : 200;
-            String msg = rootObj.has("msg") ? rootObj.get("msg").getAsString() : "";
-            String status = rootObj.has("status") ? rootObj.get("status").getAsString() : msg;
-
-            if (code != 200 && !"success".equalsIgnoreCase(status) && !"success".equalsIgnoreCase(msg)) {
-                log.warn("⚠️ KIE 任务受理失败: {}", resStr);
-                throw new BusinessException("AI 服务受理失败: " + msg);
-            }
-
-            com.google.gson.JsonObject dataObj = rootObj.has("data") && !rootObj.get("data").isJsonNull()
-                    ? rootObj.getAsJsonObject("data") : rootObj;
-
-            if (!dataObj.has("taskId") || dataObj.get("taskId").isJsonNull()) {
-                log.warn("⚠️ KIE 任务受理异常，找不到 taskId: {}", resStr);
-                throw new BusinessException("AI 服务未返回 taskId");
-            }
-
-            String taskId = dataObj.get("taskId").getAsString();
-
-            KieTaskResult result = new KieTaskResult();
-            result.setTaskId(taskId);
-            result.setStatus("SUCCESS");
-
-            return result;
-
-        } catch (java.net.SocketTimeoutException e) {
-            log.error("⏳ KIE 接口调用超时: {}", e.getMessage());
-            throw new BusinessException("AI 服务响应超时，请稍后在大盘查看任务状态");
-        } catch (Exception e) {
-            log.error("💥 KIE 视频任务调用发生严重异常", e);
-            throw new BusinessException("任务下发异常: " + e.getMessage());
+            pauseBeforeRetry(attempt, rateLimited);
         }
+
+        throw new BusinessException("任务下发异常: " + lastFailure);
     }
 }

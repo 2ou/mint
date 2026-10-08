@@ -108,12 +108,28 @@ public class TemplateLabController {
         return ApiResponse.ok("个人模板已删除", null);
     }
 
+    @DeleteMapping("/templates/{templateId}")
+    public ApiResponse<Void> deleteTemplate(
+            @PathVariable("templateId") String templateId,
+            @RequestAttribute("userId") Long userId) {
+        templateLabService.deleteTemplate(templateId, userId);
+        return ApiResponse.ok("模板已删除", null);
+    }
+
     @PostMapping(value = "/projects/{id}/assets", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ApiResponse<Map<String, Object>> uploadAsset(
             @PathVariable("id") Long id,
             @RequestAttribute("userId") Long userId,
             @RequestParam("file") MultipartFile file) {
         return ApiResponse.ok("图片已上传", templateLabService.uploadAsset(id, userId, file));
+    }
+
+    @DeleteMapping("/projects/{id}/assets")
+    public ApiResponse<Map<String, Object>> deleteAssets(
+            @PathVariable("id") Long id,
+            @RequestAttribute("userId") Long userId,
+            @RequestBody(required = false) Map<String, Object> payload) {
+        return ApiResponse.ok("素材已移除", templateLabService.deleteAssets(id, userId, payload));
     }
 
     @GetMapping("/projects/{id}/cutout-quote")

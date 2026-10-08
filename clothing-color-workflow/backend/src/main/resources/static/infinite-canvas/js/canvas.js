@@ -8,6 +8,7 @@ function langIsEn(){ return window.StudioI18n?.lang?.() === 'en'; }
 const CANVAS_UPLOAD_MAX = 20;
 const CANVAS_REFERENCE_IMAGE_MAX = 20;
 const GPT_IMAGE_25_REFERENCE_MAX = 16;
+const NANO_BANANA_21_REFERENCE_MAX = 14;
 const KIE_IMAGE_UPLOAD_MAX_BYTES = 10 * 1024 * 1024;
 const KIE_MEDIA_UPLOAD_MAX_BYTES = 100 * 1024 * 1024;
 function actionFailed(labelKey, detail=''){
@@ -422,7 +423,7 @@ let remoteSyncInterval = null;
 let remoteSyncBusy = false;
 let lastCanvasUpdatedAt = 0;
 let models = {gpt:'gpt-image-2', nano:'nano-banana-pro'};
-let imageModels = ['nano-banana-pro', 'nano-banana-2', 'gpt-image-2-image-to-image', 'gpt-image-2-5-sunburst'];
+let imageModels = ['nano-banana-pro', 'nano-banana-2-1', 'gpt-image-2-image-to-image', 'gpt-image-2-5-sunburst'];
 let chatModels = ['gpt-4o-mini'];
 let videoModels = [];
 let msChatModels = [];
@@ -486,12 +487,14 @@ let managerSelectedPromptIds = new Set();
 let activeCanvasWorkflowCategoryId = '';
 const activeCanvasTaskPolls = new Set();
 let canvasTaskLedger = [];
-let canvasTaskLedgerMeta = {capacity:{active:0, max:10, available:10}, completionMode:'polling'};
+let canvasTaskLedgerMeta = {capacity:{active:0, max:-1, available:-1}, completionMode:'polling'};
 let canvasBillingSummary = {actual_cost:0, pending_estimate:0, tasks:[]};
 let canvasLogFilter = 'all';
 let canvasTaskLedgerLoading = false;
 const pendingCanvasCostConfirmations = new Map();
-const CANVAS_TASK_SUBMIT_LIMIT = 10;
+// 客户端在途提交请求的并发数（不是任务名额限制——画布名额已取消）。
+// 取值对齐 KIE 官方提交速率「每 10 秒 20 个新请求/账户」，避免一次性轰出过多请求。
+const CANVAS_TASK_SUBMIT_CONCURRENCY = 20;
 const canvasTaskSubmitQueue = [];
 let activeCanvasTaskSubmissions = 0;
 let hoveredConnectionId = '';
@@ -832,7 +835,7 @@ function uniqueModels(list){
 }
 function defaultApiProviders(){
     return [{id:'ai-project-kie', name:'项目 KIE', base_url:'/api/canvas/kie/v1', enabled:true,
-        image_models:['nano-banana-pro','nano-banana-2','gpt-image-2-image-to-image','gpt-image-2-5-sunburst'], chat_models:chatModels,
+        image_models:['nano-banana-pro','nano-banana-2-1','gpt-image-2-image-to-image','gpt-image-2-5-sunburst'], chat_models:chatModels,
         video_models:DEFAULT_VIDEO_MODELS, has_key:false, key_preview:'后端托管'}];
 }
 function isRunningHubProvider(provider){
@@ -891,8 +894,10 @@ function sanitizeImageNodeProviderModel(node){
     if(!node || node.type !== 'generator') return;
     node.apiProvider = resolveImageProviderId(node.apiProvider || '');
     const models = providerImageModels(node.apiProvider);
+    const resolvedModel = resolveImageModel(node.model);
     if(!models.length) node.model = '';
-    else if(!models.includes(resolveImageModel(node.model))) node.model = models[0] || '';
+    else if(!models.includes(resolvedModel)) node.model = models[0] || '';
+    else node.model = resolvedModel;
 }
 function videoApiProviders(){
     const providers = (apiProviders.length ? apiProviders : defaultApiProviders())
@@ -972,7 +977,12 @@ function allChatModels(){
 function resolveImageModel(value){
     if(value === 'gpt') return models.gpt;
     if(value === 'nano') return models.nano;
+    if(String(value || '').trim().toLowerCase() === 'nano-banana-2') return 'nano-banana-2-1';
     return value || allImageModels(managedProviderId)[0] || models.gpt;
+}
+function isNanoBanana21Model(model){
+    const value = String(model || '').trim().toLowerCase();
+    return value === 'nano-banana-2-1' || value === 'nano-banana-2';
 }
 function isKieImage25Model(model){
     const value = String(model || '').trim().toLowerCase();
@@ -980,7 +990,7 @@ function isKieImage25Model(model){
         || value.startsWith('gpt-image-2-5-sunburst-');
 }
 function finalKieImageModel(model, referenceCount=0){
-    const value = String(model || '').trim();
+    const value = resolveImageModel(String(model || '').trim());
     if(value === 'gpt-image-2-5-sunburst' || value.startsWith('gpt-image-2-5-sunburst-')){
         return referenceCount > 0 ? 'gpt-image-2-5-sunburst-image-to-image' : 'gpt-image-2-5-sunburst-text-to-image';
     }
@@ -989,7 +999,7 @@ function finalKieImageModel(model, referenceCount=0){
 function imageModelDisplayName(model){
     const value = String(model || '').trim();
     if(value === 'nano-banana-pro') return 'Nano Banana Pro';
-    if(value === 'nano-banana-2') return 'Nano Banana 2';
+    if(value === 'nano-banana-2-1' || value === 'nano-banana-2') return 'Nano Banana 2.1';
     if(value === 'gpt-image-2-image-to-image' || value === 'gpt-image-2') return 'GPT Image 2';
     if(value === 'gpt-image-2-5-sunburst') return 'GPT Image 2.5';
     return value;
@@ -1257,7 +1267,8 @@ function canvasAspectRatioFromSize(sizeValue){
     return `${size.width / divisor}:${size.height / divisor}`;
 }
 function canvasKieImageAspectRatio(gen, sizeValue){
-    if(isKieImage25Model(resolveImageModel(gen?.model)) && gen?.ratio === 'source') return 'auto';
+    const model = resolveImageModel(gen?.model);
+    if((isKieImage25Model(model) || isNanoBanana21Model(model)) && gen?.ratio === 'source') return 'auto';
     return CANVAS_KIE_ASPECT_RATIO_BY_PRESET[String(gen?.ratio || '')]
         || canvasAspectRatioFromSize(sizeValue);
 }
@@ -1266,16 +1277,28 @@ function canvasImageReferences(model, refs){
     if(isKieImage25Model(model) && images.length > GPT_IMAGE_25_REFERENCE_MAX){
         throw new Error(`GPT Image 2.5 最多支持 ${GPT_IMAGE_25_REFERENCE_MAX} 张参考图，当前连接了 ${images.length} 张`);
     }
-    return images.slice(0, isKieImage25Model(model) ? GPT_IMAGE_25_REFERENCE_MAX : CANVAS_REFERENCE_IMAGE_MAX);
+    if(isNanoBanana21Model(model) && images.length > NANO_BANANA_21_REFERENCE_MAX){
+        throw new Error(`Nano Banana 2.1 最多支持 ${NANO_BANANA_21_REFERENCE_MAX} 张参考图，当前连接了 ${images.length} 张`);
+    }
+    const limit = isKieImage25Model(model) ? GPT_IMAGE_25_REFERENCE_MAX
+        : isNanoBanana21Model(model) ? NANO_BANANA_21_REFERENCE_MAX
+        : CANVAS_REFERENCE_IMAGE_MAX;
+    return images.slice(0, limit);
 }
-function canvasImage25ValidationMessage(payload){
-    if(!isKieImage25Model(payload?.model)) return '';
+function canvasKieImageValidationMessage(payload){
     const resolution = String(payload?.resolution || '').toUpperCase();
     const ratio = String(payload?.aspect_ratio || '');
-    if(!['1K','2K','4K'].includes(resolution)) return 'GPT Image 2.5 必须选择 1K、2K 或 4K 分辨率';
-    const ratios = new Set(['auto','1:1','3:2','2:3','16:9','9:16','4:3','3:4','21:9','27:16','16:27','9:8','8:9']);
-    if(!ratios.has(ratio)) return `GPT Image 2.5 不支持画面比例 ${ratio || '空'}`;
-    if(resolution !== '1K' && ['27:16','16:27','9:8','8:9'].includes(ratio)) return `${ratio} 比例仅支持 1K 分辨率`;
+    if(isNanoBanana21Model(payload?.model)){
+        if(!['1K','2K','4K'].includes(resolution)) return 'Nano Banana 2.1 必须选择 1K、2K 或 4K 分辨率';
+        const ratios = new Set(['auto','1:1','2:3','3:2','1:4','4:1','3:4','4:3','4:5','5:4','1:8','8:1','9:16','16:9','21:9']);
+        if(!ratios.has(ratio)) return `Nano Banana 2.1 不支持画面比例 ${ratio || '空'}`;
+    }
+    if(isKieImage25Model(payload?.model)){
+        if(!['1K','2K','4K'].includes(resolution)) return 'GPT Image 2.5 必须选择 1K、2K 或 4K 分辨率';
+        const ratios = new Set(['auto','1:1','3:2','2:3','16:9','9:16','4:3','3:4','21:9','27:16','16:27','9:8','8:9']);
+        if(!ratios.has(ratio)) return `GPT Image 2.5 不支持画面比例 ${ratio || '空'}`;
+        if(resolution !== '1K' && ['27:16','16:27','9:8','8:9'].includes(ratio)) return `${ratio} 比例仅支持 1K 分辨率`;
+    }
     return '';
 }
 function normalizeApiNodeLayout(node){
@@ -2852,7 +2875,7 @@ function normalizeUnavailableCanvasNode(node){
     if(['msgen','rh','comfy','ltxDirector'].includes(node.type)){
         node.type = 'generator';
         node.apiProvider = 'ai-project-kie';
-        node.model = ['nano-banana-pro','nano-banana-2','gpt-image-2-image-to-image','gpt-image-2-5-sunburst'].includes(node.model) ? node.model : 'nano-banana-pro';
+        node.model = ['nano-banana-pro','nano-banana-2-1','gpt-image-2-image-to-image','gpt-image-2-5-sunburst'].includes(resolveImageModel(node.model)) ? resolveImageModel(node.model) : 'nano-banana-pro';
         node.resolution = node.resolution || '1k';
         node.ratio = node.ratio || 'square';
         node.runStatus = node.runStatus === 'running' ? '' : node.runStatus;
@@ -7425,7 +7448,7 @@ function buildLoopSubmissionPlan(loop, targetId, order=[]){
             error:''
         };
     });
-    return {targetId, order:[...(order || [])], previewTargetId:target?.id || '', maxParallel:CANVAS_TASK_SUBMIT_LIMIT, rounds};
+    return {targetId, order:[...(order || [])], previewTargetId:target?.id || '', maxParallel:Math.max(1, rounds.length), rounds};
 }
 function loopRunCounts(run){
     const rounds = run?.rounds || [];
@@ -7476,7 +7499,7 @@ function loopResultGroupHtml(node){
         </article>`;
     }).join('');
     return `<section class="loop-result-group">
-        <header><div><span>本次结果</span><b>${loopRunStatusText(run)}</b></div><small>并发上限 ${run.maxParallel || CANVAS_TASK_SUBMIT_LIMIT} 轮</small></header>
+        <header><div><span>本次结果</span><b>${loopRunStatusText(run)}</b></div><small>共 ${counts.total} 轮</small></header>
         <div class="loop-result-progress"><i style="width:${Math.max(0, Math.min(100, progress))}%"></i></div>
         <div class="loop-result-summary"><span>成功 ${counts.succeeded}</span><span>失败 ${counts.failed}</span><span>进行中 ${counts.running}</span></div>
         <div class="loop-result-list">${rows}</div>
@@ -7557,7 +7580,7 @@ function confirmLoopSubmission(loop, plan){
         };
         const onKeydown = event => { if(event.key === 'Escape') close(false); };
         overlay.innerHTML = `<section class="loop-submission-dialog" role="dialog" aria-modal="true" aria-labelledby="loopSubmissionTitle">
-            <header><div><span class="loop-submission-eyebrow">KIE 任务清单</span><h2 id="loopSubmissionTitle">确认 ${rounds.length} 轮任务</h2><p>以下图片、提示词与参数即为本次要提交给 KIE 的付费任务；确认后立即批量生图，失败轮可在结果组单独重试。</p></div><div class="loop-submission-limit"><b>并发 ${plan.maxParallel}</b><span>最多同时提交</span></div></header>
+            <header><div><span class="loop-submission-eyebrow">KIE 任务清单</span><h2 id="loopSubmissionTitle">确认 ${rounds.length} 轮任务</h2><p>以下图片、提示词与参数即为本次要提交给 KIE 的付费任务；确认后立即批量生图，失败轮可在结果组单独重试。</p></div><div class="loop-submission-limit"><b>${plan.maxParallel} 轮</b><span>全部并发提交</span></div></header>
             <div class="loop-submit-columns"><span>轮次</span><span>输入图片</span><span>参数说明</span><span>最终提示词</span><span>预估</span></div>
             <div class="loop-submit-list">${rows}</div>
             <div class="loop-submit-total"><div><span>预估合计</span><b data-loop-quote-total>计算中…</b></div><small data-loop-quote-note>费用以 KIE 账单回传为准</small></div>
@@ -11917,8 +11940,8 @@ async function runGenerator(genId, opts={}){
         size:requestSize,
         reference_images:referenceImages
     };
-    const image25Error = canvasImage25ValidationMessage(payload);
-    if(image25Error){ showErrorModal(image25Error, '参数不受支持'); return; }
+    const imageValidationError = canvasKieImageValidationMessage(payload);
+    if(imageValidationError){ showErrorModal(imageValidationError, '参数不受支持'); return; }
     if(!opts.skipCostConfirm && !await confirmCanvasCostSubmission('image', payload, count)) return;
     let pendingIds = [];
     const startedAt = nowMs();
@@ -12025,8 +12048,8 @@ async function runGeneratorLegacy(genId, opts={}){
         canvas_id:String(canvas?.id || ''),
         canvas_node_id:String(gen.id || '')
     };
-    const image25Error = canvasImage25ValidationMessage(payload);
-    if(image25Error){ showErrorModal(image25Error, '参数不受支持'); return; }
+    const imageValidationError = canvasKieImageValidationMessage(payload);
+    if(imageValidationError){ showErrorModal(imageValidationError, '参数不受支持'); return; }
     if(!opts.skipCostConfirm && !await confirmCanvasCostSubmission('image', payload, count)) return;
     if(out) out._pending = [...(out._pending||[]), ...pendingIds.map(id => makePendingForRun(id, run, gen, {refs, requestSize}))];
     if(!opts.cascade){
@@ -13200,7 +13223,8 @@ async function runCascadeNodeWithLoopContext(node, ctx, opts={}){
     }
 }
 function cascadeParallelLimit(order, totalRounds){
-    return Math.max(1, Math.min(totalRounds, CANVAS_TASK_SUBMIT_LIMIT));
+    // 并发轮数不再设上限：实际请求速率由 enqueueCanvasTaskSubmission 的节流控制。
+    return Math.max(1, totalRounds);
 }
 async function runLimitedCascadeRounds(rounds, limit, runner){
     let next = 0;
@@ -14388,7 +14412,7 @@ function enqueueCanvasTaskSubmission(action){
     });
 }
 function drainCanvasTaskSubmissionQueue(){
-    while(activeCanvasTaskSubmissions < CANVAS_TASK_SUBMIT_LIMIT && canvasTaskSubmitQueue.length){
+    while(activeCanvasTaskSubmissions < CANVAS_TASK_SUBMIT_CONCURRENCY && canvasTaskSubmitQueue.length){
         const next = canvasTaskSubmitQueue.shift();
         activeCanvasTaskSubmissions += 1;
         Promise.resolve()
@@ -14664,8 +14688,8 @@ async function retryCanvasPendingOutput(pendingId){
     let retryPayload;
     try { retryPayload = retryCanvasTaskPayload(pending); }
     catch(error){ showErrorModal(error.message, '无法重试'); return; }
-    const image25Error = canvasImage25ValidationMessage(retryPayload);
-    if(image25Error){ showErrorModal(image25Error, '参数不受支持'); return; }
+    const imageValidationError = canvasKieImageValidationMessage(retryPayload);
+    if(imageValidationError){ showErrorModal(imageValidationError, '参数不受支持'); return; }
     if(!await confirmCanvasCostSubmission(canvasTaskMediaType(pending), retryPayload, 1)) return;
     pending.retrying = true;
     refreshNodes([out.id]);

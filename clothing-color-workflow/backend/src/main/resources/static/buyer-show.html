@@ -154,6 +154,11 @@
         .result-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
         .result-item { border: 1px solid #ebeef5; border-radius: 10px; overflow: hidden; background: #fff; }
         .result-item .ri-footer { padding: 8px 12px; font-size: 12px; color: #909399; }
+        .result-image { width: 100%; display: block; }
+        .result-media {
+            width: 100%; background: #fafafa;
+            display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+        }
 
         .scene-loading-spinner {
             width: 32px; height: 32px; border-radius: 50%;
@@ -161,6 +166,15 @@
             animation: scene-spin 1s linear infinite;
         }
         @keyframes scene-spin { to { transform: rotate(360deg); } }
+
+        /* 已启用技能提示条 */
+        .skill-stack-note {
+            display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+            padding: 10px 14px; margin-top: 2px;
+            background: #f7f8ff; border: 1px solid #e6e9ff; border-radius: 10px;
+        }
+        .skill-stack-note .ssn-title { font-size: 12px; font-weight: 700; color: #4b53b8; }
+        .skill-stack-note .ssn-hint { font-size: 12px; color: #909399; margin-left: 2px; }
     </style>
 </head>
 <body>
@@ -268,26 +282,53 @@
                                             <el-select v-model="imageModel" style="width:100%">
                                                 <el-option-group label="Google">
                                                     <el-option label="Nano Banana Pro" value="nano-banana-pro"/>
-                                                    <el-option label="Nano Banana 2" value="nano-banana-2"/>
+                                                    <el-option label="Nano Banana 2.1" value="nano-banana-2-1"/>
                                                 </el-option-group>
                                                 <el-option-group label="OpenAI">
-                                                    <el-option label="GPT Image 2" value="gpt-image-2-image-to-image"/>
                                                     <el-option label="GPT Image 2.5" value="gpt-image-2-5-sunburst"/>
                                                 </el-option-group>
                                             </el-select>
                                         </el-form-item>
                                     </el-col>
                                     <el-col :span="6">
-                                        <el-form-item label="每图提示词数">
-                                            <el-input-number v-model="countPerImage" :min="1" :max="5" style="width:100%"/>
+                                        <el-form-item label="图片比例">
+                                            <el-select v-model="aspectRatio" style="width:100%">
+                                                <el-option label="3:4 竖版（推荐）" value="3:4"/>
+                                                <el-option label="9:16 竖屏全屏" value="9:16"/>
+                                                <el-option label="4:5 竖版偏方" value="4:5"/>
+                                                <el-option label="1:1 正方形" value="1:1"/>
+                                                <el-option label="4:3 横版" value="4:3"/>
+                                                <el-option label="16:9 横版宽屏" value="16:9"/>
+                                            </el-select>
                                         </el-form-item>
                                     </el-col>
                                     <el-col :span="6">
+                                        <el-form-item label="每图条数">
+                                            <el-input-number v-model="countPerImage" :min="1" :max="5" style="width:100%"/>
+                                        </el-form-item>
+                                    </el-col>
+                                </el-row>
+                                <el-row :gutter="16">
+                                    <el-col :span="6">
+                                        <el-form-item label="分辨率">
+                                            <el-input model-value="2K（固定）" disabled style="width:100%"/>
+                                        </el-form-item>
+                                    </el-col>
+                                    <el-col :span="18">
                                         <div style="padding-top:8px;font-size:13px;color:#606266">
-                                            共 {{ fileList.length }} 张图 × {{ countPerImage }} 条 = <b style="color:#667eea">{{ fileList.length * countPerImage }}</b> 条提示词
+                                            共 {{ fileList.length }} 图 × {{ countPerImage }} 条 = <b style="color:#667eea">{{ fileList.length * countPerImage }}</b> 条
                                         </div>
                                     </el-col>
                                 </el-row>
+
+                                <div class="skill-stack-note">
+                                    <span class="ssn-title">🧩 已启用技能</span>
+                                    <el-tag size="small" effect="plain" type="primary">电商买家秀 · 主干</el-tag>
+                                    <el-tag size="small" effect="plain">模特生成 · 人物DNA</el-tag>
+                                    <el-tag size="small" effect="plain">去塑料人像 · 真实肤质</el-tag>
+                                    <el-tag size="small" effect="plain">women-lookbook-styling · 场景镜头</el-tag>
+                                    <span class="ssn-hint">提示词由四技能叠加生成，普通消费者视角，保留完整脸部</span>
+                                </div>
                             </el-form>
                         </div>
 
@@ -297,6 +338,9 @@
                                        style="padding:12px 48px;background:linear-gradient(135deg,#667eea,#764ba2);border:none;font-weight:600">
                                 🎨 生成买家秀提示词
                             </el-button>
+                            <p v-if="loading" style="margin:12px 0 0;font-size:12px;color:#909399">
+                                正在生成，通常 10~30 秒；若上游波动会自动重试，最长约 90 秒，请勿关闭页面
+                            </p>
                         </div>
                     </div>
 
@@ -371,10 +415,11 @@
                             <div v-for="task in submittedTasks" :key="task.taskId" class="result-item">
                                 <template v-if="task.status==='SUCCESS' && (task.resultOssUrl || task.resultTempUrl)">
                                     <el-image :src="task.resultOssUrl || task.resultTempUrl" fit="cover"
-                                              style="width:100%;aspect-ratio:16/9" :preview-src-list="[task.resultOssUrl || task.resultTempUrl]" preview-teleported/>
+                                              class="result-image" :style="{aspectRatio: ratioCss}"
+                                              :preview-src-list="[task.resultOssUrl || task.resultTempUrl]" preview-teleported/>
                                 </template>
                                 <template v-else>
-                                    <div style="width:100%;aspect-ratio:16/9;background:#fafafa;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px">
+                                    <div class="result-media" :style="{aspectRatio: ratioCss}">
                                         <template v-if="task.status==='FAILED'">
                                             <span style="font-size:2rem;color:#F56C6C">✕</span>
                                             <span style="font-size:12px;color:#F56C6C">失败</span>
@@ -409,6 +454,9 @@
             const scenePreference = ref('');
             const textModel = ref('gpt-5.6-terra');
             const imageModel = ref('nano-banana-pro');
+            const aspectRatio = ref('3:4');
+            // 分辨率固定 2K，不可修改（页面上以只读形式展示）
+            const resolution = ref('2K');
             const countPerImage = ref(1);
             const loading = ref(false);
             const groups = ref([]);
@@ -489,23 +537,34 @@
                 return total;
             });
 
+            // 结果缩略图按所选比例显示（"3:4" → "3 / 4"）
+            const ratioCss = computed(() => (aspectRatio.value || '3:4').replace(':', ' / '));
+
             const uploadToOss = async (fileObj) => {
                 const realFile = fileObj.raw;
                 if (!realFile) return fileObj.url;
 
-                const policyRes = await axios.get('/api/oss/policy');
+                const policyRes = await axios.get('/api/oss/policy?type=temp');
                 if (!policyRes.data.success) throw new Error('获取上传签名失败');
+                // 后端返回的字段名是小写 accessid（见 OssController#getPolicy），不能写成 accessId
                 const policy = policyRes.data.data;
+                const dot = realFile.name.lastIndexOf('.');
+                const ext = dot >= 0 ? realFile.name.substring(dot) : '.jpg';
+                const key = policy.dir + Date.now() + '_' + Math.random().toString(36).substr(2, 6) + ext;
+
                 const formData = new FormData();
-                formData.append('key', policy.dir + Date.now() + '_' + realFile.name);
+                formData.append('key', key);
                 formData.append('policy', policy.policy);
-                formData.append('OSSAccessKeyId', policy.accessId);
+                formData.append('OSSAccessKeyId', policy.accessid);
                 formData.append('signature', policy.signature);
-                formData.append('callback', policy.callback || '');
+                formData.append('success_action_status', '200');
                 formData.append('file', realFile);
 
-                const uploadRes = await axios.post(policy.host, formData);
-                return uploadRes.data?.url || (policy.host + '/' + policy.dir + realFile.name);
+                await axios.post(policy.host, formData, {
+                    headers: { 'Content-Type': 'multipart/form-data' },
+                    timeout: 120000
+                });
+                return policy.host + '/' + key;
             };
 
             const generate = async () => {
@@ -514,6 +573,7 @@
                 if (!fileList.value.length) { ElementPlus.ElMessage.warning('请上传至少一张产品图'); return; }
 
                 loading.value = true;
+                let stage = '上传产品图';
                 try {
                     const imageUrls = [];
                     for (const f of fileList.value) {
@@ -526,14 +586,17 @@
                         }
                     }
 
+                    stage = '生成提示词';
+                    // 上游 KIE 抽风时后端会自动退避重试（最多 8 次），这里放宽超时别提前掐断
                     const r = await axios.post('/api/buyer-show/generate', {
                         spu: spu.value,
                         clothingDesc: clothingDesc.value,
                         imageUrls: imageUrls,
                         scenePreference: scenePreference.value,
                         countPerImage: countPerImage.value,
+                        aspectRatio: aspectRatio.value,
                         textModel: textModel.value
-                    });
+                    }, { timeout: 240000 });
                     if (r.data.success) {
                         const parsed = JSON.parse(r.data.data);
                         groups.value = (parsed.groups || []).map(g => ({
@@ -548,7 +611,13 @@
                         ElementPlus.ElMessage.error(r.data.message || '生成失败');
                     }
                 } catch (e) {
-                    ElementPlus.ElMessage.error('生成失败: ' + (e.response?.data?.message || e.message));
+                    const status = e.response?.status;
+                    let detail = e.response?.data?.message || e.message;
+                    if (stage === '上传产品图' && status === 403) {
+                        detail = '云存储拒绝上传（403），请检查 OSS 直传签名配置';
+                    }
+                    ElementPlus.ElMessage.error(stage + '失败'
+                        + (status ? '（HTTP ' + status + '）' : '') + '：' + detail);
                 } finally {
                     loading.value = false;
                 }
@@ -564,8 +633,8 @@
                             const r = await axios.post('/api/models/create-task', {
                                 prompt: prompt.prompt,
                                 model: imageModel.value,
-                                resolution: '4K',
-                                aspectRatio: '16:9'
+                                resolution: resolution.value,
+                                aspectRatio: aspectRatio.value
                             });
                             if (r.data.success) {
                                 tasks.push({...r.data.data, status: r.data.data.taskStatus || 'CREATED'});
@@ -618,7 +687,8 @@
             const taskStatusLabel = (s) => ({CREATED:'⏳ 排队中',PROCESSING:'🔄 生图中',GENERATING:'🔄 生图中',SUCCESS:'✅ 已完成',FAILED:'❌ 失败'}[s]||s);
 
             return {
-                step, spu, clothingDesc, scenePreference, textModel, imageModel, countPerImage, loading,
+                step, spu, clothingDesc, scenePreference, textModel, imageModel, aspectRatio, ratioCss, resolution,
+                countPerImage, loading,
                 groups, allPrompts, totalGenCount, isDragging,
                 loadingSubmit, submittedTasks,
                 onDragOver, onDragLeave, handleDrop, generate, submitTask, resetAll, copyText,

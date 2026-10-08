@@ -12,6 +12,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import java.io.File;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.env.Environment;
 import org.springframework.core.env.Profiles;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -35,10 +36,23 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class CanvasTaskService {
 
-    public static final int MAX_ACTIVE_TASKS = 10;
+    /**
+     * 画布在途任务名额上限。0 或负数表示<b>不限制</b>（当前默认）。
+     *
+     * <p>KIE 官方并不限制并发运行的任务数（文档原文：「This typically allows 100+ concurrent
+     * running tasks」），只按账户限制「每 10 秒 20 个新请求」。因此本地名额默认关闭，
+     * 真正的约束是提交速率，由 {@code KieClientServiceImpl} 的 429 重试兜底。
+     *
+     * <p>如需临时收紧，配置 {@code app.canvas.max-active-tasks=N} 即可恢复闸门。</p>
+     */
+    private static final int UNLIMITED_ACTIVE_TASKS = 0;
+
+    @Value("${app.canvas.max-active-tasks:0}")
+    private int maxActiveTasks;
 
     private final CanvasTaskRepository canvasTaskRepository;
     private final ObjectMapper objectMapper;
+    private final KieClientService kieClientService;
     private final OssService ossService;
     private final AppProperties appProperties;
     private final Environment environment;
@@ -166,26 +180,75 @@ public class CanvasTaskService {
         }
     }
 
+    /**
+     * 服务端兜底：把仍停留在 PROCESSING 的任务拿去 KIE 复核并回填结果。
+     *
+     * <p>画布任务的状态更新原本只依赖浏览器轮询（prod 侧依赖 callback）。一旦页面被关闭、
+     * 刷新，或 callback 丢失，任务就会永远停在 PROCESSING —— 而 KIE 那边其实早已 success、
+     * 结果图也生成了：本地既拿不回图，名额还会被长期占用。</p>
+     *
+     * <p>只回填「KIE 已给出终态」的任务；仍在跑的留给下一轮，不误判、不改写人工取消的任务。</p>
+     */
+    @Scheduled(fixedDelayString = "${app.canvas.pending-sync-ms:60000}")
+    public void syncPendingTaskResults() {
+        List<CanvasTask> pending = canvasTaskRepository.findTop20ByStatusIgnoreCaseOrderByUpdatedAtAsc("PROCESSING");
+        if (pending.isEmpty()) return;
+        int synced = 0;
+        for (CanvasTask task : pending) {
+            String taskId = task.getTaskId();
+            if (taskId == null || taskId.isBlank()) continue;
+            try {
+                KieTaskResult result = kieClientService.getFullResult(taskId);
+                if (result == null) continue;
+                String resolved = normalizeStatus(result.getStatus(), result.getResultUrl());
+                if (!isTerminalStatus(resolved)) continue; // 仍在生成：留给下一轮
+                applyResult(task, result, null);
+                synced++;
+            } catch (Exception e) {
+                log.warn("[AI Canvas] 兜底同步失败，跳过：taskId={}, error={}", taskId, e.getMessage());
+            }
+        }
+        if (synced > 0) {
+            log.info("[AI Canvas] 兜底同步完成：回填 {}/{} 条 PROCESSING 任务", synced, pending.size());
+        }
+    }
+
     @Transactional(readOnly = true)
     public Map<String, Integer> taskCapacity(String operator, String shopName) {
         int active = Math.toIntExact(canvasTaskRepository.countByShopNameAndOperatorAndStatusIgnoreCase(shopName, operator, "PROCESSING"));
+        if (!submissionCapacityLimited()) {
+            // max/available 返回 -1 表示不限制，前端据此不做名额提示。
+            return Map.of(
+                    "active", active,
+                    "max", -1,
+                    "available", -1
+            );
+        }
         return Map.of(
                 "active", active,
-                "max", MAX_ACTIVE_TASKS,
-                "available", Math.max(0, MAX_ACTIVE_TASKS - active)
+                "max", maxActiveTasks,
+                "available", Math.max(0, maxActiveTasks - active)
         );
     }
 
     /**
      * The browser also has a queue, but this server-side guard prevents a
      * second tab or a refresh from exceeding the account-level task limit.
+     *
+     * <p>名额默认关闭（{@code app.canvas.max-active-tasks} 未配置或 &le; 0），因为 KIE
+     * 官方不限制并发运行任务数；需要时可用配置重新打开。</p>
      */
     @Transactional(readOnly = true)
     public void requireSubmissionCapacity(String operator, String shopName) {
+        if (!submissionCapacityLimited()) return;
         Map<String, Integer> capacity = taskCapacity(operator, shopName);
         if (capacity.get("active") >= capacity.get("max")) {
-            throw new IllegalStateException("画布同时最多可运行 " + MAX_ACTIVE_TASKS + " 个任务，请等待完成或停止等待后再提交。");
+            throw new IllegalStateException("画布同时最多可运行 " + maxActiveTasks + " 个任务，请等待完成或停止等待后再提交。");
         }
+    }
+
+    private boolean submissionCapacityLimited() {
+        return maxActiveTasks > UNLIMITED_ACTIVE_TASKS;
     }
 
     /**
@@ -321,8 +384,15 @@ public class CanvasTaskService {
             task.setCallbackPayloadJson(callbackPayloadJson);
         }
         // Persist each completed KIE result according to the active profile.
+        // 持久化失败绝不能回滚状态：否则任务会一直停在 PROCESSING，用户既拿不到图、名额也被占用。
+        // 下载失败的结果交给 retryPendingLocalResultCache 定时补做。
         if (isSuccessfulResult(task)) {
-            persistResult(task);
+            try {
+                persistResult(task);
+            } catch (Exception e) {
+                log.warn("[AI Canvas] 结果持久化失败，状态保持已更新，交由定时任务重试：taskId={}, error={}",
+                        task.getTaskId(), e.getMessage());
+            }
         }
         if (isTerminalStatus(task.getStatus())) cleanupProviderInput(task);
         canvasTaskRepository.save(task);

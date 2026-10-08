@@ -10,6 +10,34 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class KieImageModelsTest {
 
     @Test
+    void replacesNanoBanana2EverywhereWhileKeepingSavedProjectsCompatible() {
+        assertThat(KieImageModels.SELECTABLE_MODELS)
+                .contains(KieImageModels.NANO_BANANA_21)
+                .doesNotContain(KieImageModels.LEGACY_NANO_BANANA_2);
+        assertThat(KieImageModels.requireSelectable("nano-banana-2", KieImageModels.NANO_BANANA_PRO))
+                .isEqualTo(KieImageModels.NANO_BANANA_21);
+        assertThat(KieImageModels.resolveActualModel("nano-banana-2", 2))
+                .isEqualTo(KieImageModels.NANO_BANANA_21);
+        assertThat(KieImageModels.displayName("nano-banana-2"))
+                .isEqualTo("Nano Banana 2.1");
+    }
+
+    @Test
+    void validatesOfficialNanoBanana21Parameters() {
+        KieImageModels.NanoBanana21Parameters params = KieImageModels.validateNanoBanana21(
+                14, "4k", "auto");
+
+        assertThat(params.resolution()).isEqualTo("4K");
+        assertThat(params.aspectRatio()).isEqualTo("auto");
+        assertThatThrownBy(() -> KieImageModels.validateNanoBanana21(15, "2K", "1:1"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("14");
+        assertThatThrownBy(() -> KieImageModels.validateNanoBanana21(0, "2K", "9:21"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("9:21");
+    }
+
+    @Test
     void image25RoutesByPresenceOfReferences() {
         assertThat(KieImageModels.resolveActualModel(KieImageModels.GPT_IMAGE_25, 0))
                 .isEqualTo(KieImageModels.GPT_IMAGE_25_TEXT);

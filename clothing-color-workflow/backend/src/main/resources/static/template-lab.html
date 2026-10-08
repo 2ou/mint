@@ -7,7 +7,7 @@
     <title>模板拼图实验室 - AI 时尚视觉</title>
     <link rel="stylesheet" href="css/variables.css">
     <link rel="stylesheet" href="css/shared.css">
-    <link rel="stylesheet" href="css/template-lab.css?v=20260923.1">
+    <link rel="stylesheet" href="css/template-lab.css?v=20260928.1">
     <script src="vendor/template-lab/axios-1.20.0.min.js"></script>
     <script src="auth.js"></script>
     <script src="js/sidebar.js"></script>
@@ -109,6 +109,37 @@
     </form>
 </dialog>
 
+<dialog class="lab-dialog lab-dialog--delete" id="delete-template-dialog" role="alertdialog"
+        aria-labelledby="delete-template-title" aria-describedby="delete-template-warning">
+    <form method="dialog">
+        <div class="lab-dialog__header lab-dialog__header--danger">
+            <div class="lab-dialog__title-group">
+                <span class="lab-dialog__danger-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><path d="M12 8v5M12 17h.01"/><path d="M10.3 3.7 2.5 17.2A2 2 0 0 0 4.2 20h15.6a2 2 0 0 0 1.7-2.8L13.7 3.7a2 2 0 0 0-3.4 0Z"/></svg>
+                </span>
+                <div>
+                    <h2 id="delete-template-title">删除模板</h2>
+                    <p>删除后将无法再用它创建新项目。</p>
+                </div>
+            </div>
+        </div>
+        <div class="lab-dialog__body">
+            <div class="lab-delete-summary">
+                <span class="lab-card__badge" id="delete-template-source">系统</span>
+                <div>
+                    <strong id="delete-template-name"></strong>
+                    <span id="delete-template-meta"></span>
+                </div>
+            </div>
+            <p class="lab-delete-warning" id="delete-template-warning"></p>
+        </div>
+        <div class="lab-dialog__footer">
+            <button class="lab-button" id="cancel-delete-template" value="cancel" type="submit">取消</button>
+            <button class="lab-button lab-button--danger" id="confirm-delete-template" value="default" type="button">删除模板</button>
+        </div>
+    </form>
+</dialog>
+
 <dialog class="lab-dialog lab-dialog--parse" id="parse-dialog" aria-labelledby="parse-dialog-title">
     <form method="dialog" id="parse-form">
         <div class="lab-dialog__header">
@@ -173,6 +204,6 @@
 </dialog>
 
 <div class="lab-toast" id="lab-toast" role="status" aria-live="polite"></div>
-<script src="js/template-lab.js?v=20260923.1"></script>
+<script src="js/template-lab.js?v=20260928.1"></script>
 </body>
 </html>

@@ -4,11 +4,15 @@ import com.ai.config.AppProperties;
 import com.ai.dto.TemplateLabProjectCreateRequest;
 import com.ai.dto.TemplateLabTemplateCreateRequest;
 import com.ai.dto.KieTaskResult;
+import com.ai.entity.SysUser;
 import com.ai.entity.TemplateLabPersonalTemplate;
 import com.ai.entity.TemplateLabProject;
+import com.ai.entity.TemplateLabSystemTemplateDeletion;
 import com.ai.exception.BusinessException;
+import com.ai.repository.SysUserRepository;
 import com.ai.repository.TemplateLabPersonalTemplateRepository;
 import com.ai.repository.TemplateLabProjectRepository;
+import com.ai.repository.TemplateLabSystemTemplateDeletionRepository;
 import com.aliyun.oss.OSS;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -42,6 +46,8 @@ class TemplateLabServiceTest {
 
     private TemplateLabProjectRepository repository;
     private TemplateLabPersonalTemplateRepository personalTemplateRepository;
+    private TemplateLabSystemTemplateDeletionRepository systemTemplateDeletionRepository;
+    private SysUserRepository sysUserRepository;
     private OssService ossService;
     private KieClientService kieClientService;
     private CanvasTaskService canvasTaskService;
@@ -57,6 +63,8 @@ class TemplateLabServiceTest {
     void setUp() {
         repository = Mockito.mock(TemplateLabProjectRepository.class);
         personalTemplateRepository = Mockito.mock(TemplateLabPersonalTemplateRepository.class);
+        systemTemplateDeletionRepository = Mockito.mock(TemplateLabSystemTemplateDeletionRepository.class);
+        sysUserRepository = Mockito.mock(SysUserRepository.class);
         ossService = Mockito.mock(OssService.class);
         kieClientService = Mockito.mock(KieClientService.class);
         canvasTaskService = Mockito.mock(CanvasTaskService.class);
@@ -64,9 +72,12 @@ class TemplateLabServiceTest {
         textModelService = Mockito.mock(TextModelService.class);
         appProperties = new AppProperties();
         when(personalTemplateRepository.findAllByOrderByUpdatedAtDesc()).thenReturn(List.of());
+        when(systemTemplateDeletionRepository.findAll()).thenReturn(List.of());
         service = new TemplateLabService(
                 repository,
                 personalTemplateRepository,
+                systemTemplateDeletionRepository,
+                sysUserRepository,
                 new ObjectMapper(),
                 ossService,
                 appProperties,
@@ -88,6 +99,54 @@ class TemplateLabServiceTest {
                 .contains(template.path("usageType").asText())));
         assertTrue(templates.stream().allMatch(template -> List.of("1:1", "3:4", "16:9", "2928:1200", "1200:900")
                 .contains(template.path("ratioGroup").asText())));
+    }
+
+    @Test
+    void loadsFashionShowReferenceAsEditableFiveImageTemplate() {
+        JsonNode template = service.listTemplates(7L).stream()
+                .filter(item -> "buyer-show-collage".equals(item.path("id").asText()))
+                .findFirst()
+                .orElseThrow();
+
+        assertEquals("16:9", template.path("ratioGroup").asText());
+        assertEquals(1600, template.path("width").asInt());
+        assertEquals(900, template.path("height").asInt());
+        assertEquals(5, template.path("frames").size());
+        assertEquals(3, template.path("texts").size());
+        assertEquals("hero-beach-duo", template.path("frames").get(0).path("id").asText());
+        assertEquals(900, template.path("frames").get(0).path("height").asInt());
+        assertEquals("SUMMER", template.path("texts").get(0).path("text").asText());
+        assertEquals("FASHION SHOW", template.path("texts").get(1).path("text").asText());
+    }
+
+    @Test
+    void allowsPinksirAdministratorToDeleteSystemTemplatePersistently() {
+        SysUser administrator = new SysUser();
+        administrator.setId(1L);
+        administrator.setUsername("PINKSIR");
+        when(sysUserRepository.findById(1L)).thenReturn(Optional.of(administrator));
+        when(systemTemplateDeletionRepository.existsByTemplateId("fashion-duo")).thenReturn(false);
+
+        service.deleteTemplate("fashion-duo", 1L);
+
+        var deletion = org.mockito.ArgumentCaptor.forClass(TemplateLabSystemTemplateDeletion.class);
+        verify(systemTemplateDeletionRepository).save(deletion.capture());
+        assertEquals("fashion-duo", deletion.getValue().getTemplateId());
+        assertEquals(1L, deletion.getValue().getDeletedByUserId());
+
+        when(systemTemplateDeletionRepository.findAll()).thenReturn(List.of(deletion.getValue()));
+        var templates = service.listTemplates(1L);
+        assertFalse(templates.stream().anyMatch(template -> "fashion-duo".equals(template.path("id").asText())));
+        assertTrue(templates.stream().filter(template -> "system".equals(template.path("source").asText()))
+                .allMatch(template -> template.path("canDelete").asBoolean()));
+    }
+
+    @Test
+    void rejectsSystemTemplateDeletionForNonAdministrator() {
+        BusinessException error = assertThrows(BusinessException.class,
+                () -> service.deleteTemplate("fashion-duo", 7L));
+
+        assertTrue(error.getMessage().contains("仅管理员"));
     }
 
     @Test
@@ -121,6 +180,8 @@ class TemplateLabServiceTest {
         service = new TemplateLabService(
                 repository,
                 personalTemplateRepository,
+                systemTemplateDeletionRepository,
+                sysUserRepository,
                 new ObjectMapper(),
                 ossService,
                 appProperties,
@@ -163,6 +224,8 @@ class TemplateLabServiceTest {
         service = new TemplateLabService(
                 repository,
                 personalTemplateRepository,
+                systemTemplateDeletionRepository,
+                sysUserRepository,
                 new ObjectMapper(),
                 ossService,
                 appProperties,

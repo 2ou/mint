@@ -19,6 +19,28 @@ import static org.mockito.Mockito.when;
 class ModelPricingServiceTest {
 
     @Test
+    void legacyNanoBanana2QuotesTheNanoBanana21ResolutionTier() {
+        ModelPriceVersion version = new ModelPriceVersion();
+        version.setId(1L);
+        version.setVersionCode("CURRENT");
+
+        ModelPriceRule rule = imageRule(20L, KieImageModels.NANO_BANANA_21, "4K", "0.2880");
+        ModelPriceVersionRepository versions = mock(ModelPriceVersionRepository.class);
+        ModelPriceRuleRepository rules = mock(ModelPriceRuleRepository.class);
+        when(versions.findFirstByStatusOrderByPublishedAtDesc("PUBLISHED")).thenReturn(Optional.of(version));
+        when(rules.findByVersion_IdAndActiveTrueOrderByPriorityDescIdAsc(1L)).thenReturn(List.of(rule));
+        ModelPricingService service = new ModelPricingService(versions, rules, new ObjectMapper());
+
+        ModelPricingService.PriceQuote quote = service.quote("image", Map.of(
+                "model", KieImageModels.LEGACY_NANO_BANANA_2,
+                "resolution", "4K"
+        ), 1);
+
+        assertThat(quote.model()).isEqualTo(KieImageModels.NANO_BANANA_21);
+        assertThat(quote.amountCny()).isEqualByComparingTo("0.2880");
+    }
+
+    @Test
     void gptImage25LogicalModelQuotesTheFinalRoutedEndpoint() {
         ModelPriceVersion version = new ModelPriceVersion();
         version.setId(1L);

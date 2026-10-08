@@ -396,9 +396,11 @@ public class AplusProjectServiceImpl implements AplusProjectService {
 
     private String normalizeImageModel(String imageModel) {
         if (imageModel == null || imageModel.isBlank()) return KieImageModels.NANO_BANANA_PRO;
-        String normalized = imageModel.trim();
-        if (KieImageModels.isSelectable(normalized)) return normalized;
-        throw new RuntimeException("不支持的图片模型: " + imageModel);
+        try {
+            return KieImageModels.requireSelectable(imageModel, KieImageModels.NANO_BANANA_PRO);
+        } catch (IllegalArgumentException e) {
+            throw new RuntimeException("不支持的图片模型: " + imageModel, e);
+        }
     }
 
     private String normalizeResolution(String resolution) {

@@ -45,6 +45,9 @@ public class BuyerShowController {
         String scenePreference = (String) request.getOrDefault("scenePreference", "");
         String textModel = KieGptModels.normalizeTextModel((String) request.getOrDefault("textModel", KieGptModels.DEFAULT_TEXT_MODEL));
 
+        // 画布比例：买家秀默认竖版 3:4（具体白名单归一化在 Service 层做）
+        String aspectRatio = (String) request.getOrDefault("aspectRatio", "");
+
         int countPerImage = 1;
         if (request.containsKey("countPerImage")) {
             try {
@@ -52,7 +55,7 @@ public class BuyerShowController {
             } catch (NumberFormatException ignored) {}
         }
 
-        String result = buyerShowService.generateBuyerShow(spu, clothingDesc, imageUrls, scenePreference, countPerImage, textModel);
+        String result = buyerShowService.generateBuyerShow(spu, clothingDesc, imageUrls, scenePreference, countPerImage, aspectRatio, textModel);
         return ApiResponse.ok("生成成功", result);
     }
 }

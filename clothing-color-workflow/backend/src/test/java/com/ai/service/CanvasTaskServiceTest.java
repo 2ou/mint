@@ -9,8 +9,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.env.Environment;
 
+import java.util.List;
 import java.util.Optional;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -30,6 +32,7 @@ class CanvasTaskServiceTest {
         CanvasTaskService service = new CanvasTaskService(
                 repository,
                 new ObjectMapper(),
+                mock(KieClientService.class),
                 ossService,
                 properties,
                 mock(Environment.class),
@@ -56,5 +59,45 @@ class CanvasTaskServiceTest {
         verify(repository).save(task);
         assertFalse(task.getRequestPayloadJson().contains("provider_input_object"));
         assertFalse(task.getRequestPayloadJson().contains("provider_input_url"));
+    }
+
+    /**
+     * 卡在 PROCESSING 的任务（浏览器已关闭、没有 callback）必须被服务端兜底推进到终态，
+     * 否则它会一直占着名额，用户再也提交不了新任务。
+     */
+    @Test
+    void syncPendingTaskResultsAdvancesStuckTaskToTerminalStatus() {
+        CanvasTaskRepository repository = mock(CanvasTaskRepository.class);
+        KieClientService kieClientService = mock(KieClientService.class);
+        when(repository.findTop20ByStatusIgnoreCaseOrderByUpdatedAtAsc("PROCESSING"))
+                .thenReturn(List.of());
+
+        CanvasTask stuck = new CanvasTask();
+        stuck.setTaskId("stuck-task-1");
+        stuck.setStatus("PROCESSING");
+        stuck.setMediaType("image");
+        when(repository.findTop20ByStatusIgnoreCaseOrderByUpdatedAtAsc("PROCESSING"))
+                .thenReturn(List.of(stuck));
+        when(kieClientService.getFullResult("stuck-task-1")).thenReturn(KieTaskResult.builder()
+                .taskId("stuck-task-1")
+                .status("fail")
+                .finished(true)
+                .success(false)
+                .errorMessage("provider rejected")
+                .build());
+
+        CanvasTaskService service = new CanvasTaskService(
+                repository,
+                new ObjectMapper(),
+                kieClientService,
+                mock(OssService.class),
+                new AppProperties(),
+                mock(Environment.class),
+                mock(ModelPricingService.class));
+
+        service.syncPendingTaskResults();
+
+        assertEquals("FAILED", stuck.getStatus());
+        verify(repository).save(stuck);
     }
 }

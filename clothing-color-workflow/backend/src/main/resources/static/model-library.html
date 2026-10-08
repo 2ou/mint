@@ -467,10 +467,9 @@
                                                     <el-select v-model="form.imageModel" placeholder="请选择生图模型" style="width:100%">
                                                         <el-option-group label="Google">
                                                             <el-option label="Nano Banana Pro" value="nano-banana-pro"></el-option>
-                                                            <el-option label="Nano Banana 2" value="nano-banana-2"></el-option>
+                                                            <el-option label="Nano Banana 2.1" value="nano-banana-2-1"></el-option>
                                                         </el-option-group>
                                                         <el-option-group label="OpenAI">
-                                                            <el-option label="GPT Image 2" value="gpt-image-2-image-to-image"></el-option>
                                                             <el-option label="GPT Image 2.5" value="gpt-image-2-5-sunburst"></el-option>
                                                         </el-option-group>
                                                     </el-select>
@@ -478,11 +477,7 @@
                                             </el-col>
                                             <el-col :span="8">
                                                 <el-form-item label="分辨率">
-                                                    <el-select v-model="form.resolution" placeholder="请选择分辨率" style="width:100%">
-                                                        <el-option label="1K" value="1K"></el-option>
-                                                        <el-option label="2K" value="2K"></el-option>
-                                                        <el-option label="4K" value="4K"></el-option>
-                                                    </el-select>
+                                                    <el-input model-value="2K（固定）" disabled style="width:100%"/>
                                                 </el-form-item>
                                             </el-col>
                                             <el-col :span="8">
@@ -786,7 +781,7 @@
                 modelType:'', modelTypeCustom:'', ethnicity:'', ageRange:'', specialRequirements:'',
                 textModel:'gpt-5.6-terra', hairstyle:'', skinTone:'', cameraAngle:'composite_panel', background:'white_studio',
                 clothingDescription:'', clothingImageUrl:'',
-                imageModel:'nano-banana-pro', resolution:'4K', aspectRatio:'16:9',
+                imageModel:'nano-banana-pro', resolution:'2K', aspectRatio:'16:9',
                 batchCount:1, namePrefix:'',
                 identityViews:['FRONT','SIDE','BACK','EXPRESSION'],
                 negativePrompt:'', seed:null

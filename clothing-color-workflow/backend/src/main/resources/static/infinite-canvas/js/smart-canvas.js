@@ -19,6 +19,7 @@ const inputThumbsRow = document.getElementById('inputThumbsRow');
 const SMART_UPLOAD_MAX = 20;
 const SMART_REFERENCE_IMAGE_MAX = 20;
 const GPT_IMAGE_25_REFERENCE_MAX = 16;
+const NANO_BANANA_21_REFERENCE_MAX = 14;
 const inputPromptPreview = document.getElementById('inputPromptPreview');
 const minimap = document.getElementById('minimap');
 const minimapContent = document.getElementById('minimapContent');
@@ -766,10 +767,14 @@ function isKieImage25Model(model){
     return value === 'gpt-image-2-5-sunburst'
         || value.startsWith('gpt-image-2-5-sunburst-');
 }
+function isNanoBanana21Model(model){
+    const value = String(model || '').trim().toLowerCase();
+    return value === 'nano-banana-2-1' || value === 'nano-banana-2';
+}
 function smartImageModelLabel(model){
     const value = String(model || '').trim();
     if(value === 'nano-banana-pro') return 'Nano Banana Pro';
-    if(value === 'nano-banana-2') return 'Nano Banana 2';
+    if(value === 'nano-banana-2-1' || value === 'nano-banana-2') return 'Nano Banana 2.1';
     if(value === 'gpt-image-2-image-to-image' || value === 'gpt-image-2') return 'GPT Image 2';
     if(value === 'gpt-image-2-5-sunburst') return 'GPT Image 2.5';
     return value;
@@ -2786,6 +2791,7 @@ function syncJimengVideoModelPillForRefs(){
 }
 function sanitizeSmartApiSelection(target=settings){
     if(!target || typeof target !== 'object') return target;
+    if(String(target.model || '').trim().toLowerCase() === 'nano-banana-2') target.model = 'nano-banana-2-1';
     if(target.engine === 'volcengine'){
         if(target.apiKind === 'video'){
             target.videoProvider = 'volcengine';
@@ -13770,18 +13776,24 @@ function smartAspectRatioFromSize(sizeValue){
     return `${Number(size.width) / divisor}:${Number(size.height) / divisor}`;
 }
 function smartKieImageAspectRatio(sourceSettings, sizeValue){
-    if(isKieImage25Model(sourceSettings?.model) && sourceSettings?.ratio === 'source') return 'auto';
+    if((isKieImage25Model(sourceSettings?.model) || isNanoBanana21Model(sourceSettings?.model)) && sourceSettings?.ratio === 'source') return 'auto';
     return SMART_KIE_ASPECT_RATIO_BY_PRESET[String(sourceSettings?.ratio || '')]
         || smartAspectRatioFromSize(sizeValue);
 }
-function smartImage25ValidationMessage(payload){
-    if(!isKieImage25Model(payload?.model)) return '';
+function smartKieImageValidationMessage(payload){
     const resolution = String(payload?.resolution || '').toUpperCase();
     const ratio = String(payload?.aspect_ratio || '');
-    if(!['1K','2K','4K'].includes(resolution)) return 'GPT Image 2.5 必须选择 1K、2K 或 4K 分辨率';
-    const ratios = new Set(['auto','1:1','3:2','2:3','16:9','9:16','4:3','3:4','21:9','27:16','16:27','9:8','8:9']);
-    if(!ratios.has(ratio)) return `GPT Image 2.5 不支持画面比例 ${ratio || '空'}`;
-    if(resolution !== '1K' && ['27:16','16:27','9:8','8:9'].includes(ratio)) return `${ratio} 比例仅支持 1K 分辨率`;
+    if(isNanoBanana21Model(payload?.model)){
+        if(!['1K','2K','4K'].includes(resolution)) return 'Nano Banana 2.1 必须选择 1K、2K 或 4K 分辨率';
+        const ratios = new Set(['auto','1:1','2:3','3:2','1:4','4:1','3:4','4:3','4:5','5:4','1:8','8:1','9:16','16:9','21:9']);
+        if(!ratios.has(ratio)) return `Nano Banana 2.1 不支持画面比例 ${ratio || '空'}`;
+    }
+    if(isKieImage25Model(payload?.model)){
+        if(!['1K','2K','4K'].includes(resolution)) return 'GPT Image 2.5 必须选择 1K、2K 或 4K 分辨率';
+        const ratios = new Set(['auto','1:1','3:2','2:3','16:9','9:16','4:3','3:4','21:9','27:16','16:27','9:8','8:9']);
+        if(!ratios.has(ratio)) return `GPT Image 2.5 不支持画面比例 ${ratio || '空'}`;
+        if(resolution !== '1K' && ['27:16','16:27','9:8','8:9'].includes(ratio)) return `${ratio} 比例仅支持 1K 分辨率`;
+    }
     return '';
 }
 function expectedOutputSize(){
@@ -16580,6 +16592,12 @@ async function runApiGeneration(prompt, refs, runSettings=settings){
     if(isKieImage25Model(runSettings.model) && imageRefs.length > GPT_IMAGE_25_REFERENCE_MAX){
         throw new Error(`GPT Image 2.5 最多支持 ${GPT_IMAGE_25_REFERENCE_MAX} 张参考图，当前连接了 ${imageRefs.length} 张`);
     }
+    if(isNanoBanana21Model(runSettings.model) && imageRefs.length > NANO_BANANA_21_REFERENCE_MAX){
+        throw new Error(`Nano Banana 2.1 最多支持 ${NANO_BANANA_21_REFERENCE_MAX} 张参考图，当前连接了 ${imageRefs.length} 张`);
+    }
+    const referenceLimit = isKieImage25Model(runSettings.model) ? GPT_IMAGE_25_REFERENCE_MAX
+        : isNanoBanana21Model(runSettings.model) ? NANO_BANANA_21_REFERENCE_MAX
+        : SMART_REFERENCE_IMAGE_MAX;
     const payload = {
         prompt,
         provider_id:runSettings.provider_id,
@@ -16589,10 +16607,10 @@ async function runApiGeneration(prompt, refs, runSettings=settings){
         background:isKieImage25Model(runSettings.model) ? (runSettings.imageBackground || 'auto') : 'auto',
         size:safeSize,
         n:1,
-        reference_images:imageRefs.slice(0, isKieImage25Model(runSettings.model) ? GPT_IMAGE_25_REFERENCE_MAX : SMART_REFERENCE_IMAGE_MAX)
+        reference_images:imageRefs.slice(0, referenceLimit)
     };
-    const image25Error = smartImage25ValidationMessage(payload);
-    if(image25Error) throw new Error(image25Error);
+    const imageValidationError = smartKieImageValidationMessage(payload);
+    if(imageValidationError) throw new Error(imageValidationError);
     if(!await confirmKieSmartSubmission('KIE 图片生成', {mediaType:'image', payload, quantity:count})){
         const error = new Error('已取消 KIE 图片生成提交');
         error.kieSubmissionCancelled = true;

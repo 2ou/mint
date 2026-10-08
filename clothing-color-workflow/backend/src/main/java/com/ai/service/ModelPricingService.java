@@ -50,6 +50,7 @@ public class ModelPricingService {
     @Transactional
     public void seedInitialCatalogue() {
         if (versionRepository.existsByStatus(PUBLISHED)) {
+            ensureNanoBanana21PriceRules();
             ensureMiniMaxH3PriceRules();
             ensureGptImage25PriceRules();
             ensureQwenImage21PriceRule();
@@ -70,7 +71,6 @@ public class ModelPricingService {
         // Existing bulk-colour and scene prices.
         rules.add(rule(version, "image", "nano-banana-pro", "4K", "", "PER_IMAGE", "0.4400", 100, "Nano Banana Pro · 4K"));
         rules.add(rule(version, "image", "nano-banana-pro", "", "", "PER_IMAGE", "0.2500", 10, "Nano Banana Pro"));
-        rules.add(rule(version, "image", "nano-banana-2", "", "", "PER_IMAGE", "0.2500", 10, "Nano Banana 2"));
         rules.add(rule(version, "image", "gpt-image-2-image-to-image", "4K", "", "PER_IMAGE", "0.4400", 100, "GPT Image 2 · 4K"));
         rules.add(rule(version, "image", "gpt-image-2-image-to-image", "2K", "", "PER_IMAGE", "0.2500", 100, "GPT Image 2 · 2K"));
         rules.add(rule(version, "image", "gpt-image-2-image-to-image", "1K", "", "PER_IMAGE", "0.0900", 100, "GPT Image 2 · 1K"));
@@ -106,6 +106,7 @@ public class ModelPricingService {
         rules.add(rule(version, "video", "kling-3.0/video", "pro", "", "PER_SECOND", "0.5700", 100, "Kling 3.0 Pro"));
         rules.add(rule(version, "video", "kling-3.0/video", "standard", "audio", "PER_SECOND", "0.6400", 200, "Kling 3.0 Standard audio"));
         rules.add(rule(version, "video", "kling-3.0/video", "standard", "", "PER_SECOND", "0.4400", 100, "Kling 3.0 Standard"));
+        addNanoBanana21PriceRules(rules, version);
         addGptImage25PriceRules(rules, version);
         addMiniMaxH3PriceRules(rules, version);
         ruleRepository.saveAll(rules);
@@ -119,6 +120,9 @@ public class ModelPricingService {
         ModelPriceVersion version = optionalVersion.get();
         String normalizedMediaType = normalize(mediaType);
         String model = normalize(text(payload, "model"));
+        if ("image".equals(normalizedMediaType)) {
+            model = KieImageModels.canonicalModel(model);
+        }
         if ("image".equals(normalizedMediaType) && KieImageModels.isImage25(model)) {
             model = KieImageModels.resolveActualModel(model, imageReferenceCount(payload));
         }
@@ -189,6 +193,24 @@ public class ModelPricingService {
         if (!missing.isEmpty()) ruleRepository.saveAll(missing);
     }
 
+    /** Replaces the retired Nano Banana 2 price with KIE's official 2.1 resolution tiers. */
+    private void ensureNanoBanana21PriceRules() {
+        Optional<ModelPriceVersion> version = versionRepository.findFirstByStatusOrderByPublishedAtDesc(PUBLISHED);
+        if (version.isEmpty()) return;
+        List<ModelPriceRule> existing = ruleRepository.findByVersion_IdOrderByPriorityDescIdAsc(version.get().getId());
+        List<ModelPriceRule> retired = existing.stream()
+                .filter(rule -> KieImageModels.LEGACY_NANO_BANANA_2.equals(normalize(rule.getModel())))
+                .toList();
+        if (!retired.isEmpty()) ruleRepository.deleteAll(retired);
+
+        List<ModelPriceRule> additions = new ArrayList<>();
+        addNanoBanana21PriceRules(additions, version.get());
+        List<ModelPriceRule> missing = additions.stream()
+                .filter(candidate -> existing.stream().noneMatch(rule -> samePriceRule(rule, candidate)))
+                .toList();
+        if (!missing.isEmpty()) ruleRepository.saveAll(missing);
+    }
+
     /** Adds the official KIE 1K/2K/4K prices for the GPT Image 2.5 endpoints. */
     private void ensureGptImage25PriceRules() {
         Optional<ModelPriceVersion> version = versionRepository.findFirstByStatusOrderByPublishedAtDesc(PUBLISHED);
@@ -229,6 +251,15 @@ public class ModelPricingService {
             rules.add(rule(version, "image", variant.getKey(), "4K", "", "PER_IMAGE", "0.5120", 400,
                     variant.getValue() + " · 4K"));
         }
+    }
+
+    private void addNanoBanana21PriceRules(List<ModelPriceRule> rules, ModelPriceVersion version) {
+        rules.add(rule(version, "image", KieImageModels.NANO_BANANA_21, "1K", "", "PER_IMAGE", "0.1280", 400,
+                "Nano Banana 2.1 · 1K"));
+        rules.add(rule(version, "image", KieImageModels.NANO_BANANA_21, "2K", "", "PER_IMAGE", "0.1920", 400,
+                "Nano Banana 2.1 · 2K"));
+        rules.add(rule(version, "image", KieImageModels.NANO_BANANA_21, "4K", "", "PER_IMAGE", "0.2880", 400,
+                "Nano Banana 2.1 · 4K"));
     }
 
     private void addMiniMaxH3PriceRules(List<ModelPriceRule> rules, ModelPriceVersion version) {
@@ -328,6 +359,7 @@ public class ModelPricingService {
             String model = text(source, "model");
             String mediaType = text(source, "media_type");
             if (model.isBlank() || mediaType.isBlank()) continue;
+            if ("image".equals(normalize(mediaType))) model = KieImageModels.canonicalModel(model);
             ModelPriceRule rule = new ModelPriceRule();
             rule.setVersion(version);
             rule.setProvider(blankOr(text(source, "provider"), "kie"));

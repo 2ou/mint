@@ -32,7 +32,7 @@
     // 未登记模型仍可显示，统一归入末尾的“其他手动规则”。
     const KIE_MODEL_CATALOGUE = [
         { model: 'nano-banana-pro', label: 'Nano Banana Pro', family: 'Nano Banana', vendor: 'Google', media: 'image', rank: 10 },
-        { model: 'nano-banana-2', label: 'Nano Banana 2', family: 'Nano Banana', vendor: 'Google', media: 'image', rank: 20 },
+        { model: 'nano-banana-2-1', label: 'Nano Banana 2.1', family: 'Nano Banana', vendor: 'Google', media: 'image', rank: 20 },
         { model: 'gpt-image-2-image-to-image', label: 'GPT Image 2 · 图生图', family: 'GPT Image 2', vendor: 'OpenAI', media: 'image', rank: 30 },
         { model: 'gpt-image-2-5-sunburst-text-to-image', label: 'GPT Image 2.5 · 文生图', family: 'GPT Image 2.5', vendor: 'OpenAI', media: 'image', rank: 50 },
         { model: 'gpt-image-2-5-sunburst-image-to-image', label: 'GPT Image 2.5 · 图生图', family: 'GPT Image 2.5', vendor: 'OpenAI', media: 'image', rank: 51 },

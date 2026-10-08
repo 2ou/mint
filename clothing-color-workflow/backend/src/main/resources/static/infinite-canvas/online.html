@@ -339,7 +339,7 @@
         function isImage25(model){ return /^gpt-image-2-5-sunburst(-|$)/i.test(String(model || '')); }
         function modelLabel(model){
             if(model === 'nano-banana-pro') return 'Nano Banana Pro';
-            if(model === 'nano-banana-2') return 'Nano Banana 2';
+            if(model === 'nano-banana-2-1' || model === 'nano-banana-2') return 'Nano Banana 2.1';
             if(model === 'gpt-image-2-image-to-image') return 'GPT Image 2';
             if(model === 'gpt-image-2-5-sunburst') return 'GPT Image 2.5';
             return model;

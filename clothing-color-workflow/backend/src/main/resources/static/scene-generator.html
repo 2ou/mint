@@ -273,7 +273,7 @@
                                         <el-select v-model="genModel" size="small" style="width: 100%;">
                                             <el-option-group label="Google">
                                                 <el-option label="Nano Banana Pro" value="nano-banana-pro"></el-option>
-                                                <el-option label="Nano Banana 2" value="nano-banana-2"></el-option>
+                                                <el-option label="Nano Banana 2.1" value="nano-banana-2-1"></el-option>
                                             </el-option-group>
                                             <el-option-group label="OpenAI">
                                                 <el-option label="GPT Image 2" value="gpt-image-2-image-to-image"></el-option>
@@ -513,7 +513,7 @@
                                 <div class="ri-footer">
                                     <div class="ri-status-row">
                                         <el-tag :type="taskStatusType(task.status)" size="small">{{ taskStatusLabel(task.status) }}</el-tag>
-                                        <span style="font-size: 11px;">{{ genModel === 'nano-banana-pro' ? 'nano' : 'gpt-img' }}</span>
+                                        <span style="font-size: 11px;">{{ genModel === 'nano-banana-2-1' ? 'nano 2.1' : genModel === 'nano-banana-pro' ? 'nano pro' : 'gpt-img' }}</span>
                                     </div>
                                     <div v-if="task.status === 'SUCCESS' && (task.resultOssUrl || task.resultTempUrl)" class="ri-action-row">
                                         <el-button size="small" type="primary" plain @click="openCanvas(task)">进入画布</el-button>

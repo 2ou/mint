@@ -3270,10 +3270,9 @@ public class InfiniteCanvasController {
     }
 
     private String normalizeImageModel(String model) {
-        // 信任前端传入的模型：前端模型列表来自 /api/config（即 PROJECT_IMAGE_MODELS），
-        // 仅当为空 / 非法前缀时回退默认模型，避免「选了 GPT 实际跑 nano」的静默降级。
+        // 前端模型列表来自 /api/config；提交时仍以服务端白名单校验，并迁移历史模型别名。
         if (model == null || model.isBlank() || model.startsWith("project-")) return PROJECT_IMAGE_MODEL;
-        return model.trim();
+        return KieImageModels.requireSelectable(model, PROJECT_IMAGE_MODEL);
     }
 
     private String normalizeVideoModel(String model) {

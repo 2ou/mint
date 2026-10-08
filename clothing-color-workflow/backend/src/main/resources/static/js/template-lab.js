@@ -17,7 +17,9 @@
         recents: readStoredList(RECENTS_KEY),
         parseFile: null,
         parsePreviewUrl: '',
-        parseBusy: false
+        parseBusy: false,
+        pendingDeleteTemplate: null,
+        deleteBusy: false
     };
 
     var els = {
@@ -51,6 +53,13 @@
         parseError: document.getElementById('parse-error'),
         submitParse: document.getElementById('submit-parse'),
         cancelParse: document.getElementById('cancel-parse'),
+        deleteTemplateDialog: document.getElementById('delete-template-dialog'),
+        deleteTemplateSource: document.getElementById('delete-template-source'),
+        deleteTemplateName: document.getElementById('delete-template-name'),
+        deleteTemplateMeta: document.getElementById('delete-template-meta'),
+        deleteTemplateWarning: document.getElementById('delete-template-warning'),
+        cancelDeleteTemplate: document.getElementById('cancel-delete-template'),
+        confirmDeleteTemplate: document.getElementById('confirm-delete-template'),
         toast: document.getElementById('lab-toast')
     };
 
@@ -128,7 +137,18 @@
                 + ((cy - h / 2) / template.height * 100) + '%;width:' + (w / template.width * 100) + '%;height:'
                 + (h / template.height * 100) + '%;border-radius:0%;"></span>';
         });
-        var frames = frameBoxes.concat(imageBoxes).join('');
+        var miniShape = function (shape) {
+            var w = shape.width || 1, h = shape.height || 1;
+            var radius = shape.type === 'ellipse' ? '50%' : ((shape.radius || 0) / w * 100) + '%';
+            return '<span class="lab-mini-shape" style="left:' + (shape.x / template.width * 100) + '%;top:'
+                + (shape.y / template.height * 100) + '%;width:' + (w / template.width * 100) + '%;height:'
+                + (h / template.height * 100) + '%;border-radius:' + radius + ';background:'
+                + escapeHtml(shape.fill || template.accent) + ';opacity:' + (shape.opacity == null ? 1 : shape.opacity) + ';"></span>';
+        };
+        var shapeList = template.shapes || [];
+        var backShapes = shapeList.filter(function (shape) { return shape.layer !== 'front'; }).map(miniShape).join('');
+        var frontShapes = shapeList.filter(function (shape) { return shape.layer === 'front'; }).map(miniShape).join('');
+        var frames = backShapes + frameBoxes.concat(imageBoxes).join('') + frontShapes;
         var texts = (template.texts || []).map(function (text, index) {
             return '<span class="lab-mini-text" style="left:' + (text.x / template.width * 100) + '%;top:'
                 + (text.y / template.height * 100) + '%;width:' + Math.min(48, text.width / template.width * 70) + '%;background:'
@@ -253,7 +273,7 @@
                 + templatePreview(template)
                 + '<div class="lab-card__floating-actions"><button class="lab-icon-button lab-favorite' + (favorite ? ' is-active' : '')
                 + '" type="button" data-action="favorite-template" aria-pressed="' + favorite + '" aria-label="' + (favorite ? '取消收藏' : '收藏模板') + '">' + icons.star + '</button>'
-                + ((personal && template.canDelete) ? '<button class="lab-icon-button" type="button" data-action="delete-template" aria-label="删除个人模板">' + icons.trash + '</button>' : '') + '</div>'
+                + (template.canDelete ? '<button class="lab-icon-button lab-icon-button--danger" type="button" data-action="delete-template" aria-label="删除模板 ' + escapeHtml(template.name) + '">' + icons.trash + '</button>' : '') + '</div>'
                 + '<div class="lab-card__body"><div class="lab-card__title-row"><h3 class="lab-card__title">' + escapeHtml(template.name) + '</h3>'
                 + '<span class="lab-card__badge ' + (personal ? 'lab-card__badge--personal' : '') + '">' + (personal ? '个人' : '系统') + '</span></div>'
                 + '<div class="lab-card__meta"><strong>' + escapeHtml(template.usageType) + '</strong> · ' + escapeHtml(template.ratioGroup)
@@ -484,18 +504,49 @@
         renderTemplates();
     }
 
-    async function deletePersonalTemplate(template) {
-        if (!template || template.source !== 'personal') return;
-        if (!window.confirm('确认删除个人模板“' + template.name + '”？已经创建的项目仍可继续编辑。')) return;
+    function openDeleteTemplate(template) {
+        if (!template || !template.canDelete || state.deleteBusy) return;
+        var personal = template.source === 'personal';
+        state.pendingDeleteTemplate = template;
+        els.deleteTemplateSource.textContent = personal ? '个人' : '系统';
+        els.deleteTemplateSource.classList.toggle('lab-card__badge--personal', personal);
+        els.deleteTemplateName.textContent = template.name || '未命名模板';
+        els.deleteTemplateMeta.textContent = [template.usageType, template.ratioGroup,
+            template.width + ' × ' + template.height].filter(Boolean).join(' · ');
+        els.deleteTemplateWarning.textContent = personal
+            ? '个人模板删除后无法恢复。已经创建的项目会保留模板快照，可以继续编辑。'
+            : '系统模板删除后会从所有用户的模板库中移除且无法恢复。已经创建的项目不受影响。';
+        els.deleteTemplateDialog.showModal();
+        setTimeout(function () { els.cancelDeleteTemplate.focus(); }, 0);
+    }
+
+    function setDeleteBusy(busy) {
+        state.deleteBusy = busy;
+        els.cancelDeleteTemplate.disabled = busy;
+        els.confirmDeleteTemplate.disabled = busy;
+        els.confirmDeleteTemplate.textContent = busy ? '正在删除...' : '删除模板';
+        els.deleteTemplateDialog.toggleAttribute('aria-busy', busy);
+    }
+
+    async function confirmDeleteTemplate() {
+        var template = state.pendingDeleteTemplate;
+        if (!template || state.deleteBusy) return;
+        setDeleteBusy(true);
         try {
-            await axios.delete('/api/template-lab/templates/personal/' + encodeURIComponent(template.personalTemplateId));
+            await axios.delete('/api/template-lab/templates/' + encodeURIComponent(template.id));
             state.templates = state.templates.filter(function (item) { return item.id !== template.id; });
             state.favorites = state.favorites.filter(function (id) { return id !== String(template.id); });
+            state.recents = state.recents.filter(function (id) { return id !== String(template.id); });
             storeList(FAVORITES_KEY, state.favorites);
+            storeList(RECENTS_KEY, state.recents);
+            state.pendingDeleteTemplate = null;
+            els.deleteTemplateDialog.close();
             renderTemplates();
-            showToast('个人模板已删除');
+            showToast((template.source === 'personal' ? '个人模板' : '系统模板') + '已删除');
         } catch (error) {
             showToast(error.response && error.response.data ? error.response.data.message : error.message, true);
+        } finally {
+            setDeleteBusy(false);
         }
     }
 
@@ -525,6 +576,13 @@
     els.parseDialog.addEventListener('close', function () {
         if (!state.parseBusy) resetParseDialog();
     });
+    els.confirmDeleteTemplate.addEventListener('click', confirmDeleteTemplate);
+    els.deleteTemplateDialog.addEventListener('cancel', function (event) {
+        if (state.deleteBusy) event.preventDefault();
+    });
+    els.deleteTemplateDialog.addEventListener('close', function () {
+        if (!state.deleteBusy) state.pendingDeleteTemplate = null;
+    });
     els.search.addEventListener('input', function (event) { state.search = event.target.value; renderProjects(); });
     els.templateSearch.addEventListener('input', function (event) { state.templateSearch = event.target.value; renderTemplates(); });
     document.querySelector('.lab-template-tools').addEventListener('click', function (event) {
@@ -543,7 +601,7 @@
         var template = card ? templateById(card.dataset.templateId) : null;
         if (button.dataset.action === 'use-template') openCreate(template);
         if (button.dataset.action === 'favorite-template') toggleFavorite(card.dataset.templateId);
-        if (button.dataset.action === 'delete-template') deletePersonalTemplate(template);
+        if (button.dataset.action === 'delete-template') openDeleteTemplate(template);
     });
     els.projectGrid.addEventListener('click', function (event) {
         var button = event.target.closest('[data-action]');

@@ -8,7 +8,8 @@ import java.util.Set;
 public final class KieImageModels {
 
     public static final String NANO_BANANA_PRO = "nano-banana-pro";
-    public static final String NANO_BANANA_2 = "nano-banana-2";
+    public static final String NANO_BANANA_21 = "nano-banana-2-1";
+    public static final String LEGACY_NANO_BANANA_2 = "nano-banana-2";
     public static final String GPT_IMAGE_2 = "gpt-image-2-image-to-image";
 
     /** GPT Image 2.5 只保留精细（sunburst）端点，快速（flare）已下线。 */
@@ -18,12 +19,19 @@ public final class KieImageModels {
 
     public static final int GPT_IMAGE_25_MAX_REFERENCES = 16;
     public static final long GPT_IMAGE_25_MAX_IMAGE_BYTES = 30L * 1024L * 1024L;
+    public static final int NANO_BANANA_21_MAX_REFERENCES = 14;
+    public static final long NANO_BANANA_21_MAX_IMAGE_BYTES = 30L * 1024L * 1024L;
 
     public static final List<String> SELECTABLE_MODELS = List.of(
             NANO_BANANA_PRO,
-            NANO_BANANA_2,
+            NANO_BANANA_21,
             GPT_IMAGE_2,
             GPT_IMAGE_25
+    );
+
+    public static final Set<String> NANO_BANANA_21_ASPECT_RATIOS = Set.of(
+            "auto", "1:1", "2:3", "3:2", "1:4", "4:1", "3:4", "4:3",
+            "4:5", "5:4", "1:8", "8:1", "9:16", "16:9", "21:9"
     );
 
     public static final Set<String> GPT_IMAGE_25_ASPECT_RATIOS = Set.of(
@@ -33,6 +41,7 @@ public final class KieImageModels {
     public static final Set<String> GPT_IMAGE_25_ONE_K_ONLY_RATIOS = Set.of("27:16", "16:27", "9:8", "8:9");
     public static final Set<String> GPT_IMAGE_25_BACKGROUNDS = Set.of("auto", "opaque", "transparent");
     private static final Set<String> GPT_IMAGE_25_IMAGE_EXTENSIONS = Set.of("jpg", "jpeg", "png", "webp");
+    private static final Set<String> NANO_BANANA_21_IMAGE_EXTENSIONS = Set.of("jpg", "jpeg", "png", "webp");
     private static final Set<String> KNOWN_IMAGE_EXTENSIONS = Set.of(
             "jpg", "jpeg", "png", "webp", "gif", "svg", "bmp", "tif", "tiff", "avif", "heic", "heif"
     );
@@ -50,12 +59,16 @@ public final class KieImageModels {
         return GPT_IMAGE_25_MODELS.contains(normalize(model));
     }
 
+    public static boolean isNanoBanana21(String model) {
+        return NANO_BANANA_21.equals(canonicalModel(model));
+    }
+
     public static boolean isSelectable(String model) {
-        return SELECTABLE_MODELS.contains(normalize(model));
+        return SELECTABLE_MODELS.contains(canonicalModel(model));
     }
 
     public static String requireSelectable(String model, String fallback) {
-        String normalized = normalize(model);
+        String normalized = canonicalModel(model);
         if (normalized.isBlank() || normalized.startsWith("project-")) return fallback;
         if (!isSelectable(normalized)) {
             throw new IllegalArgumentException("不支持的 KIE 图片模型: " + model);
@@ -64,7 +77,7 @@ public final class KieImageModels {
     }
 
     public static String resolveActualModel(String requestedModel, int referenceCount) {
-        String model = normalize(requestedModel);
+        String model = canonicalModel(requestedModel);
         boolean hasReferences = referenceCount > 0;
         if (model.equals(GPT_IMAGE_25)
                 || model.equals(GPT_IMAGE_25_TEXT)
@@ -87,11 +100,17 @@ public final class KieImageModels {
     }
 
     public static String logicalModel(String model) {
-        String normalized = normalize(model);
+        String normalized = canonicalModel(model);
         if (normalized.equals(GPT_IMAGE_25_TEXT) || normalized.equals(GPT_IMAGE_25_IMAGE)) {
             return GPT_IMAGE_25;
         }
         return normalized;
+    }
+
+    /** Maps persisted Nano Banana 2 selections to its KIE replacement. */
+    public static String canonicalModel(String model) {
+        String normalized = normalize(model);
+        return LEGACY_NANO_BANANA_2.equals(normalized) ? NANO_BANANA_21 : normalized;
     }
 
     public static boolean usesInputUrls(String actualModel) {
@@ -123,8 +142,35 @@ public final class KieImageModels {
         );
     }
 
+    public static NanoBanana21Parameters validateNanoBanana21(int referenceCount,
+                                                               String resolution,
+                                                               String aspectRatio) {
+        if (referenceCount < 0 || referenceCount > NANO_BANANA_21_MAX_REFERENCES) {
+            throw new IllegalArgumentException("Nano Banana 2.1 最多支持 14 张参考图");
+        }
+        String normalizedResolution = normalizeResolution(resolution, "Nano Banana 2.1");
+        String normalizedRatio = normalize(aspectRatio);
+        if (normalizedRatio.isBlank()) normalizedRatio = "auto";
+        if (!NANO_BANANA_21_ASPECT_RATIOS.contains(normalizedRatio)) {
+            throw new IllegalArgumentException("Nano Banana 2.1 不支持画面比例: " + aspectRatio);
+        }
+        return new NanoBanana21Parameters(normalizedResolution, normalizedRatio);
+    }
+
+    public static void validateNanoBanana21ReferenceFormats(Iterable<String> urls) {
+        validateReferenceFormats(urls, NANO_BANANA_21_IMAGE_EXTENSIONS,
+                "Nano Banana 2.1 参考图仅支持 JPEG、JPG、PNG、WebP");
+    }
+
     /** Rejects only references whose unsupported image format can be determined from the URL. */
     public static void validateImage25ReferenceFormats(Iterable<String> urls) {
+        validateReferenceFormats(urls, GPT_IMAGE_25_IMAGE_EXTENSIONS,
+                "GPT Image 2.5 参考图仅支持 JPEG、JPG、PNG、WebP");
+    }
+
+    private static void validateReferenceFormats(Iterable<String> urls,
+                                                 Set<String> supportedExtensions,
+                                                 String message) {
         if (urls == null) return;
         for (String rawUrl : urls) {
             String url = normalize(rawUrl);
@@ -132,8 +178,8 @@ public final class KieImageModels {
             if (url.startsWith("data:image/")) {
                 int end = url.indexOf(';');
                 String subtype = end > 11 ? url.substring(11, end) : "";
-                if (!GPT_IMAGE_25_IMAGE_EXTENSIONS.contains(subtype)) {
-                    throw unsupportedImageFormat(subtype);
+                if (!supportedExtensions.contains(subtype)) {
+                    throw unsupportedImageFormat(message, subtype);
                 }
                 continue;
             }
@@ -146,29 +192,34 @@ public final class KieImageModels {
             if (dot <= slash || dot == url.length() - 1) continue;
             String extension = url.substring(dot + 1);
             if (KNOWN_IMAGE_EXTENSIONS.contains(extension)
-                    && !GPT_IMAGE_25_IMAGE_EXTENSIONS.contains(extension)) {
-                throw unsupportedImageFormat(extension);
+                    && !supportedExtensions.contains(extension)) {
+                throw unsupportedImageFormat(message, extension);
             }
         }
     }
 
-    private static IllegalArgumentException unsupportedImageFormat(String format) {
+    private static IllegalArgumentException unsupportedImageFormat(String message, String format) {
         String suffix = format == null || format.isBlank() ? "" : "（检测到 " + format.toUpperCase(Locale.ROOT) + "）";
-        return new IllegalArgumentException("GPT Image 2.5 参考图仅支持 JPEG、JPG、PNG、WebP" + suffix);
+        return new IllegalArgumentException(message + suffix);
     }
 
     public static String displayName(String model) {
         return switch (logicalModel(model)) {
+            case NANO_BANANA_21 -> "Nano Banana 2.1";
             case GPT_IMAGE_25 -> "GPT Image 2.5";
             default -> model == null ? "" : model;
         };
     }
 
     private static String normalizeResolution(String value) {
+        return normalizeResolution(value, "GPT Image 2.5");
+    }
+
+    private static String normalizeResolution(String value, String modelName) {
         String resolution = normalize(value).toUpperCase(Locale.ROOT);
         if (resolution.isBlank()) resolution = "2K";
         if (!Set.of("1K", "2K", "4K").contains(resolution)) {
-            throw new IllegalArgumentException("GPT Image 2.5 resolution 仅支持 1K、2K、4K");
+            throw new IllegalArgumentException(modelName + " resolution 仅支持 1K、2K、4K");
         }
         return resolution;
     }
@@ -200,5 +251,8 @@ public final class KieImageModels {
                                     String resolution,
                                     String aspectRatio,
                                     String background) {
+    }
+
+    public record NanoBanana21Parameters(String resolution, String aspectRatio) {
     }
 }
