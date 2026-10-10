@@ -20,7 +20,7 @@
         var currentView = getViewParam();
         var onAiCanvas = isActive('ai-canvas.html') || isActive('ai-canvas-templates.html') || isActive('ai-canvas-history.html');
         var onTemplateLab = isActive('template-lab.html') || isActive('template-lab-editor.html');
-        var onSystemManagement = isActive('admin.html') || isActive('price-management.html');
+        var onSystemManagement = isActive('admin.html') || isActive('price-management.html') || isActive('finance-center.html');
 
         var sidebar = document.createElement('div');
         sidebar.className = 'sidebar-global';
@@ -158,6 +158,7 @@
             '  <div class="sidebar-submenu">',
             subLink('admin.html', 'UM', '用户管理', isActive('admin.html')),
             subLink('price-management.html', '￥', '模型价格', isActive('price-management.html')),
+            subLink('finance-center.html', 'FC', '财务中心', isActive('finance-center.html')),
             '  </div>',
             '</div>'
         ].join('');

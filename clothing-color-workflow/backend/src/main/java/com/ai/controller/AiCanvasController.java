@@ -269,7 +269,10 @@ public class AiCanvasController {
         }
         KieTaskResult result = kieClientService.createVideoTask(model, input);
         String taskId = result.getTaskId();
-        canvasTaskService.recordCreated(taskId, "video", currentOperator(request), currentShopName(request));
+        Map<String, Object> taskPayload = new LinkedHashMap<>(payload);
+        taskPayload.putAll(input);
+        taskPayload.put("model", model);
+        canvasTaskService.recordCreated(taskId, "video", currentOperator(request), currentShopName(request), taskPayload);
         return Map.of(
                 "task_id", taskId,
                 "taskId", taskId,
