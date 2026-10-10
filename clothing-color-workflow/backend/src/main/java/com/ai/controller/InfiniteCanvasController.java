@@ -780,6 +780,27 @@ public class InfiniteCanvasController {
         return response;
     }
 
+    /**
+     * Admin-only ledger: platform-wide canvas tasks across every shop and operator,
+     * filterable and paged. {@code shop_name} is an optional filter — omit it to see
+     * all shops. Guarded by the same PINKSIR-shop check used by the model-price console.
+     */
+    @GetMapping("/admin/canvas-tasks")
+    public Map<String, Object> getAdminCanvasTasks(@RequestParam(value = "shop_name", required = false) String shopName,
+                                                   @RequestParam(value = "operator", required = false) String operator,
+                                                   @RequestParam(value = "canvas_id", required = false) String canvasId,
+                                                   @RequestParam(value = "media_type", required = false) String mediaType,
+                                                   @RequestParam(value = "status", required = false) String status,
+                                                   @RequestParam(value = "page", required = false, defaultValue = "1") int page,
+                                                   @RequestParam(value = "size", required = false, defaultValue = "50") int size,
+                                                   HttpServletRequest request) {
+        if (!isPriceAdmin(request)) {
+            throw new IllegalArgumentException("无权限：仅超级管理员可查看全平台画布生成记录");
+        }
+        return canvasTaskService.adminSearchTasks(shopName, operator, canvasId,
+                mediaType, status, page, size);
+    }
+
     @PostMapping("/canvas-tasks/{taskId}/retry")
     public Map<String, Object> retryCanvasTask(@PathVariable("taskId") String taskId,
                                                HttpServletRequest request) {

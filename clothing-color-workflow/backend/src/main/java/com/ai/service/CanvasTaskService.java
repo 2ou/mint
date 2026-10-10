@@ -15,10 +15,16 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.env.Environment;
 import org.springframework.core.env.Profiles;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import jakarta.persistence.criteria.Predicate;
 import java.time.ZoneId;
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -262,33 +268,94 @@ public class CanvasTaskService {
 
     @Transactional(readOnly = true)
     public List<Map<String, Object>> recentTasks(String operator, String shopName, String canvasId) {
-        List<Map<String, Object>> tasks = new ArrayList<>();
         List<CanvasTask> rows = canvasId == null || canvasId.isBlank()
                 ? canvasTaskRepository.findTop100ByShopNameAndOperatorOrderByUpdatedAtDesc(shopName, operator)
                 : canvasTaskRepository.findTop100ByShopNameAndOperatorAndCanvasIdOrderByUpdatedAtDesc(shopName, operator, canvasId);
+        List<Map<String, Object>> tasks = new ArrayList<>();
         for (CanvasTask task : rows) {
-            String status = normalizeStatus(task.getStatus(), task.getResultUrl());
-            Map<String, Object> item = new LinkedHashMap<>();
-            item.put("task_id", task.getTaskId());
-            item.put("status", status.toLowerCase());
-            item.put("media_type", task.getMediaType());
-            String resultUrl = resultServingUrl(task);
-            item.put("result_url", resultUrl);
-            item.put("result_urls", resultServingUrls(task));
-            item.put("error", task.getErrorMessage() == null ? "" : task.getErrorMessage());
-            item.put("terminal", isTerminalStatus(status));
-            item.put("retryable", "FAILED".equals(status) && task.getRequestPayloadJson() != null && !task.getRequestPayloadJson().isBlank());
-            item.put("canvas_id", task.getCanvasId() == null ? "" : task.getCanvasId());
-            item.put("canvas_node_id", task.getCanvasNodeId() == null ? "" : task.getCanvasNodeId());
-            item.put("estimated_cost", task.getEstimatedCost());
-            item.put("actual_cost", task.getActualCost());
-            item.put("price_version", task.getPriceVersion() == null ? "" : task.getPriceVersion());
-            item.put("price_snapshot", readJson(task.getPriceSnapshotJson()));
-            item.put("created_at", task.getCreatedAt() == null ? 0L : task.getCreatedAt().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli());
-            item.put("updated_at", task.getUpdatedAt() == null ? 0L : task.getUpdatedAt().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli());
-            tasks.add(item);
+            tasks.add(toTaskItem(task));
         }
         return tasks;
+    }
+
+    /**
+     * Admin console query: platform-wide canvas tasks across every shop and operator,
+     * filterable and paged. Unlike {@link #recentTasks}, this is not capped at the latest 100 rows.
+     *
+     * @param shopName optional shop filter; blank/null means "all shops on the platform"
+     */
+    @Transactional(readOnly = true)
+    public Map<String, Object> adminSearchTasks(String shopName, String operator, String canvasId,
+                                                String mediaType, String status, int page, int size) {
+        int safeSize = Math.min(Math.max(size, 1), 200);
+        int safePage = Math.max(page, 1);
+        Specification<CanvasTask> spec = (root, query, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            if (shopName != null && !shopName.isBlank()) {
+                predicates.add(cb.equal(root.get("shopName"), shopName.trim()));
+            }
+            if (operator != null && !operator.isBlank()) {
+                predicates.add(cb.equal(root.get("operator"), operator.trim()));
+            }
+            if (canvasId != null && !canvasId.isBlank()) {
+                predicates.add(cb.equal(root.get("canvasId"), canvasId.trim()));
+            }
+            if (mediaType != null && !mediaType.isBlank()) {
+                predicates.add(cb.equal(cb.lower(root.get("mediaType")), mediaType.trim().toLowerCase()));
+            }
+            if (status != null && !status.isBlank()) {
+                predicates.add(cb.equal(cb.lower(root.get("status")), status.trim().toLowerCase()));
+            }
+            return predicates.isEmpty() ? cb.conjunction() : cb.and(predicates.toArray(new Predicate[0]));
+        };
+        Pageable pageable = PageRequest.of(safePage - 1, safeSize, Sort.by(Sort.Direction.DESC, "updatedAt"));
+        Page<CanvasTask> result = canvasTaskRepository.findAll(spec, pageable);
+
+        List<Map<String, Object>> tasks = new ArrayList<>();
+        Map<String, Long> summary = new LinkedHashMap<>();
+        for (CanvasTask task : result.getContent()) {
+            Map<String, Object> item = toTaskItem(task);
+            tasks.add(item);
+            String normalized = String.valueOf(item.get("status"));
+            summary.put(normalized, summary.getOrDefault(normalized, 0L) + 1L);
+        }
+
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("tasks", tasks);
+        response.put("summary", summary);
+        response.put("shops", canvasTaskRepository.findDistinctShopNames());
+        response.put("page", safePage);
+        response.put("size", safeSize);
+        response.put("total", result.getTotalElements());
+        response.put("total_pages", result.getTotalPages());
+        response.put("has_more", result.hasNext());
+        return response;
+    }
+
+    /** Shared row -> API item mapping so the canvas ledger and the admin console stay consistent. */
+    private Map<String, Object> toTaskItem(CanvasTask task) {
+        String status = normalizeStatus(task.getStatus(), task.getResultUrl());
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("task_id", task.getTaskId());
+        item.put("status", status.toLowerCase());
+        item.put("media_type", task.getMediaType());
+        String resultUrl = resultServingUrl(task);
+        item.put("result_url", resultUrl);
+        item.put("result_urls", resultServingUrls(task));
+        item.put("error", task.getErrorMessage() == null ? "" : task.getErrorMessage());
+        item.put("terminal", isTerminalStatus(status));
+        item.put("retryable", "FAILED".equals(status) && task.getRequestPayloadJson() != null && !task.getRequestPayloadJson().isBlank());
+        item.put("canvas_id", task.getCanvasId() == null ? "" : task.getCanvasId());
+        item.put("canvas_node_id", task.getCanvasNodeId() == null ? "" : task.getCanvasNodeId());
+        item.put("operator", task.getOperator() == null ? "" : task.getOperator());
+        item.put("shop_name", task.getShopName() == null ? "" : task.getShopName());
+        item.put("estimated_cost", task.getEstimatedCost());
+        item.put("actual_cost", task.getActualCost());
+        item.put("price_version", task.getPriceVersion() == null ? "" : task.getPriceVersion());
+        item.put("price_snapshot", readJson(task.getPriceSnapshotJson()));
+        item.put("created_at", task.getCreatedAt() == null ? 0L : task.getCreatedAt().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli());
+        item.put("updated_at", task.getUpdatedAt() == null ? 0L : task.getUpdatedAt().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli());
+        return item;
     }
 
     @Transactional(readOnly = true)

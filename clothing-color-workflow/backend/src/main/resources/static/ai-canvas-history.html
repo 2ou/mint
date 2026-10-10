@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <title>画布生成记录 - AI 时尚视觉平台</title>
+    <link rel="stylesheet" href="css/variables.css">
+    <link rel="stylesheet" href="css/shared.css">
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css"/>
+    <script src="https://unpkg.com/element-plus"></script>
+    <script src="https://unpkg.com/@element-plus/icons-vue"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <script src="auth.js"></script>
+    <script src="js/sidebar.js"></script>
+    <style>
+        :root {
+            --page-bg: #f5f7fb;
+            --surface: #ffffff;
+            --surface-soft: #f9fafb;
+            --border: #e5e7eb;
+            --text: #111827;
+            --muted: #6b7280;
+            --muted-soft: #9ca3af;
+            --primary: #2563eb;
+            --primary-soft: #eff6ff;
+            --radius: 8px;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            font-family: var(--app-font-family);
+            background:
+                radial-gradient(circle at top left, rgba(37, 99, 235, 0.08), transparent 34%),
+                linear-gradient(180deg, #f8fafc 0%, var(--page-bg) 100%);
+            color: var(--text);
+            letter-spacing: 0;
+        }
+
+        .app-main { padding: 0; background: var(--page-bg); min-height: 100vh; }
+
+        .page-shell { padding: 24px 28px 32px; min-height: 100vh; }
+
+        .page-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+
+        .page-title { margin: 0; font-size: 22px; line-height: 1.3; font-weight: 700; color: var(--text); }
+
+        .page-subtitle { margin: 6px 0 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
+
+        .toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .summary-card {
+            background: rgba(255, 255, 255, 0.84);
+            border: 1px solid rgba(226, 232, 240, 0.9);
+            border-radius: var(--radius);
+            padding: 14px 16px;
+            box-shadow: 0 10px 26px rgba(15, 23, 42, 0.06);
+            backdrop-filter: blur(10px);
+        }
+
+        .summary-label { color: var(--muted); font-size: 12px; line-height: 1.4; }
+
+        .summary-value { margin-top: 6px; color: var(--text); font-size: 24px; line-height: 1; font-weight: 750; }
+
+        .summary-hint { margin-top: 6px; color: var(--muted-soft); font-size: 12px; }
+
+        .panel {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            box-shadow: 0 12px 30px rgba(15, 23, 42, 0.06);
+            overflow: hidden;
+        }
+
+        .panel + .panel { margin-top: 16px; }
+
+        .panel-body { padding: 16px; }
+
+        .filters { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+
+        .thumb {
+            width: 64px; height: 48px; border-radius: 6px; overflow: hidden;
+            background: var(--surface-soft); border: 1px solid var(--border);
+            display: flex; align-items: center; justify-content: center;
+            color: var(--muted-soft); font-size: 11px;
+        }
+
+        .thumb .el-image { width: 100%; height: 100%; display: block; }
+
+        .mono-id {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-size: 12px; color: #374151;
+        }
+
+        .pagination-wrap { display: flex; justify-content: center; padding-top: 16px; }
+
+        .empty-hint {
+            min-height: 120px; display: flex; align-items: center; justify-content: center;
+            color: var(--muted); background: var(--surface-soft);
+            border: 1px dashed var(--border); border-radius: var(--radius);
+        }
+
+        @media (max-width: 860px) {
+            .page-shell { padding: 18px 14px 24px; }
+            .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .page-header { flex-direction: column; }
+            .toolbar { width: 100%; justify-content: flex-start; }
+        }
+
+        @media (max-width: 560px) {
+            .summary-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+<div id="app">
+    <div class="app-layout">
+        <main class="app-main">
+            <div class="page-shell">
+                <header class="page-header">
+                    <div>
+                        <h1 class="page-title">画布生成记录</h1>
+                        <p class="page-subtitle">
+                            管理员视图：查看全平台所有店铺 / 操作人的 AI 画布生成任务，可按店铺 / 操作人 / 画布 / 媒体类型 / 状态筛选，默认按更新时间展示最近 50 条。
+                        </p>
+                    </div>
+                    <div class="toolbar">
+                        <el-tag type="warning" effect="dark">仅管理员可见</el-tag>
+                        <el-button @click="reload" :loading="loading">刷新</el-button>
+                    </div>
+                </header>
+
+                <div class="summary-grid">
+                    <div class="summary-card">
+                        <div class="summary-label">筛选结果总数</div>
+                        <div class="summary-value">{{ total }}</div>
+                        <div class="summary-hint">当前筛选条件下的全部记录</div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="summary-label">成功</div>
+                        <div class="summary-value">{{ successCount }}</div>
+                        <div class="summary-hint">本页统计</div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="summary-label">处理中</div>
+                        <div class="summary-value">{{ runningCount }}</div>
+                        <div class="summary-hint">本页统计</div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="summary-label">失败</div>
+                        <div class="summary-value">{{ failedCount }}</div>
+                        <div class="summary-hint">本页统计</div>
+                    </div>
+                </div>
+
+                <section class="panel">
+                    <div class="panel-body">
+                        <div class="filters">
+                            <el-select
+                                v-model="filters.shopName"
+                                placeholder="全部店铺"
+                                clearable
+                                filterable
+                                style="width: 180px;"
+                                @change="resetAndLoad">
+                                <el-option v-for="s in shopOptions" :key="s" :label="s" :value="s"/>
+                            </el-select>
+                            <el-input
+                                v-model="filters.operator"
+                                placeholder="按操作人账号筛选"
+                                clearable
+                                style="width: 200px;"
+                                @clear="resetAndLoad"
+                                @keyup.enter="resetAndLoad"/>
+                            <el-input
+                                v-model="filters.canvasId"
+                                placeholder="按画布 ID 筛选"
+                                clearable
+                                style="width: 200px;"
+                                @clear="resetAndLoad"
+                                @keyup.enter="resetAndLoad"/>
+                            <el-select
+                                v-model="filters.mediaType"
+                                placeholder="媒体类型"
+                                clearable
+                                style="width: 150px;"
+                                @change="resetAndLoad">
+                                <el-option label="图片" value="image"/>
+                                <el-option label="视频" value="video"/>
+                            </el-select>
+                            <el-select
+                                v-model="filters.status"
+                                placeholder="任务状态"
+                                clearable
+                                style="width: 150px;"
+                                @change="resetAndLoad">
+                                <el-option label="处理中" value="processing"/>
+                                <el-option label="成功" value="success"/>
+                                <el-option label="失败" value="failed"/>
+                                <el-option label="已取消" value="canceled"/>
+                            </el-select>
+                            <el-button type="primary" @click="resetAndLoad">搜索</el-button>
+                            <el-button @click="clearFilters">重置</el-button>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="panel">
+                    <div class="panel-body">
+                        <el-table
+                            :data="tasks"
+                            style="width: 100%"
+                            v-loading="loading"
+                            stripe
+                            row-key="task_id">
+                            <el-table-column label="预览" width="90">
+                                <template #default="{ row }">
+                                    <div class="thumb">
+                                        <template v-if="row.media_type === 'video'">
+                                            <span v-if="row.result_url" title="视频结果">
+                                                <a :href="row.result_url" target="_blank">▶</a>
+                                            </span>
+                                            <span v-else>-</span>
+                                        </template>
+                                        <el-image
+                                            v-else-if="row.result_url"
+                                            :src="row.result_url"
+                                            fit="cover"
+                                            :preview-src-list="[row.result_url]"
+                                            preview-teleported/>
+                                        <span v-else>-</span>
+                                    </div>
+                                </template>
+                            </el-table-column>
+                            <el-table-column label="任务 ID" min-width="230" show-overflow-tooltip>
+                                <template #default="{ row }">
+                                    <span class="mono-id">{{ row.task_id || '-' }}</span>
+                                </template>
+                            </el-table-column>
+                            <el-table-column label="类型" width="80">
+                                <template #default="{ row }">{{ mediaLabel(row.media_type) }}</template>
+                            </el-table-column>
+                            <el-table-column label="状态" width="100">
+                                <template #default="{ row }">
+                                    <el-tag :type="statusType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
+                                </template>
+                            </el-table-column>
+                            <el-table-column prop="shop_name" label="店铺" width="150" show-overflow-tooltip>
+                                <template #default="{ row }">{{ row.shop_name || '-' }}</template>
+                            </el-table-column>
+                            <el-table-column prop="operator" label="操作人" width="150" show-overflow-tooltip>
+                                <template #default="{ row }">{{ row.operator || '-' }}</template>
+                            </el-table-column>
+                            <el-table-column prop="canvas_id" label="画布" width="150" show-overflow-tooltip>
+                                <template #default="{ row }">{{ row.canvas_id || '-' }}</template>
+                            </el-table-column>
+                            <el-table-column label="创建时间" width="170">
+                                <template #default="{ row }">{{ fmtTime(row.created_at) }}</template>
+                            </el-table-column>
+                            <el-table-column label="更新时间" width="170">
+                                <template #default="{ row }">{{ fmtTime(row.updated_at) }}</template>
+                            </el-table-column>
+                            <el-table-column label="费用 (实际/预估)" width="150">
+                                <template #default="{ row }">{{ costText(row) }}</template>
+                            </el-table-column>
+                            <el-table-column label="操作" width="150" fixed="right">
+                                <template #default="{ row }">
+                                    <el-button size="small" @click.stop="copyId(row.task_id)">复制 ID</el-button>
+                                    <el-button
+                                        size="small"
+                                        type="primary"
+                                        plain
+                                        @click.stop="openResult(row)"
+                                        :disabled="!row.result_url">查看</el-button>
+                                </template>
+                            </el-table-column>
+                            <template #empty>
+                                <div class="empty-hint">当前筛选条件下没有生成记录</div>
+                            </template>
+                        </el-table>
+
+                        <div class="pagination-wrap">
+                            <el-pagination
+                                v-model:current-page="page"
+                                v-model:page-size="size"
+                                :page-sizes="[50, 100, 200]"
+                                :total="total"
+                                layout="total, sizes, prev, pager, next, jumper"
+                                @size-change="onSizeChange"
+                                @current-change="load"/>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </main>
+    </div>
+</div>
+
+<script>
+    const { createApp, ref, reactive, computed, onMounted } = Vue;
+
+    createApp({
+        setup() {
+            const isAdmin = !!(window.AppAuth && window.AppAuth.isAdmin());
+
+            const tasks = ref([]);
+            const summary = ref({});
+            const shopOptions = ref([]);
+            const loading = ref(false);
+            const page = ref(1);
+            const size = ref(50);
+            const total = ref(0);
+            const filters = reactive({ shopName: '', operator: '', canvasId: '', mediaType: '', status: '' });
+
+            const successCount = computed(() => summary.value.success || 0);
+            const failedCount = computed(() => summary.value.failed || 0);
+            const runningCount = computed(() => summary.value.processing || 0);
+
+            async function load() {
+                if (!isAdmin) return;
+                loading.value = true;
+                try {
+                    const params = { page: page.value, size: size.value };
+                    if (filters.shopName) params.shop_name = filters.shopName;
+                    if (filters.operator) params.operator = filters.operator.trim();
+                    if (filters.canvasId) params.canvas_id = filters.canvasId.trim();
+                    if (filters.mediaType) params.media_type = filters.mediaType;
+                    if (filters.status) params.status = filters.status;
+                    const res = await axios.get('/api/admin/canvas-tasks', { params });
+                    tasks.value = res.data.tasks || [];
+                    summary.value = res.data.summary || {};
+                    const shops = res.data.shops || [];
+                    if (shops.length) shopOptions.value = shops;
+                    total.value = res.data.total || 0;
+                } catch (err) {
+                    const msg = (err.response && err.response.data && err.response.data.message)
+                        ? err.response.data.message
+                        : (err.message || '加载失败');
+                    ElementPlus.ElMessage.error(msg);
+                    tasks.value = [];
+                    summary.value = {};
+                    total.value = 0;
+                } finally {
+                    loading.value = false;
+                }
+            }
+
+            function resetAndLoad() { page.value = 1; load(); }
+            function onSizeChange() { page.value = 1; load(); }
+            function reload() { load(); }
+
+            function clearFilters() {
+                filters.shopName = '';
+                filters.operator = '';
+                filters.canvasId = '';
+                filters.mediaType = '';
+                filters.status = '';
+                resetAndLoad();
+            }
+
+            function fmtTime(ms) {
+                if (!ms) return '-';
+                const d = new Date(ms);
+                const p = n => String(n).padStart(2, '0');
+                return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' '
+                    + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+            }
+
+            function statusType(s) {
+                if (s === 'success') return 'success';
+                if (s === 'failed') return 'danger';
+                if (s === 'canceled') return 'info';
+                return 'warning';
+            }
+
+            function statusLabel(s) {
+                return { success: '成功', failed: '失败', processing: '处理中', canceled: '已取消' }[s] || (s || '-');
+            }
+
+            function mediaLabel(m) {
+                if (m === 'video') return '视频';
+                if (m === 'image') return '图片';
+                return m || '-';
+            }
+
+            function costText(row) {
+                const actual = row.actual_cost, estimated = row.estimated_cost;
+                const hasActual = actual !== null && actual !== undefined;
+                const hasEstimate = estimated !== null && estimated !== undefined;
+                if (hasActual && hasEstimate) return actual + ' / ' + estimated;
+                if (hasActual) return actual + ' / -';
+                if (hasEstimate) return '- / ' + estimated;
+                return '-';
+            }
+
+            function copyId(id) {
+                if (!id) return;
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(id)
+                        .then(() => ElementPlus.ElMessage.success('已复制任务 ID'))
+                        .catch(() => {});
+                }
+            }
+
+            function openResult(row) {
+                if (row && row.result_url) window.open(row.result_url, '_blank');
+            }
+
+            onMounted(() => {
+                if (!isAdmin) {
+                    ElementPlus.ElMessage.error('无权限：仅管理员可访问画布生成记录，即将返回画布');
+                    setTimeout(() => { window.location.href = 'ai-canvas.html'; }, 1400);
+                    return;
+                }
+                load();
+            });
+
+            return {
+                isAdmin, tasks, summary, shopOptions, loading, page, size, total, filters,
+                successCount, failedCount, runningCount,
+                load, reload, resetAndLoad, onSizeChange, clearFilters,
+                fmtTime, statusType, statusLabel, mediaLabel, costText, copyId, openResult
+            };
+        }
+    }).use(ElementPlus).mount('#app');
+</script>
+</body>
+</html>

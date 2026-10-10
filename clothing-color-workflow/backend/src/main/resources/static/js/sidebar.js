@@ -18,7 +18,7 @@
         var onAplus = isActive('aplus.html') || isActive('aplus-templates.html') || isActive('aplus-history.html');
         var onModelLib = isActive('model-library.html');
         var currentView = getViewParam();
-        var onAiCanvas = isActive('ai-canvas.html') || isActive('ai-canvas-templates.html');
+        var onAiCanvas = isActive('ai-canvas.html') || isActive('ai-canvas-templates.html') || isActive('ai-canvas-history.html');
         var onTemplateLab = isActive('template-lab.html') || isActive('template-lab-editor.html');
         var onSystemManagement = isActive('admin.html') || isActive('price-management.html');
 
@@ -39,7 +39,7 @@
             navLink('scene-generator.html', 'AI', 'AI 场景生成', isActive('scene-generator.html')),
             navLink('buyer-show.html', 'BS', 'AI 买家秀', isActive('buyer-show.html')),
             aplusMenu(onAplus),
-            aiCanvasMenu(onAiCanvas),
+            aiCanvasMenu(onAiCanvas, isAdmin),
             navLink('template-lab.html', 'TL', '模板拼图实验室', onTemplateLab),
             navLink('video.html', 'VD', '视频生成', isActive('video.html')),
             modelLibraryMenu(onModelLib, currentView),
@@ -113,7 +113,7 @@
         ].join('');
     }
 
-    function aiCanvasMenu(onAiCanvas) {
+    function aiCanvasMenu(onAiCanvas, isAdmin) {
         return [
             '<div class="sidebar-parent' + (onAiCanvas ? ' expanded' : '') + '">',
             '  <div class="sidebar-link sidebar-parent-toggle' + (onAiCanvas ? ' active-parent' : '') + '" onclick="this.parentElement.classList.toggle(\'expanded\')">',
@@ -124,6 +124,7 @@
             '  <div class="sidebar-submenu">',
             subLink('ai-canvas.html', 'C', '画布工作台', isActive('ai-canvas.html')),
             subLink('ai-canvas-templates.html', 'T', '画布模板', isActive('ai-canvas-templates.html')),
+            isAdmin ? subLink('ai-canvas-history.html', 'H', '生成记录', isActive('ai-canvas-history.html')) : '',
             '  </div>',
             '</div>'
         ].join('');
