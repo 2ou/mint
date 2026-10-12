@@ -2,6 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>系统用户管理 (仅 PINKSIR 可见)</title>
     <link rel="stylesheet" href="css/variables.css">
     <link rel="stylesheet" href="css/shared.css">
@@ -14,6 +15,15 @@
     <style>
         body { margin: 0; font-family: var(--app-font-family); }
         .el-message, .el-overlay.is-message-box { z-index: 99999 !important; top: 80px !important; }
+        .admin-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 15px; }
+        .admin-note { color: #64748b; font-size: 13px; line-height: 1.5; }
+        .audit-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; }
+        .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+        .danger-count { color: #dc2626; font-weight: 700; }
+        .el-button:focus-visible, .el-input:focus-within { outline: 2px solid #2563eb; outline-offset: 2px; }
+        @media (max-width: 760px) {
+            .admin-toolbar, .audit-toolbar { align-items: flex-start; flex-direction: column; }
+        }
     </style>
 </head>
 <body>
@@ -23,43 +33,85 @@
     <el-card class="app-card">
         <template #header>
             <div style="display: flex; justify-content: space-between; align-items: center;">
-                <div style="font-size: 18px; font-weight: bold;">⚙️ 超级管理员面板 - 用户管理</div>
+                <div style="font-size: 18px; font-weight: bold;">超级管理员面板</div>
                 <el-button @click="goBack" color="#f5f7fa" style="color: #606266; font-weight: bold;">返回大盘</el-button>
             </div>
         </template>
 
-        <div style="margin-bottom: 15px;">
-            <el-button type="primary" @click="openAddDialog" style="font-weight: bold;">➕ 新增用户账号</el-button>
-        </div>
+        <el-tabs v-model="activeTab" @tab-change="handleTabChange">
+            <el-tab-pane label="账号管理" name="users">
+                <div class="admin-toolbar">
+                    <div class="admin-note">密码只保存 BCrypt 哈希且不会回显；连续登录失败 10 次将锁定账号，必须由管理员解封。</div>
+                    <el-button type="primary" @click="openAddDialog" style="font-weight: bold;">新增用户账号</el-button>
+                </div>
 
-        <el-table :data="users" v-loading="loading" border stripe style="width: 100%; border-radius: 8px; overflow: hidden;">
-            <el-table-column prop="id" label="ID" width="70" align="center"></el-table-column>
-            <el-table-column prop="username" label="登录账号 (Username)" min-width="120">
-                <template #default="scope">
-                    <span style="font-weight: bold; color: #409EFF;">{{ scope.row.username }}</span>
-                    <el-tag v-if="scope.row.username === 'PINKSIR'" size="small" type="danger" style="margin-left: 5px;">超级管理员</el-tag>
-                </template>
-            </el-table-column>
-            <el-table-column prop="password" label="密码" width="120" align="center"></el-table-column>
-            <el-table-column prop="shopName" label="所属店铺 (ShopName)" min-width="120"></el-table-column>
-            <el-table-column prop="realName" label="真实姓名 (RealName)" min-width="120"></el-table-column>
+                <el-table :data="users" v-loading="loading" border stripe style="width: 100%; border-radius: 8px; overflow: hidden;">
+                    <el-table-column prop="id" label="ID" width="70" align="center"></el-table-column>
+                    <el-table-column prop="username" label="登录账号" min-width="140">
+                        <template #default="scope">
+                            <span style="font-weight: bold; color: #2563eb;">{{ scope.row.username }}</span>
+                            <el-tag v-if="scope.row.username === 'PINKSIR'" size="small" type="danger" style="margin-left: 5px;">超级管理员</el-tag>
+                        </template>
+                    </el-table-column>
+                    <el-table-column prop="shopName" label="所属店铺" min-width="120"></el-table-column>
+                    <el-table-column prop="realName" label="真实姓名" min-width="120"></el-table-column>
+                    <el-table-column label="状态" width="100" align="center">
+                        <template #default="scope"><el-tag :type="statusType(scope.row.status)">{{ statusLabel(scope.row.status) }}</el-tag></template>
+                    </el-table-column>
+                    <el-table-column label="失败次数" width="90" align="center">
+                        <template #default="scope"><span :class="{'danger-count': scope.row.failedLoginCount > 0}">{{ scope.row.failedLoginCount || 0 }}</span></template>
+                    </el-table-column>
+                    <el-table-column label="最近登录" width="168">
+                        <template #default="scope">{{ formatTime(scope.row.lastLoginAt) }}</template>
+                    </el-table-column>
+                    <el-table-column label="操作" width="250" align="center" fixed="right">
+                        <template #default="scope">
+                            <el-button size="small" type="warning" plain @click="openEditDialog(scope.row)">修改</el-button>
+                            <el-button v-if="scope.row.status === 'LOCKED'" size="small" type="success" plain @click="handleUnlock(scope.row)">解锁</el-button>
+                            <el-button size="small" type="danger" plain @click="handleDelete(scope.row)" :disabled="scope.row.username === 'PINKSIR'">删除</el-button>
+                        </template>
+                    </el-table-column>
+                </el-table>
+            </el-tab-pane>
 
-            <el-table-column label="操作" width="180" align="center" fixed="right">
-                <template #default="scope">
-                    <el-button size="small" type="warning" plain @click="openEditDialog(scope.row)">修改</el-button>
-                    <el-button size="small" type="danger" plain @click="handleDelete(scope.row)" :disabled="scope.row.username === 'PINKSIR'">删除</el-button>
-                </template>
-            </el-table-column>
-        </el-table>
+            <el-tab-pane label="登录记录" name="loginLogs">
+                <div class="audit-toolbar"><span class="admin-note">展示最近 200 条成功、失败及锁定记录。</span><el-button @click="fetchLoginLogs">刷新</el-button></div>
+                <el-table :data="loginLogs" v-loading="auditLoading" border stripe>
+                    <el-table-column label="时间" width="168"><template #default="scope">{{ formatTime(scope.row.createdAt) }}</template></el-table-column>
+                    <el-table-column prop="username" label="账号" min-width="120"></el-table-column>
+                    <el-table-column prop="shopName" label="店铺" min-width="110"></el-table-column>
+                    <el-table-column prop="operator" label="操作人" min-width="110"></el-table-column>
+                    <el-table-column label="结果" width="100" align="center"><template #default="scope"><el-tag :type="scope.row.success ? 'success' : 'danger'">{{ scope.row.success ? '成功' : '失败' }}</el-tag></template></el-table-column>
+                    <el-table-column label="原因" min-width="160"><template #default="scope">{{ loginResultLabel(scope.row.resultCode) }}</template></el-table-column>
+                    <el-table-column prop="failedCount" label="连续失败" width="90" align="center"></el-table-column>
+                    <el-table-column prop="ipAddress" label="IP" min-width="130"><template #default="scope"><span class="mono">{{ scope.row.ipAddress }}</span></template></el-table-column>
+                </el-table>
+            </el-tab-pane>
+
+            <el-tab-pane label="操作记录" name="operationLogs">
+                <div class="audit-toolbar"><span class="admin-note">记录写操作，以及系统管理和财务中心访问。</span><el-button @click="fetchOperationLogs">刷新</el-button></div>
+                <el-table :data="operationLogs" v-loading="auditLoading" border stripe>
+                    <el-table-column label="时间" width="168"><template #default="scope">{{ formatTime(scope.row.createdAt) }}</template></el-table-column>
+                    <el-table-column prop="operator" label="操作人" min-width="110"></el-table-column>
+                    <el-table-column prop="shopName" label="店铺" min-width="110"></el-table-column>
+                    <el-table-column prop="httpMethod" label="方法" width="82" align="center"></el-table-column>
+                    <el-table-column prop="requestPath" label="接口" min-width="260"><template #default="scope"><span class="mono">{{ scope.row.requestPath }}</span></template></el-table-column>
+                    <el-table-column prop="statusCode" label="状态码" width="82" align="center"></el-table-column>
+                    <el-table-column prop="durationMs" label="耗时(ms)" width="90" align="right"></el-table-column>
+                    <el-table-column prop="ipAddress" label="IP" min-width="130"><template #default="scope"><span class="mono">{{ scope.row.ipAddress }}</span></template></el-table-column>
+                </el-table>
+            </el-tab-pane>
+        </el-tabs>
     </el-card>
 
-    <el-dialog v-model="dialogVisible" :title="isEdit ? '✏️ 修改用户信息' : '➕ 新增用户'" width="400px">
+    <el-dialog v-model="dialogVisible" :title="isEdit ? '修改用户信息' : '新增用户'" width="min(440px,92vw)">
         <el-form label-width="80px">
             <el-form-item label="登录账号">
                 <el-input v-model="form.username" :disabled="isEdit" placeholder="必填"></el-input>
             </el-form-item>
             <el-form-item label="登录密码">
-                <el-input v-model="form.password" placeholder="必填"></el-input>
+                <el-input v-model="form.password" type="password" autocomplete="new-password" show-password
+                          :placeholder="isEdit ? '留空表示不修改' : '至少8位'"></el-input>
             </el-form-item>
             <el-form-item label="所属店铺">
                 <el-input v-model="form.shopName" placeholder="如：PINKSIR"></el-input>
@@ -86,6 +138,10 @@
             const loading = ref(false);
             const saving = ref(false);
             const users = ref([]);
+            const loginLogs = ref([]);
+            const operationLogs = ref([]);
+            const activeTab = ref('users');
+            const auditLoading = ref(false);
 
             const dialogVisible = ref(false);
             const isEdit = ref(false);
@@ -117,13 +173,14 @@
 
             const openEditDialog = (row) => {
                 isEdit.value = true;
-                form.id = row.id; form.username = row.username; form.password = row.password;
+                form.id = row.id; form.username = row.username; form.password = '';
                 form.shopName = row.shopName; form.realName = row.realName;
                 dialogVisible.value = true;
             };
 
             const saveUser = async () => {
-                if (!form.username || !form.password) return ElementPlus.ElMessage.warning('账号和密码不能为空！');
+                if (!form.username || (!isEdit.value && !form.password)) return ElementPlus.ElMessage.warning('账号和密码不能为空！');
+                if (form.password && form.password.length < 8) return ElementPlus.ElMessage.warning('密码至少需要8位');
                 saving.value = true;
                 try {
                     const url = isEdit.value ? `/api/admin/users/update/${form.id}` : '/api/admin/users/create';
@@ -144,6 +201,49 @@
                 }
             };
 
+            const handleUnlock = async (row) => {
+                try {
+                    await ElementPlus.ElMessageBox.confirm(`确定解锁账号【${row.username}】吗？解锁后需要重新登录。`, '解锁账号', { type: 'warning' });
+                    const res = await axios.post(`/api/admin/users/${row.id}/unlock`);
+                    if (!res.data.success) return ElementPlus.ElMessage.error(res.data.message || '解锁失败');
+                    ElementPlus.ElMessage.success(res.data.message);
+                    fetchUsers();
+                } catch (e) {}
+            };
+
+            const fetchLoginLogs = async () => {
+                auditLoading.value = true;
+                try {
+                    const res = await axios.get('/api/admin/security/login-logs', { params: { limit: 200 } });
+                    if (res.data.success) loginLogs.value = res.data.data || [];
+                    else ElementPlus.ElMessage.error(res.data.message || '获取登录记录失败');
+                } catch (e) { ElementPlus.ElMessage.error('获取登录记录失败'); }
+                finally { auditLoading.value = false; }
+            };
+
+            const fetchOperationLogs = async () => {
+                auditLoading.value = true;
+                try {
+                    const res = await axios.get('/api/admin/security/operation-logs', { params: { limit: 200 } });
+                    if (res.data.success) operationLogs.value = res.data.data || [];
+                    else ElementPlus.ElMessage.error(res.data.message || '获取操作记录失败');
+                } catch (e) { ElementPlus.ElMessage.error('获取操作记录失败'); }
+                finally { auditLoading.value = false; }
+            };
+
+            const handleTabChange = (name) => {
+                if (name === 'loginLogs' && !loginLogs.value.length) fetchLoginLogs();
+                if (name === 'operationLogs' && !operationLogs.value.length) fetchOperationLogs();
+            };
+
+            const statusLabel = status => status === 'LOCKED' ? '已锁定' : (status === 'DISABLED' ? '已停用' : '正常');
+            const statusType = status => status === 'LOCKED' ? 'danger' : (status === 'DISABLED' ? 'info' : 'success');
+            const formatTime = value => value ? String(value).replace('T', ' ').slice(0, 19) : '-';
+            const loginResultLabel = code => ({
+                SUCCESS: '登录成功', BAD_CREDENTIALS: '账号或密码错误', LOCKED: '账号处于锁定状态',
+                LOCKED_AFTER_FAILURES: '连续失败达到上限并锁定', DISABLED: '账号已停用'
+            }[code] || code || '-');
+
             const handleDelete = async (row) => {
                 try {
                     await ElementPlus.ElMessageBox.confirm(`确定要永久删除账号【${row.username}】吗？`, '危险操作', { type: 'error' });
@@ -162,8 +262,9 @@
             onMounted(() => fetchUsers());
 
             return {
-                users, loading, dialogVisible, isEdit, form, saving,
-                openAddDialog, openEditDialog, saveUser, handleDelete, goBack
+                users, loginLogs, operationLogs, activeTab, loading, auditLoading, dialogVisible, isEdit, form, saving,
+                openAddDialog, openEditDialog, saveUser, handleDelete, handleUnlock, handleTabChange,
+                fetchLoginLogs, fetchOperationLogs, statusLabel, statusType, formatTime, loginResultLabel, goBack
             };
         }
     }).use(ElementPlus).mount('#app');

@@ -73,9 +73,15 @@ if (window.location.hostname === 'localhost' || window.location.hostname === '12
         /**
          * 退出登录：清除所有 localStorage 并跳转到登录页
          */
-        logout: function () {
-            localStorage.clear();
-            window.location.href = 'login.html';
+        logout: async function () {
+            try {
+                if (token && typeof axios !== 'undefined') await axios.post('/api/auth/logout');
+            } catch (e) {
+                // Local logout must still complete if the session already expired.
+            } finally {
+                localStorage.clear();
+                window.location.href = 'login.html';
+            }
         }
     };
 

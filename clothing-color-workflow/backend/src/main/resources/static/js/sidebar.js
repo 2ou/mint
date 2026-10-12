@@ -20,7 +20,7 @@
         var currentView = getViewParam();
         var onAiCanvas = isActive('ai-canvas.html') || isActive('ai-canvas-templates.html') || isActive('ai-canvas-history.html');
         var onTemplateLab = isActive('template-lab.html') || isActive('template-lab-editor.html');
-        var onSystemManagement = isActive('admin.html') || isActive('price-management.html') || isActive('finance-center.html');
+        var onSystemManagement = isActive('admin.html') || isActive('price-management.html');
 
         var sidebar = document.createElement('div');
         sidebar.className = 'sidebar-global';
@@ -39,13 +39,14 @@
             navLink('scene-generator.html', 'AI', 'AI 场景生成', isActive('scene-generator.html')),
             navLink('buyer-show.html', 'BS', 'AI 买家秀', isActive('buyer-show.html')),
             aplusMenu(onAplus),
-            aiCanvasMenu(onAiCanvas, isAdmin),
+            aiCanvasMenu(onAiCanvas),
             navLink('template-lab.html', 'TL', '模板拼图实验室', onTemplateLab),
             navLink('video.html', 'VD', '视频生成', isActive('video.html')),
             modelLibraryMenu(onModelLib, currentView),
             navLink('template-manage.html', 'TP', '场景库', isActive('template-manage.html')),
             navLink('colorCard.html', 'CL', '色卡库', isActive('colorCard.html')),
             navLink('list.html', 'DB', '任务大盘', isActive('list.html')),
+            navLink('finance-center.html', 'FC', '财务中心', isActive('finance-center.html')),
             isAdmin ? systemManagementMenu(onSystemManagement) : '',
             '</nav>',
             '<div class="sidebar-footer">',
@@ -113,7 +114,7 @@
         ].join('');
     }
 
-    function aiCanvasMenu(onAiCanvas, isAdmin) {
+    function aiCanvasMenu(onAiCanvas) {
         return [
             '<div class="sidebar-parent' + (onAiCanvas ? ' expanded' : '') + '">',
             '  <div class="sidebar-link sidebar-parent-toggle' + (onAiCanvas ? ' active-parent' : '') + '" onclick="this.parentElement.classList.toggle(\'expanded\')">',
@@ -124,7 +125,7 @@
             '  <div class="sidebar-submenu">',
             subLink('ai-canvas.html', 'C', '画布工作台', isActive('ai-canvas.html')),
             subLink('ai-canvas-templates.html', 'T', '画布模板', isActive('ai-canvas-templates.html')),
-            isAdmin ? subLink('ai-canvas-history.html', 'H', '生成记录', isActive('ai-canvas-history.html')) : '',
+            subLink('ai-canvas-history.html', 'H', '生成记录', isActive('ai-canvas-history.html')),
             '  </div>',
             '</div>'
         ].join('');
@@ -158,7 +159,6 @@
             '  <div class="sidebar-submenu">',
             subLink('admin.html', 'UM', '用户管理', isActive('admin.html')),
             subLink('price-management.html', '￥', '模型价格', isActive('price-management.html')),
-            subLink('finance-center.html', 'FC', '财务中心', isActive('finance-center.html')),
             '  </div>',
             '</div>'
         ].join('');

@@ -4,6 +4,7 @@ import com.ai.dto.ApiResponse;
 import com.ai.entity.SysUser;
 import com.ai.repository.SysUserRepository;
 import com.ai.repository.UserSessionRepository;
+import com.ai.service.AuthenticationService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -20,13 +21,12 @@ public class AdminUserController {
 
     private final SysUserRepository sysUserRepository;
     private final UserSessionRepository userSessionRepository;
+    private final AuthenticationService authenticationService;
 
     // 🔴 核心防御：严格校验当前 Token 对应的用户是不是 PINKSIR
     private boolean isNotAdmin(HttpServletRequest request) {
-        String token = request.getHeader("X-User-Token");
-        if (token == null || token.trim().isEmpty()) return true;
-        SysUser user = userSessionRepository.findUserByToken(token);
-        return user == null || !"PINKSIR".equalsIgnoreCase(user.getUsername());
+        Object shopName = request.getAttribute("shopName");
+        return shopName == null || !"PINKSIR".equalsIgnoreCase(String.valueOf(shopName).trim());
     }
 
     // 1. 查询所有用户
@@ -42,9 +42,19 @@ public class AdminUserController {
     @PostMapping("/create")
     public ApiResponse<SysUser> createUser(@RequestBody SysUser newUser, HttpServletRequest request) {
         if (isNotAdmin(request)) return ApiResponse.fail("无权限");
-        if (sysUserRepository.findByUsername(newUser.getUsername()) != null) {
+        if (newUser.getUsername() == null || newUser.getUsername().isBlank()) {
+            return ApiResponse.fail("用户名不能为空");
+        }
+        String username = newUser.getUsername().trim();
+        if (sysUserRepository.findByUsername(username) != null) {
             return ApiResponse.fail("用户名已存在，请换一个！");
         }
+        if (!authenticationService.isPasswordStrongEnough(newUser.getPassword())) {
+            return ApiResponse.fail("密码至少需要8位");
+        }
+        newUser.setUsername(username);
+        newUser.setPassword(authenticationService.encodePassword(newUser.getPassword().trim()));
+        authenticationService.resetLock(newUser);
         sysUserRepository.save(newUser);
         return ApiResponse.ok("创建成功", newUser);
     }
@@ -60,7 +70,12 @@ public class AdminUserController {
 
         // 如果前端传了新密码，且不是 8 个星号，说明需要改密码
         if (updatedData.getPassword() != null && !updatedData.getPassword().trim().isEmpty() && !"********".equals(updatedData.getPassword())) {
-            existing.setPassword(updatedData.getPassword().trim());
+            if (!authenticationService.isPasswordStrongEnough(updatedData.getPassword())) {
+                return ApiResponse.fail("密码至少需要8位");
+            }
+            existing.setPassword(authenticationService.encodePassword(updatedData.getPassword().trim()));
+            authenticationService.resetLock(existing);
+            userSessionRepository.deleteByUser_Id(existing.getId());
         }
 
         if (updatedData.getRealName() != null) existing.setRealName(updatedData.getRealName().trim());
@@ -68,6 +83,17 @@ public class AdminUserController {
 
         sysUserRepository.save(existing);
         return ApiResponse.ok("更新成功", existing);
+    }
+
+    @PostMapping("/{id}/unlock")
+    public ApiResponse<SysUser> unlockUser(@PathVariable("id") Long id, HttpServletRequest request) {
+        if (isNotAdmin(request)) return ApiResponse.fail("无权限");
+        SysUser existing = sysUserRepository.findById(id).orElse(null);
+        if (existing == null) return ApiResponse.fail("用户不存在");
+        authenticationService.resetLock(existing);
+        userSessionRepository.deleteByUser_Id(id);
+        sysUserRepository.save(existing);
+        return ApiResponse.ok("账号已解锁，请用户重新登录", existing);
     }
 
     // 4. 删除用户

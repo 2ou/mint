@@ -41,10 +41,17 @@ public class UserSession {
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
-    public static UserSession create(SysUser user, String token) {
+    @Column(name = "expires_at")
+    private LocalDateTime expiresAt;
+
+    @Column(name = "revoked_at")
+    private LocalDateTime revokedAt;
+
+    public static UserSession create(SysUser user, String token, LocalDateTime expiresAt) {
         UserSession session = new UserSession();
         session.setUser(user);
         session.setToken(token);
+        session.setExpiresAt(expiresAt);
         return session;
     }
 }

@@ -279,7 +279,7 @@
                                     </el-col>
                                     <el-col :span="6">
                                         <el-form-item label="图片模型">
-                                            <el-select v-model="imageModel" style="width:100%">
+                                            <el-select v-model="imageModel" @change="handleImageModelChange" style="width:100%">
                                                 <el-option-group label="Google">
                                                     <el-option label="Nano Banana Pro" value="nano-banana-pro"/>
                                                     <el-option label="Nano Banana 2.1" value="nano-banana-2-1"/>
@@ -295,7 +295,8 @@
                                             <el-select v-model="aspectRatio" style="width:100%">
                                                 <el-option label="3:4 竖版（推荐）" value="3:4"/>
                                                 <el-option label="9:16 竖屏全屏" value="9:16"/>
-                                                <el-option label="4:5 竖版偏方" value="4:5"/>
+                                                <el-option label="4:5 竖版偏方" value="4:5"
+                                                           :disabled="imageModel==='gpt-image-2-5-sunburst'"/>
                                                 <el-option label="1:1 正方形" value="1:1"/>
                                                 <el-option label="4:3 横版" value="4:3"/>
                                                 <el-option label="16:9 横版宽屏" value="16:9"/>
@@ -382,8 +383,10 @@
                         </div>
 
                         <div class="action-bar">
-                            <div style="font-size:13px;color:#606266;font-weight:600">
-                                总计 {{ totalGenCount }} 张图
+                            <div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;font-size:13px;color:#606266;font-weight:600">
+                                <span>总计 {{ totalGenCount }} 张图</span>
+                                <el-tag size="small" effect="plain">{{ imageModelLabel }}</el-tag>
+                                <span style="font-size:12px;color:#909399">{{ resolution }} · {{ aspectRatio }} · 使用对应商品图作为参考</span>
                             </div>
                             <el-button type="primary" size="large" @click="submitTask" :loading="loadingSubmit"
                                        style="padding:0 32px;height:46px;font-size:15px;font-weight:700;background:linear-gradient(135deg,#667eea,#764ba2);border:none">
@@ -413,10 +416,10 @@
 
                         <div class="result-grid" v-else>
                             <div v-for="task in submittedTasks" :key="task.taskId" class="result-item">
-                                <template v-if="task.status==='SUCCESS' && (task.resultOssUrl || task.resultTempUrl)">
-                                    <el-image :src="task.resultOssUrl || task.resultTempUrl" fit="cover"
+                                <template v-if="task.status==='SUCCESS' && taskResultUrl(task)">
+                                    <el-image :src="taskResultUrl(task)" fit="cover"
                                               class="result-image" :style="{aspectRatio: ratioCss}"
-                                              :preview-src-list="[task.resultOssUrl || task.resultTempUrl]" preview-teleported/>
+                                              :preview-src-list="[taskResultUrl(task)]" preview-teleported/>
                                 </template>
                                 <template v-else>
                                     <div class="result-media" :style="{aspectRatio: ratioCss}">
@@ -521,7 +524,12 @@
                 const result = [];
                 for (const g of groups.value) {
                     for (const p of g.prompts) {
-                        result.push({...p, imageIndex: g.imageIndex, imageUrl: fileList.value[g.imageIndex]?.url});
+                        const sourceFile = fileList.value[g.imageIndex];
+                        result.push({
+                            ...p,
+                            imageIndex: g.imageIndex,
+                            imageUrl: sourceFile?.ossUrl || sourceFile?.url
+                        });
                     }
                 }
                 return result;
@@ -539,6 +547,20 @@
 
             // 结果缩略图按所选比例显示（"3:4" → "3 / 4"）
             const ratioCss = computed(() => (aspectRatio.value || '3:4').replace(':', ' / '));
+            const imageModelLabel = computed(() => ({
+                'nano-banana-pro': 'Nano Banana Pro',
+                'nano-banana-2-1': 'Nano Banana 2.1',
+                'gpt-image-2-5-sunburst': 'GPT Image 2.5'
+            }[imageModel.value] || imageModel.value));
+
+            const handleImageModelChange = (model) => {
+                if (model === 'gpt-image-2-5-sunburst' && aspectRatio.value === '4:5') {
+                    aspectRatio.value = '3:4';
+                    ElementPlus.ElMessage.info('GPT Image 2.5 不支持 4:5，已自动切换为 3:4');
+                }
+            };
+
+            const taskResultUrl = (task) => task?.resultUrl || task?.resultOssUrl || task?.resultTempUrl || '';
 
             const uploadToOss = async (fileObj) => {
                 const realFile = fileObj.raw;
@@ -629,15 +651,21 @@
                 const tasks = [];
                 try {
                     for (const prompt of allPrompts.value) {
+                        if (!prompt.imageUrl) {
+                            throw new Error(`第 ${prompt.imageIndex + 1} 张商品图尚未上传完成`);
+                        }
                         for (let i = 0; i < (prompt.genCount || 1); i++) {
                             const r = await axios.post('/api/models/create-task', {
                                 prompt: prompt.prompt,
                                 model: imageModel.value,
                                 resolution: resolution.value,
-                                aspectRatio: aspectRatio.value
+                                aspectRatio: aspectRatio.value,
+                                clothingDescription: clothingDesc.value,
+                                clothingImageUrl: prompt.imageUrl
                             });
                             if (r.data.success) {
-                                tasks.push({...r.data.data, status: r.data.data.taskStatus || 'CREATED'});
+                                const task = r.data.data;
+                                tasks.push({...task, dbId: task.id, status: task.taskStatus || 'CREATED'});
                             }
                         }
                     }
@@ -647,7 +675,13 @@
                         startPolling();
                     }
                 } catch (e) {
-                    ElementPlus.ElMessage.error('提交失败');
+                    if (tasks.length) {
+                        submittedTasks.value = tasks;
+                        step.value = 3;
+                        startPolling();
+                    }
+                    const detail = e.response?.data?.message || e.message || '未知错误';
+                    ElementPlus.ElMessage.error(`提交失败：${detail}${tasks.length ? `（已有 ${tasks.length} 个任务提交成功）` : ''}`);
                 } finally {
                     loadingSubmit.value = false;
                 }
@@ -662,9 +696,16 @@
                         const t = submittedTasks.value[i];
                         if (t.status === 'CREATED' || t.status === 'PROCESSING' || t.status === 'GENERATING') {
                             try {
-                                const r = t.dbId ? await axios.get(`/api/models/${t.dbId}`) : null;
+                                const recordId = t.dbId || t.id;
+                                const r = recordId ? await axios.get(`/api/models/${recordId}`) : null;
                                 if (r?.data?.success) {
-                                    submittedTasks.value[i] = {...t, ...r.data.data, dbId: r.data.data.id};
+                                    const task = r.data.data;
+                                    submittedTasks.value[i] = {
+                                        ...t,
+                                        ...task,
+                                        dbId: task.id || recordId,
+                                        status: task.taskStatus || t.status
+                                    };
                                 }
                             } catch (e) {}
                         }
@@ -687,12 +728,13 @@
             const taskStatusLabel = (s) => ({CREATED:'⏳ 排队中',PROCESSING:'🔄 生图中',GENERATING:'🔄 生图中',SUCCESS:'✅ 已完成',FAILED:'❌ 失败'}[s]||s);
 
             return {
-                step, spu, clothingDesc, scenePreference, textModel, imageModel, aspectRatio, ratioCss, resolution,
+                step, spu, clothingDesc, scenePreference, textModel, imageModel, imageModelLabel,
+                aspectRatio, ratioCss, resolution,
                 countPerImage, loading,
                 groups, allPrompts, totalGenCount, isDragging,
                 loadingSubmit, submittedTasks,
-                onDragOver, onDragLeave, handleDrop, generate, submitTask, resetAll, copyText,
-                taskStatusType, taskStatusLabel,
+                onDragOver, onDragLeave, handleDrop, generate, submitTask, resetAll, copyText, handleImageModelChange,
+                taskStatusType, taskStatusLabel, taskResultUrl,
 
                 fileList, dialogImageUrl, dialogVisible,
                 handleFileChange, handleRemove, handlePictureCardPreview, getFileIndex

@@ -19,11 +19,12 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
-/** Finance-only, platform-wide fixed-cost reporting endpoints. */
+/** Account-scoped fixed-cost reporting; PINKSIR receives the platform-wide view. */
 @RestController
-@RequestMapping("/api/admin/finance")
+@RequestMapping({"/api/finance", "/api/admin/finance"})
 @RequiredArgsConstructor
 public class FinanceCostController {
 
@@ -42,10 +43,16 @@ public class FinanceCostController {
             @RequestParam(value = "page", defaultValue = "1") int page,
             @RequestParam(value = "size", defaultValue = "50") int size,
             HttpServletRequest request) {
-        requireFinanceAdmin(request);
-        FinanceCostFilter filter = new FinanceCostFilter(startDate, endDate, module, shopName, operator,
-                mediaType, model, keyword);
-        return ApiResponse.ok("ok", financeCostService.report(filter, page, size));
+        ViewerScope viewer = requireViewer(request);
+        FinanceCostFilter filter = scopeFilter(new FinanceCostFilter(startDate, endDate, module, shopName,
+                operator, mediaType, model, keyword), viewer);
+        Map<String, Object> report = new LinkedHashMap<>(financeCostService.report(filter, page, size));
+        report.put("scope", viewer.platformWide() ? "platform" : "account");
+        report.put("viewer", Map.of(
+                "shop_name", viewer.shopName(),
+                "operator", viewer.operator()
+        ));
+        return ApiResponse.ok("ok", report);
     }
 
     @GetMapping("/export")
@@ -60,21 +67,40 @@ public class FinanceCostController {
             @RequestParam(value = "keyword", required = false) String keyword,
             HttpServletRequest request,
             HttpServletResponse response) throws IOException {
-        requireFinanceAdmin(request);
-        FinanceCostFilter filter = new FinanceCostFilter(startDate, endDate, module, shopName, operator,
-                mediaType, model, keyword);
-        String filename = "AI平台费用报表_" + LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE) + ".xlsx";
+        ViewerScope viewer = requireViewer(request);
+        FinanceCostFilter filter = scopeFilter(new FinanceCostFilter(startDate, endDate, module, shopName,
+                operator, mediaType, model, keyword), viewer);
+        String reportName = viewer.platformWide() ? "AI平台费用报表_" : "AI账号费用报表_";
+        String filename = reportName + LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE) + ".xlsx";
         response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
         response.setHeader("Content-Disposition", "attachment; filename*=UTF-8''"
                 + URLEncoder.encode(filename, StandardCharsets.UTF_8).replace("+", "%20"));
         financeCostService.exportWorkbook(filter, response.getOutputStream());
     }
 
-    private void requireFinanceAdmin(HttpServletRequest request) {
-        Object value = request.getAttribute("shopName");
-        String shopName = value == null ? "" : String.valueOf(value).trim();
-        if (!"PINKSIR".equalsIgnoreCase(shopName)) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "仅管理员可以查看平台财务数据");
+    private FinanceCostFilter scopeFilter(FinanceCostFilter requested, ViewerScope viewer) {
+        if (viewer.platformWide()) return requested;
+        return new FinanceCostFilter(
+                requested.startDate(), requested.endDate(), requested.module(),
+                viewer.shopName(), viewer.operator(), requested.mediaType(),
+                requested.model(), requested.keyword()
+        );
+    }
+
+    private ViewerScope requireViewer(HttpServletRequest request) {
+        String shopName = attribute(request, "shopName");
+        String operator = attribute(request, "operator");
+        if (shopName.isBlank() || operator.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "登录信息不完整，请重新登录");
         }
+        return new ViewerScope(shopName, operator, "PINKSIR".equalsIgnoreCase(shopName));
+    }
+
+    private String attribute(HttpServletRequest request, String name) {
+        Object value = request.getAttribute(name);
+        return value == null ? "" : String.valueOf(value).trim();
+    }
+
+    private record ViewerScope(String shopName, String operator, boolean platformWide) {
     }
 }

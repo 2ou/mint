@@ -137,11 +137,13 @@
                     <div>
                         <h1 class="page-title">画布生成记录</h1>
                         <p class="page-subtitle">
-                            管理员视图：查看全平台所有店铺 / 操作人的 AI 画布生成任务，可按店铺 / 操作人 / 画布 / 媒体类型 / 状态筛选，默认按更新时间展示最近 50 条。
+                            {{ isAdmin
+                                ? '管理员视图：查看全平台所有店铺 / 操作人的 AI 画布生成任务，可按店铺 / 操作人 / 画布 / 媒体类型 / 状态筛选。'
+                                : '个人视图：仅展示当前登录账号提交的 AI 画布生成任务，其他账号的记录不可见。' }}
                         </p>
                     </div>
                     <div class="toolbar">
-                        <el-tag type="warning" effect="dark">仅管理员可见</el-tag>
+                        <el-tag :type="isAdmin ? 'warning' : 'success'" effect="dark">{{ isAdmin ? '全平台记录' : '仅我的记录' }}</el-tag>
                         <el-button @click="reload" :loading="loading">刷新</el-button>
                     </div>
                 </header>
@@ -173,6 +175,7 @@
                     <div class="panel-body">
                         <div class="filters">
                             <el-select
+                                v-if="isAdmin"
                                 v-model="filters.shopName"
                                 placeholder="全部店铺"
                                 clearable
@@ -182,8 +185,9 @@
                                 <el-option v-for="s in shopOptions" :key="s" :label="s" :value="s"/>
                             </el-select>
                             <el-input
+                                v-if="isAdmin"
                                 v-model="filters.operator"
-                                placeholder="按操作人账号筛选"
+                                placeholder="按操作人筛选"
                                 clearable
                                 style="width: 200px;"
                                 @clear="resetAndLoad"
@@ -261,10 +265,10 @@
                                     <el-tag :type="statusType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
                                 </template>
                             </el-table-column>
-                            <el-table-column prop="shop_name" label="店铺" width="150" show-overflow-tooltip>
+                            <el-table-column v-if="isAdmin" prop="shop_name" label="店铺" width="150" show-overflow-tooltip>
                                 <template #default="{ row }">{{ row.shop_name || '-' }}</template>
                             </el-table-column>
-                            <el-table-column prop="operator" label="操作人" width="150" show-overflow-tooltip>
+                            <el-table-column v-if="isAdmin" prop="operator" label="操作人" width="150" show-overflow-tooltip>
                                 <template #default="{ row }">{{ row.operator || '-' }}</template>
                             </el-table-column>
                             <el-table-column prop="canvas_id" label="画布" width="150" show-overflow-tooltip>
@@ -333,16 +337,15 @@
             const runningCount = computed(() => summary.value.processing || 0);
 
             async function load() {
-                if (!isAdmin) return;
                 loading.value = true;
                 try {
                     const params = { page: page.value, size: size.value };
-                    if (filters.shopName) params.shop_name = filters.shopName;
-                    if (filters.operator) params.operator = filters.operator.trim();
+                    if (isAdmin && filters.shopName) params.shop_name = filters.shopName;
+                    if (isAdmin && filters.operator) params.operator = filters.operator.trim();
                     if (filters.canvasId) params.canvas_id = filters.canvasId.trim();
                     if (filters.mediaType) params.media_type = filters.mediaType;
                     if (filters.status) params.status = filters.status;
-                    const res = await axios.get('/api/admin/canvas-tasks', { params });
+                    const res = await axios.get('/api/canvas-task-history', { params });
                     tasks.value = res.data.tasks || [];
                     summary.value = res.data.summary || {};
                     const shops = res.data.shops || [];
@@ -423,11 +426,6 @@
             }
 
             onMounted(() => {
-                if (!isAdmin) {
-                    ElementPlus.ElMessage.error('无权限：仅管理员可访问画布生成记录，即将返回画布');
-                    setTimeout(() => { window.location.href = 'ai-canvas.html'; }, 1400);
-                    return;
-                }
                 load();
             });
 

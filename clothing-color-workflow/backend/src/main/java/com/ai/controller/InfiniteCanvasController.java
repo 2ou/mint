@@ -781,6 +781,31 @@ public class InfiniteCanvasController {
     }
 
     /**
+     * Paged canvas generation history. Super administrators can query the whole platform;
+     * every other account is forcibly scoped to its authenticated shop and operator.
+     */
+    @GetMapping("/canvas-task-history")
+    public Map<String, Object> getCanvasTaskHistory(@RequestParam(value = "shop_name", required = false) String shopName,
+                                                    @RequestParam(value = "operator", required = false) String operator,
+                                                    @RequestParam(value = "canvas_id", required = false) String canvasId,
+                                                    @RequestParam(value = "media_type", required = false) String mediaType,
+                                                    @RequestParam(value = "status", required = false) String status,
+                                                    @RequestParam(value = "page", required = false, defaultValue = "1") int page,
+                                                    @RequestParam(value = "size", required = false, defaultValue = "50") int size,
+                                                    HttpServletRequest request) {
+        boolean admin = isPriceAdmin(request);
+        String scopedShopName = admin ? shopName : currentShopName(request);
+        String scopedOperator = admin ? operator : currentOperator(request);
+        Map<String, Object> response = new LinkedHashMap<>(canvasTaskService.adminSearchTasks(
+                scopedShopName, scopedOperator, canvasId, mediaType, status, page, size));
+        response.put("scope", admin ? "platform" : "account");
+        if (!admin) {
+            response.put("shops", List.of(currentShopName(request)));
+        }
+        return response;
+    }
+
+    /**
      * Admin-only ledger: platform-wide canvas tasks across every shop and operator,
      * filterable and paged. {@code shop_name} is an optional filter — omit it to see
      * all shops. Guarded by the same PINKSIR-shop check used by the model-price console.

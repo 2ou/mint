@@ -39,6 +39,11 @@
         }
         .page-title { margin: 0; color: var(--finance-ink); font-size: 25px; line-height: 1.3; font-weight: 760; }
         .page-subtitle { margin: 7px 0 0; color: var(--finance-muted); font-size: 13px; line-height: 1.6; }
+        .scope-badge {
+            display: inline-flex; align-items: center; min-height: 26px; margin-top: 10px; padding: 3px 9px;
+            border-radius: 999px; color: var(--finance-blue); background: var(--finance-blue-soft);
+            border: 1px solid #bfdbfe; font-size: 12px; font-weight: 700;
+        }
         .header-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
         .cutoff { color: var(--finance-muted); font-size: 12px; white-space: nowrap; }
 
@@ -51,6 +56,7 @@
             display: grid; grid-template-columns: 300px repeat(5, minmax(130px, 1fr));
             gap: 10px; align-items: end;
         }
+        .filter-grid.account-scope { grid-template-columns: 300px repeat(3, minmax(150px, 1fr)); }
         .filter-item { min-width: 0; }
         .filter-label { display: block; margin: 0 0 6px; color: #475569; font-size: 12px; font-weight: 650; }
         .filter-actions { display: flex; gap: 8px; align-items: center; margin-top: 12px; }
@@ -134,9 +140,12 @@
             <div class="finance-page">
                 <header class="page-header">
                     <div>
-                        <div class="page-eyebrow">Finance Center</div>
-                        <h1 class="page-title">平台费用中心</h1>
-                        <p class="page-subtitle">面向财务的统一费用视图。成功任务按提交时固定价格计费，汇总与导出均使用完整筛选结果。</p>
+                        <div class="page-eyebrow">{{ isPlatform ? 'Platform Finance' : 'Account Finance' }}</div>
+                        <h1 class="page-title">{{ isPlatform ? '平台费用中心' : '我的费用中心' }}</h1>
+                        <p class="page-subtitle">{{ isPlatform
+                            ? '面向财务的全平台费用视图。成功任务按提交时固定价格计费，汇总与导出均使用完整筛选结果。'
+                            : '查看当前账号产生的费用。成功任务按提交时固定价格计费，汇总与导出均仅包含本人数据。' }}</p>
+                        <span class="scope-badge">{{ isPlatform ? '全平台数据' : `${viewer.shop_name} · ${viewer.operator}` }}</span>
                     </div>
                     <div class="header-actions">
                         <span class="cutoff" v-if="dataCutoff">数据截止：{{ dataCutoff }}</span>
@@ -146,7 +155,7 @@
                 </header>
 
                 <section class="panel filter-panel" aria-label="费用筛选条件">
-                    <div class="filter-grid">
+                    <div class="filter-grid" :class="{'account-scope': !isPlatform}">
                         <div class="filter-item">
                             <label class="filter-label">费用日期</label>
                             <el-date-picker v-model="filters.dateRange" type="daterange" range-separator="至"
@@ -159,13 +168,13 @@
                                 <el-option v-for="item in options.modules" :key="item.value" :label="item.label" :value="item.value"></el-option>
                             </el-select>
                         </div>
-                        <div class="filter-item">
+                        <div class="filter-item" v-if="isPlatform">
                             <label class="filter-label">店铺</label>
                             <el-select v-model="filters.shopName" clearable filterable placeholder="全部店铺" style="width:100%">
                                 <el-option v-for="item in options.shops" :key="item" :label="item" :value="item"></el-option>
                             </el-select>
                         </div>
-                        <div class="filter-item">
+                        <div class="filter-item" v-if="isPlatform">
                             <label class="filter-label">操作人</label>
                             <el-select v-model="filters.operator" clearable filterable placeholder="全部操作人" style="width:100%">
                                 <el-option v-for="item in options.operators" :key="item" :label="item" :value="item"></el-option>
@@ -186,7 +195,7 @@
                         </div>
                     </div>
                     <div class="filter-actions">
-                        <el-input v-model="filters.keyword" clearable placeholder="任务ID / SPU / 画布ID / 操作人"
+                        <el-input v-model="filters.keyword" clearable :placeholder="isPlatform ? '任务ID / SPU / 画布ID / 操作人' : '任务ID / SPU / 画布ID'"
                                   style="width:min(360px,100%)" @keyup.enter="search"></el-input>
                         <el-button type="primary" @click="search" :loading="loading">查询</el-button>
                         <el-button @click="resetFilters">重置</el-button>
@@ -195,7 +204,7 @@
 
                 <div class="scope-note" role="note">
                     <span class="scope-mark" aria-hidden="true"></span>
-                    <span>{{ accountingRule }}；本报表默认排除 AI套图、AI模特库。</span>
+                    <span>{{ accountingRule }}；{{ isPlatform ? '当前可查看全平台并按店铺、操作人筛选' : '当前仅显示本账号费用' }}；本报表默认排除 AI套图、AI模特库。</span>
                 </div>
 
                 <section class="kpi-grid" aria-label="费用概览">
@@ -283,8 +292,8 @@
                             <template #default="scope">{{ dateTime(scope.row.generatedAt) }}</template>
                         </el-table-column>
                         <el-table-column prop="moduleName" label="模块" width="132"></el-table-column>
-                        <el-table-column prop="shopName" label="店铺" width="120" show-overflow-tooltip></el-table-column>
-                        <el-table-column prop="operator" label="操作人" width="108" show-overflow-tooltip></el-table-column>
+                        <el-table-column v-if="isPlatform" prop="shopName" label="店铺" width="120" show-overflow-tooltip></el-table-column>
+                        <el-table-column v-if="isPlatform" prop="operator" label="操作人" width="108" show-overflow-tooltip></el-table-column>
                         <el-table-column prop="businessKey" label="SPU / 画布" min-width="150" show-overflow-tooltip></el-table-column>
                         <el-table-column prop="mediaType" label="类型" width="78">
                             <template #default="scope">{{ mediaName(scope.row.mediaType) }}</template>
@@ -326,6 +335,11 @@
             const moduleBreakdown = ref([]);
             const dailyTrend = ref([]);
             const dataCutoff = ref('');
+            const isPlatform = ref(window.AppAuth?.isAdmin() === true);
+            const viewer = reactive({
+                shop_name: window.AppAuth?.getShopName() || '',
+                operator: window.AppAuth?.getUserName() || ''
+            });
             const accountingRule = ref('仅成功任务计费，费用取任务提交时保存的固定价格');
             const summary = reactive({ total_cost: 0, successful_tasks: 0, priced_tasks: 0, average_cost: 0, unpriced_tasks: 0 });
             const options = reactive({ modules: [], shops: [], operators: [], models: [] });
@@ -347,9 +361,13 @@
             const requestParams = (withPage = true) => {
                 const params = {
                     start_date: filters.dateRange?.[0] || '', end_date: filters.dateRange?.[1] || '',
-                    module: filters.module || '', shop_name: filters.shopName || '', operator: filters.operator || '',
+                    module: filters.module || '',
                     media_type: filters.mediaType || '', model: filters.model || '', keyword: filters.keyword?.trim() || ''
                 };
+                if (isPlatform.value) {
+                    params.shop_name = filters.shopName || '';
+                    params.operator = filters.operator || '';
+                }
                 if (withPage) Object.assign(params, { page: page.value, size: pageSize.value });
                 return params;
             };
@@ -357,7 +375,7 @@
             const fetchData = async () => {
                 loading.value = true;
                 try {
-                    const response = await axios.get('/api/admin/finance/costs', { params: requestParams() });
+                    const response = await axios.get('/api/finance/costs', { params: requestParams() });
                     if (!response.data?.success) throw new Error(response.data?.message || '获取费用数据失败');
                     const data = response.data.data || {};
                     Object.assign(summary, data.summary || {});
@@ -367,9 +385,11 @@
                     total.value = Number(data.total || 0);
                     dataCutoff.value = data.data_cutoff || '';
                     accountingRule.value = data.accounting_rule || accountingRule.value;
+                    isPlatform.value = data.scope === 'platform';
+                    Object.assign(viewer, data.viewer || {});
                     Object.assign(options, data.options || {});
                 } catch (error) {
-                    const message = error.response?.status === 403 ? '无权查看平台财务数据' : (error.response?.data?.message || error.message || '获取费用数据失败');
+                    const message = error.response?.data?.message || error.message || '获取费用数据失败';
                     ElementPlus.ElMessage.error(message);
                 } finally {
                     loading.value = false;
@@ -387,19 +407,19 @@
             const exportWorkbook = async () => {
                 exporting.value = true;
                 try {
-                    const response = await axios.get('/api/admin/finance/export', { params: requestParams(false), responseType: 'blob' });
+                    const response = await axios.get('/api/finance/export', { params: requestParams(false), responseType: 'blob' });
                     const blob = new Blob([response.data], { type: response.headers['content-type'] });
                     const url = URL.createObjectURL(blob);
                     const link = document.createElement('a');
                     link.href = url;
-                    link.download = `AI平台费用报表_${new Date().toISOString().slice(0,10)}.xlsx`;
+                    link.download = `${isPlatform.value ? 'AI平台费用报表' : 'AI账号费用报表'}_${new Date().toISOString().slice(0,10)}.xlsx`;
                     document.body.appendChild(link);
                     link.click();
                     link.remove();
                     URL.revokeObjectURL(url);
                     ElementPlus.ElMessage.success('完整费用报表已导出');
                 } catch (error) {
-                    ElementPlus.ElMessage.error(error.response?.status === 403 ? '无权导出平台财务数据' : '导出失败，请稍后重试');
+                    ElementPlus.ElMessage.error('导出失败，请稍后重试');
                 } finally {
                     exporting.value = false;
                 }
@@ -430,17 +450,12 @@
             const trendAriaLabel = computed(() => dailyTrend.value.map(item => `${item.date} ${money(item.cost)}`).join('；'));
 
             onMounted(() => {
-                if (!window.AppAuth?.isAdmin()) {
-                    ElementPlus.ElMessage.error('仅管理员可以进入财务中心');
-                    window.location.href = 'list.html';
-                    return;
-                }
                 fetchData();
             });
 
             return {
                 loading, exporting, page, pageSize, total, records, moduleBreakdown, dailyTrend,
-                dataCutoff, accountingRule, summary, options, filters, fetchData, search, resetFilters,
+                dataCutoff, accountingRule, isPlatform, viewer, summary, options, filters, fetchData, search, resetFilters,
                 onSizeChange, exportWorkbook, money, integer, dateTime, mediaName, barWidth,
                 trendPoints, trendPolyline, trendArea, trendAriaLabel
             };
